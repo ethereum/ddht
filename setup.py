@@ -57,7 +57,7 @@ setup(
     install_requires=[
         "eth-utils>=1,<2",
     ],
-    python_requires='>=3.6, <4',
+    python_requires='>=3.8, <4',
     extras_require=extras_require,
     py_modules=['ddht'],
     license="MIT",
@@ -70,8 +70,6 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: Implementation :: PyPy',
+        'Programming Language :: Python :: 3.8',
     ],
 )
