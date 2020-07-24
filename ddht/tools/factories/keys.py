@@ -1,16 +1,12 @@
 import secrets
 
-import factory
-
-from eth_utils import (
-    int_to_big_endian,
-)
-
 from eth_keys import keys
+from eth_utils import int_to_big_endian
+import factory
 
 
 def _mk_private_key_bytes() -> bytes:
-    return int_to_big_endian(secrets.randbits(256)).rjust(32, b'\x00')
+    return int_to_big_endian(secrets.randbits(256)).rjust(32, b"\x00")
 
 
 class PrivateKeyFactory(factory.Factory):

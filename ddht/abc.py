@@ -1,11 +1,65 @@
 from abc import ABC, abstractmethod
-from typing import (
-    MutableMapping,
-)
+from typing import Any, List, MutableMapping, Type, TypeVar
 
 from ddht.enr import ENR
-from ddht.typing import NodeID
 from ddht.identity_schemes import IdentitySchemeRegistry
+from ddht.typing import NodeID
+
+TAddress = TypeVar("TAddress", bound="AddressAPI")
+
+
+class AddressAPI(ABC):
+    udp_port: int
+    tcp_port: int
+
+    @abstractmethod
+    def __init__(self, ip: str, udp_port: int, tcp_port: int) -> None:
+        ...
+
+    @property
+    @abstractmethod
+    def is_loopback(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def is_unspecified(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def is_reserved(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def is_private(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def ip(self) -> str:
+        ...
+
+    @property
+    @abstractmethod
+    def ip_packed(self) -> str:
+        ...
+
+    @abstractmethod
+    def __eq__(self, other: Any) -> bool:
+        ...
+
+    @abstractmethod
+    def to_endpoint(self) -> List[bytes]:
+        ...
+
+    @classmethod
+    @abstractmethod
+    def from_endpoint(
+        cls: Type[TAddress], ip: str, udp_port: bytes, tcp_port: bytes = b"\x00\x00"
+    ) -> TAddress:
+        ...
 
 
 class DatabaseAPI(MutableMapping[bytes, bytes], ABC):
@@ -23,9 +77,10 @@ class DatabaseAPI(MutableMapping[bytes, bytes], ABC):
 
 
 class NodeDBAPI(ABC):
-
     @abstractmethod
-    def __init__(self, identity_scheme_registry: IdentitySchemeRegistry, db: DatabaseAPI) -> None:
+    def __init__(
+        self, identity_scheme_registry: IdentitySchemeRegistry, db: DatabaseAPI
+    ) -> None:
         ...
 
     @abstractmethod

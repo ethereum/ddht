@@ -1,22 +1,9 @@
-from hypothesis import (
-    strategies as st,
-)
+from eth_keys.constants import SECPK1_N
+from eth_utils import int_to_big_endian
+from hypothesis import strategies as st
 
-from eth_utils import (
-    int_to_big_endian,
-)
-
-from eth_keys.constants import (
-    SECPK1_N,
-)
-
-from ddht.v5.constants import (
-    NONCE_SIZE,
-    ID_NONCE_SIZE,
-    MAGIC_SIZE,
-    TAG_SIZE,
-)
 from ddht.constants import AES128_KEY_SIZE
+from ddht.v5.constants import ID_NONCE_SIZE, MAGIC_SIZE, NONCE_SIZE, TAG_SIZE
 
 tag_st = st.binary(min_size=TAG_SIZE, max_size=TAG_SIZE)
 nonce_st = st.binary(min_size=NONCE_SIZE, max_size=NONCE_SIZE)
@@ -29,6 +16,8 @@ magic_st = st.binary(min_size=MAGIC_SIZE, max_size=MAGIC_SIZE)
 id_nonce_st = st.binary(min_size=ID_NONCE_SIZE, max_size=ID_NONCE_SIZE)
 enr_seq_st = st.integers(min_value=0)
 
-private_key_st = st.integers(min_value=1, max_value=SECPK1_N).map(
-    int_to_big_endian,
-).map(lambda key: key.rjust(32, b"\x00"))
+private_key_st = (
+    st.integers(min_value=1, max_value=SECPK1_N)
+    .map(int_to_big_endian)
+    .map(lambda key: key.rjust(32, b"\x00"))
+)

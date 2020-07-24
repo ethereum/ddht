@@ -1,13 +1,8 @@
 import hashlib
 
-from ddht._utils import (
-    sxor,
-)
-
-from ddht.v5.typing import (
-    Tag,
-)
+from ddht._utils import sxor
 from ddht.typing import NodeID
+from ddht.v5.typing import Tag
 
 
 def compute_tag(source_node_id: NodeID, destination_node_id: NodeID) -> Tag:

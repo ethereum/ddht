@@ -1,16 +1,9 @@
 import collections
 import logging
 import secrets
-from typing import (
-    Any,
-    Collection,
-    Deque,
-    Iterator,
-)
+from typing import Any, Collection, Deque, Iterator
 
-from eth_utils import (
-    encode_hex,
-)
+from eth_utils import encode_hex
 
 from ddht.typing import NodeID
 
@@ -27,7 +20,9 @@ class FlatRoutingTable(Collection[NodeID]):
             self.logger.debug("Adding entry %s", encode_hex(node_id))
             self.entries.appendleft(node_id)
         else:
-            raise ValueError(f"Entry {encode_hex(node_id)} already present in the routing table")
+            raise ValueError(
+                f"Entry {encode_hex(node_id)} already present in the routing table"
+            )
 
     def update(self, node_id: NodeID) -> None:
         self.remove(node_id)
@@ -45,7 +40,9 @@ class FlatRoutingTable(Collection[NodeID]):
         try:
             self.entries.remove(node_id)
         except ValueError:
-            raise KeyError(f"Entry {encode_hex(node_id)} not present in the routing table")
+            raise KeyError(
+                f"Entry {encode_hex(node_id)} not present in the routing table"
+            )
         else:
             self.logger.debug("Removing entry %s", encode_hex(node_id))
 

@@ -1,3 +1,5 @@
+from typing import NamedTuple, NewType
+
 AES128Key = NewType("AES128Key", bytes)
 Nonce = NewType("Nonce", bytes)
 IDNonce = NewType("IDNonce", bytes)

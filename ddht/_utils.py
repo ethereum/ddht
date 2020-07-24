@@ -24,10 +24,7 @@ def sxor(s1: bytes, s2: bytes) -> bytes:
     return bytes(x ^ y for x, y in zip(s1, s2))
 
 
-AsyncFnsAndArgsType = Union[
-    Callable[..., Awaitable[Any]],
-    Tuple[Any, ...],
-]
+AsyncFnsAndArgsType = Union[Callable[..., Awaitable[Any]], Tuple[Any, ...]]
 
 
 async def gather(*async_fns_and_args: AsyncFnsAndArgsType) -> Tuple[Any, ...]:
@@ -61,9 +58,9 @@ async def gather(*async_fns_and_args: AsyncFnsAndArgsType) -> Tuple[Any, ...]:
     return tuple(result for _, result in indices_and_results_sorted)
 
 
-async def every(interval: float,
-                initial_delay: float = 0,
-                ) -> AsyncGenerator[float, Optional[float]]:
+async def every(
+    interval: float, initial_delay: float = 0
+) -> AsyncGenerator[float, Optional[float]]:
     """Generator used to perform a task in regular intervals.
 
     The generator will attempt to yield at a sequence of target times, defined as

@@ -1,11 +1,7 @@
 import pytest
 
+from ddht.tools.factories.discovery import ENRFactory, TopicFactory
 from ddht.v5.topic_table import TopicTable
-
-from ddht.tools.factories.discovery import (
-    ENRFactory,
-    TopicFactory,
-)
 
 
 @pytest.fixture
@@ -87,7 +83,9 @@ def test_wait_time_full_queue(topic_table, max_total_size, target_ad_lifetime):
     assert topic_table.get_wait_time(different_topic, 0) == 0
 
 
-def test_wait_time_full_queue_and_table(topic_table, max_queue_size, target_ad_lifetime):
+def test_wait_time_full_queue_and_table(
+    topic_table, max_queue_size, target_ad_lifetime
+):
     # fill one queue
     topic = TopicFactory()
     reg_time = 0

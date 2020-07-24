@@ -1,35 +1,17 @@
 import logging
-from typing import (
-    NamedTuple,
-)
+from typing import NamedTuple
 
-from trio.abc import (
-    ReceiveChannel,
-)
-
-from eth_utils import (
-    encode_hex,
-)
-from eth_utils.toolz import (
-    merge,
-)
-
-from async_service import (
-    Service,
-)
+from async_service import Service
+from eth_utils import encode_hex
+from eth_utils.toolz import merge
+from trio.abc import ReceiveChannel
 
 from ddht.abc import NodeDBAPI
-from ddht.v5.channel_services import (
-    Endpoint,
-)
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
-from ddht.enr import (
-    UnsignedENR,
-)
-from ddht.identity_schemes import (
-    IdentitySchemeRegistry,
-)
+from ddht.enr import UnsignedENR
+from ddht.identity_schemes import IdentitySchemeRegistry
 from ddht.typing import NodeID
+from ddht.v5.channel_services import Endpoint
 
 
 class EndpointVote(NamedTuple):
@@ -42,13 +24,14 @@ class EndpointTracker(Service):
 
     logger = logging.getLogger("p2p.discv5.endpoint_tracker.EndpointTracker")
 
-    def __init__(self,
-                 local_private_key: bytes,
-                 local_node_id: NodeID,
-                 node_db: NodeDBAPI,
-                 identity_scheme_registry: IdentitySchemeRegistry,
-                 vote_receive_channel: ReceiveChannel[EndpointVote],
-                 ) -> None:
+    def __init__(
+        self,
+        local_private_key: bytes,
+        local_node_id: NodeID,
+        node_db: NodeDBAPI,
+        identity_scheme_registry: IdentitySchemeRegistry,
+        vote_receive_channel: ReceiveChannel[EndpointVote],
+    ) -> None:
         self.local_private_key = local_private_key
         self.local_node_id = local_node_id
         self.node_db = node_db
@@ -63,21 +46,18 @@ class EndpointTracker(Service):
 
     async def handle_vote(self, vote: EndpointVote) -> None:
         self.logger.debug(
-            "Received vote for %s from %s",
-            vote.endpoint,
-            encode_hex(vote.node_id),
+            "Received vote for %s from %s", vote.endpoint, encode_hex(vote.node_id)
         )
 
         current_enr = self.node_db.get_enr(self.local_node_id)
 
         # TODO: majority voting, discard old votes
         are_endpoint_keys_present = (
-            IP_V4_ADDRESS_ENR_KEY in current_enr and
-            UDP_PORT_ENR_KEY in current_enr
+            IP_V4_ADDRESS_ENR_KEY in current_enr and UDP_PORT_ENR_KEY in current_enr
         )
         enr_needs_update = not are_endpoint_keys_present or (
-            vote.endpoint.ip_address != current_enr[IP_V4_ADDRESS_ENR_KEY] or
-            vote.endpoint.port != current_enr[UDP_PORT_ENR_KEY]
+            vote.endpoint.ip_address != current_enr[IP_V4_ADDRESS_ENR_KEY]
+            or vote.endpoint.port != current_enr[UDP_PORT_ENR_KEY]
         )
         if enr_needs_update:
             kv_pairs = merge(
@@ -85,7 +65,7 @@ class EndpointTracker(Service):
                 {
                     IP_V4_ADDRESS_ENR_KEY: vote.endpoint.ip_address,
                     UDP_PORT_ENR_KEY: vote.endpoint.port,
-                }
+                },
             )
             new_unsigned_enr = UnsignedENR(
                 kv_pairs=kv_pairs,

@@ -1,60 +1,44 @@
-from abc import (
-    ABC,
-    abstractmethod,
-)
+from abc import ABC, abstractmethod
 import base64
 import collections
+import operator
 from typing import (
-    Any,
     AbstractSet,
+    Any,
     Iterable,
     Iterator,
     Mapping,
+    Sequence,
     Tuple,
     Type,
-    Sequence,
     ValuesView,
 )
-import operator
 
+from eth_utils import ValidationError, to_dict
+from eth_utils.toolz import cons, interleave
 import rlp
-from rlp.exceptions import (
-    DeserializationError,
-)
-from rlp.sedes import (
-    big_endian_int,
-    binary,
-    Binary,
-    raw,
-)
+from rlp.exceptions import DeserializationError
+from rlp.sedes import Binary, big_endian_int, binary, raw
 
-from eth_utils import (
-    to_dict,
-    ValidationError,
-)
-from eth_utils.toolz import (
-    cons,
-    interleave,
-)
-
+from ddht.constants import ENR_REPR_PREFIX, IP_V4_SIZE, IP_V6_SIZE, MAX_ENR_SIZE
 from ddht.identity_schemes import (
-    default_identity_scheme_registry as default_id_scheme_registry,
     IdentityScheme,
     IdentitySchemeRegistry,
+    default_identity_scheme_registry as default_id_scheme_registry,
 )
 from ddht.typing import NodeID
-from ddht.constants import ENR_REPR_PREFIX, MAX_ENR_SIZE, IP_V4_SIZE, IP_V6_SIZE
 
 
 class ENRContentSedes:
-
     @classmethod
     def serialize(cls, enr: "BaseENR") -> Tuple[bytes, ...]:
         serialized_sequence_number = big_endian_int.serialize(enr.sequence_number)
 
         sorted_key_value_pairs = sorted(enr.items(), key=operator.itemgetter(0))
 
-        serialized_keys = tuple(binary.serialize(key) for key, _ in sorted_key_value_pairs)
+        serialized_keys = tuple(
+            binary.serialize(key) for key, _ in sorted_key_value_pairs
+        )
         values_and_serializers = tuple(
             (value, ENR_KEY_SEDES_MAPPING.get(key, FALLBACK_ENR_VALUE_SEDES))
             for key, value in sorted_key_value_pairs
@@ -63,19 +47,19 @@ class ENRContentSedes:
             value_serializer.serialize(value)
             for value, value_serializer in values_and_serializers
         )
-        return tuple(cons(
-            serialized_sequence_number,
-            interleave((
-                serialized_keys,
-                serialized_values,
-            ))
-        ))
+        return tuple(
+            cons(
+                serialized_sequence_number,
+                interleave((serialized_keys, serialized_values)),
+            )
+        )
 
     @classmethod
-    def deserialize(cls,
-                    serialized_enr: Sequence[bytes],
-                    identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
-                    ) -> "UnsignedENR":
+    def deserialize(
+        cls,
+        serialized_enr: Sequence[bytes],
+        identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
+    ) -> "UnsignedENR":
         cls._validate_serialized_length(serialized_enr)
         sequence_number = big_endian_int.deserialize(serialized_enr[0])
         kv_pairs = cls._deserialize_kv_pairs(serialized_enr)
@@ -83,21 +67,26 @@ class ENRContentSedes:
 
     @classmethod
     @to_dict
-    def _deserialize_kv_pairs(cls, serialized_enr: Sequence[bytes]) -> Iterable[Tuple[bytes, Any]]:
+    def _deserialize_kv_pairs(
+        cls, serialized_enr: Sequence[bytes]
+    ) -> Iterable[Tuple[bytes, Any]]:
         serialized_keys = serialized_enr[1::2]
         serialized_values = serialized_enr[2::2]
 
-        keys = tuple(binary.deserialize(serialized_key) for serialized_key in serialized_keys)
+        keys = tuple(
+            binary.deserialize(serialized_key) for serialized_key in serialized_keys
+        )
         cls._validate_key_uniqueness(keys, serialized_enr)
         cls._validate_key_order(keys, serialized_enr)
 
         value_deserializers = tuple(
-            ENR_KEY_SEDES_MAPPING.get(key, FALLBACK_ENR_VALUE_SEDES)
-            for key in keys
+            ENR_KEY_SEDES_MAPPING.get(key, FALLBACK_ENR_VALUE_SEDES) for key in keys
         )
         values = tuple(
             value_deserializer.deserialize(serialized_value)
-            for value_deserializer, serialized_value in zip(value_deserializers, serialized_values)
+            for value_deserializer, serialized_value in zip(
+                value_deserializers, serialized_values
+            )
         )
 
         return dict(zip(keys, values))
@@ -106,20 +95,18 @@ class ENRContentSedes:
     def _validate_serialized_length(cls, serialized_enr: Sequence[bytes]) -> None:
         if len(serialized_enr) < 1:
             raise DeserializationError(
-                "ENR content must consist of at least a sequence number",
-                serialized_enr,
+                "ENR content must consist of at least a sequence number", serialized_enr
             )
         num_keys_and_values = len(serialized_enr) - 1
         if num_keys_and_values % 2 != 0:
             raise DeserializationError(
-                "ENR must have exactly one value for each key",
-                serialized_enr,
+                "ENR must have exactly one value for each key", serialized_enr
             )
 
     @classmethod
-    def _validate_key_uniqueness(cls,
-                                 keys: Sequence[bytes],
-                                 serialized_enr: Sequence[bytes]) -> None:
+    def _validate_key_uniqueness(
+        cls, keys: Sequence[bytes], serialized_enr: Sequence[bytes]
+    ) -> None:
         duplicates = {key for key, num in collections.Counter(keys).items() if num > 1}
         if duplicates:
             raise DeserializationError(
@@ -128,16 +115,16 @@ class ENRContentSedes:
             )
 
     @classmethod
-    def _validate_key_order(cls, keys: Sequence[bytes], serialized_enr: Sequence[bytes]) -> None:
+    def _validate_key_order(
+        cls, keys: Sequence[bytes], serialized_enr: Sequence[bytes]
+    ) -> None:
         if keys != tuple(sorted(keys)):
             raise DeserializationError(
-                f"ENR keys are not sorted: {b', '.join(keys).decode()}",
-                serialized_enr,
+                f"ENR keys are not sorted: {b', '.join(keys).decode()}", serialized_enr
             )
 
 
 class ENRSedes:
-
     @classmethod
     def serialize(cls, enr: "ENR") -> Tuple[bytes, ...]:
         serialized_signature = binary.serialize(enr.signature)
@@ -145,15 +132,15 @@ class ENRSedes:
         return (serialized_signature,) + serialized_content
 
     @classmethod
-    def deserialize(cls,
-                    serialized_enr: Sequence[bytes],
-                    identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
-                    ) -> "ENR":
+    def deserialize(
+        cls,
+        serialized_enr: Sequence[bytes],
+        identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
+    ) -> "ENR":
         cls._validate_serialized_length(serialized_enr)
         signature = binary.deserialize(serialized_enr[0])
         unsigned_enr = ENRContentSedes.deserialize(
-            serialized_enr[1:],
-            identity_scheme_registry=identity_scheme_registry,
+            serialized_enr[1:], identity_scheme_registry=identity_scheme_registry
         )
         return ENR(
             unsigned_enr.sequence_number,
@@ -173,24 +160,23 @@ class ENRSedes:
         num_keys_and_values = len(serialized_enr) - 2
         if num_keys_and_values % 2 != 0:
             raise DeserializationError(
-                "ENR must have exactly one value for each key",
-                serialized_enr,
+                "ENR must have exactly one value for each key", serialized_enr
             )
 
         byte_size = sum(len(element) for element in serialized_enr)
         if byte_size > MAX_ENR_SIZE:
             raise DeserializationError(
-                f"ENRs must not be larger than {MAX_ENR_SIZE} bytes",
-                serialized_enr,
+                f"ENRs must not be larger than {MAX_ENR_SIZE} bytes", serialized_enr
             )
 
 
 class BaseENR(Mapping[bytes, Any], ABC):
-    def __init__(self,
-                 sequence_number: int,
-                 kv_pairs: Mapping[bytes, Any],
-                 identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
-                 ) -> None:
+    def __init__(
+        self,
+        sequence_number: int,
+        kv_pairs: Mapping[bytes, Any],
+        identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
+    ) -> None:
         self._sequence_number = sequence_number
         self._kv_pairs = dict(kv_pairs)
         self._identity_scheme = self._pick_identity_scheme(identity_scheme_registry)
@@ -202,9 +188,9 @@ class BaseENR(Mapping[bytes, Any], ABC):
         if self.sequence_number < 0:
             raise ValidationError("Sequence number is negative")
 
-    def _pick_identity_scheme(self,
-                              identity_scheme_registry: IdentitySchemeRegistry,
-                              ) -> Type[IdentityScheme]:
+    def _pick_identity_scheme(
+        self, identity_scheme_registry: IdentitySchemeRegistry
+    ) -> Type[IdentityScheme]:
         try:
             identity_scheme_id = self[IDENTITY_SCHEME_ENR_KEY]
         except KeyError:
@@ -213,7 +199,9 @@ class BaseENR(Mapping[bytes, Any], ABC):
         try:
             return identity_scheme_registry[identity_scheme_id]
         except KeyError:
-            raise ValidationError(f"ENR uses unsupported identity scheme {identity_scheme_id}")
+            raise ValidationError(
+                f"ENR uses unsupported identity scheme {identity_scheme_id}"
+            )
 
     @property
     def identity_scheme(self) -> Type[IdentityScheme]:
@@ -283,7 +271,6 @@ class BaseENR(Mapping[bytes, Any], ABC):
 
 
 class UnsignedENR(BaseENR, ENRContentSedes):
-
     def to_signed_enr(self, private_key: bytes) -> "ENR":
         signature = self.identity_scheme.create_enr_signature(self, private_key)
 
@@ -301,34 +288,35 @@ class UnsignedENR(BaseENR, ENRContentSedes):
         return other.__class__ is self.__class__ and dict(other) == dict(self)
 
     def __hash__(self) -> int:
-        return hash((
-            self.sequence_number,
-            tuple(self.items()),
-        ))
+        return hash((self.sequence_number, tuple(self.items())))
 
 
 class ENR(BaseENR, ENRSedes):
-    def __init__(self,
-                 sequence_number: int,
-                 kv_pairs: Mapping[bytes, Any],
-                 signature: bytes,
-                 identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
-                 ) -> None:
+    def __init__(
+        self,
+        sequence_number: int,
+        kv_pairs: Mapping[bytes, Any],
+        signature: bytes,
+        identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
+    ) -> None:
         self._signature = signature
         super().__init__(sequence_number, kv_pairs, identity_scheme_registry)
 
     @classmethod
-    def from_repr(cls,
-                  representation: str,
-                  identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
-                  ) -> "ENR":
+    def from_repr(
+        cls,
+        representation: str,
+        identity_scheme_registry: IdentitySchemeRegistry = default_id_scheme_registry,
+    ) -> "ENR":
         if not representation.startswith("enr:"):
             raise ValidationError(f"Invalid ENR representation: {representation}")
 
         unpadded_b64 = representation[4:]
         padded_b64 = unpadded_b64 + "=" * (4 - len(unpadded_b64) % 4)
         rlp_encoded = base64.urlsafe_b64decode(padded_b64)
-        return rlp.decode(rlp_encoded, cls, identity_scheme_registry=identity_scheme_registry)
+        return rlp.decode(
+            rlp_encoded, cls, identity_scheme_registry=identity_scheme_registry
+        )
 
     @property
     def signature(self) -> bytes:
@@ -339,26 +327,19 @@ class ENR(BaseENR, ENRSedes):
 
     def __eq__(self, other: Any) -> bool:
         return (
-            other.__class__ is self.__class__ and
-            other.sequence_number == self.sequence_number and
-            dict(other) == dict(self) and
-            other.signature == self.signature
+            other.__class__ is self.__class__
+            and other.sequence_number == self.sequence_number
+            and dict(other) == dict(self)
+            and other.signature == self.signature
         )
 
     def __hash__(self) -> int:
-        return hash((
-            self.signature,
-            self.sequence_number,
-            tuple(self.items()),
-        ))
+        return hash((self.signature, self.sequence_number, tuple(self.items())))
 
     def __repr__(self) -> str:
         base64_rlp = base64.urlsafe_b64encode(rlp.encode(self))
         unpadded_base64_rlp = base64_rlp.rstrip(b"=")
-        return "".join((
-            ENR_REPR_PREFIX,
-            unpadded_base64_rlp.decode("ASCII"),
-        ))
+        return "".join((ENR_REPR_PREFIX, unpadded_base64_rlp.decode("ASCII")))
 
 
 IDENTITY_SCHEME_ENR_KEY = b"id"

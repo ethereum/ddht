@@ -1,22 +1,12 @@
 import collections
 import math
 import operator
-from typing import (
-    DefaultDict,
-    Deque,
-    NamedTuple,
-    Tuple,
-)
+from typing import DefaultDict, Deque, NamedTuple, Tuple
 
-from eth_utils import (
-    encode_hex,
-)
-from eth_utils import toolz
+from eth_utils import encode_hex, toolz
 
 from ddht.enr import ENR
-from ddht.v5.typing import (
-    Topic,
-)
+from ddht.v5.typing import Topic
 
 
 class Ad(NamedTuple):
@@ -25,13 +15,15 @@ class Ad(NamedTuple):
 
 
 class TopicTable:
-    def __init__(self, max_queue_size: int, max_total_size: int, target_ad_lifetime: float) -> None:
+    def __init__(
+        self, max_queue_size: int, max_total_size: int, target_ad_lifetime: float
+    ) -> None:
         self.max_queue_size = max_queue_size
         self.max_total_size = max_total_size
         self.target_ad_lifetime = target_ad_lifetime
 
         self.topic_queues: DefaultDict[Topic, Deque[Ad]] = collections.defaultdict(
-            lambda: collections.deque(maxlen=self.max_queue_size),
+            lambda: collections.deque(maxlen=self.max_queue_size)
         )
         self.total_size = 0
 
@@ -74,10 +66,10 @@ class TopicTable:
         else:
             oldest_registration_time_table = -math.inf
 
-        next_registration_time = max(
-            oldest_registration_time_queue,
-            oldest_registration_time_table,
-        ) + self.target_ad_lifetime
+        next_registration_time = (
+            max(oldest_registration_time_queue, oldest_registration_time_table)
+            + self.target_ad_lifetime
+        )
         return max(next_registration_time - current_time, 0)
 
     def register(self, topic: Topic, enr: ENR, current_time: float) -> None:
@@ -91,10 +83,14 @@ class TopicTable:
 
         wait_time = self.get_wait_time(topic, current_time)
         if wait_time > 0:
-            raise ValueError(f"Topic queue or table is full (time to wait: {wait_time})")
+            raise ValueError(
+                f"Topic queue or table is full (time to wait: {wait_time})"
+            )
 
-        present_node_ids = tuple(entry.node_id for entry in self.get_enrs_for_topic(topic))
-        if enr.node_id in present_node_ids[:self.max_queue_size - 1]:
+        present_node_ids = tuple(
+            entry.node_id for entry in self.get_enrs_for_topic(topic)
+        )
+        if enr.node_id in present_node_ids[: self.max_queue_size - 1]:
             raise ValueError(
                 f"Topic queue already contains entry for node {encode_hex(enr.node_id)}"
             )
@@ -104,9 +100,8 @@ class TopicTable:
             queue_with_oldest_ad = min(
                 queues,
                 key=toolz.compose(
-                    operator.attrgetter("registration_time"),
-                    operator.itemgetter(-1),
-                )
+                    operator.attrgetter("registration_time"), operator.itemgetter(-1)
+                ),
             )
             queue_with_oldest_ad.pop()
             self.total_size -= 1

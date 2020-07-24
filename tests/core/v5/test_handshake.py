@@ -1,6 +1,4 @@
-from eth_utils import (
-    keccak,
-)
+from eth_utils import keccak
 
 from ddht.tools.factories.discovery import (
     AuthTagPacketFactory,
@@ -10,15 +8,20 @@ from ddht.tools.factories.discovery import (
     PingMessageFactory,
     WhoAreYouPacketFactory,
 )
-from ddht.tools.factories.keys import (
-    PrivateKeyFactory,
-)
+from ddht.tools.factories.keys import PrivateKeyFactory
 
 
 def assert_session_keys_equal(initiator_session_keys, recipient_session_keys):
-    assert initiator_session_keys.auth_response_key == recipient_session_keys.auth_response_key
-    assert initiator_session_keys.encryption_key == recipient_session_keys.decryption_key
-    assert initiator_session_keys.decryption_key == recipient_session_keys.encryption_key
+    assert (
+        initiator_session_keys.auth_response_key
+        == recipient_session_keys.auth_response_key
+    )
+    assert (
+        initiator_session_keys.encryption_key == recipient_session_keys.decryption_key
+    )
+    assert (
+        initiator_session_keys.decryption_key == recipient_session_keys.encryption_key
+    )
 
 
 def test_initiator_expects_who_are_you_response():
@@ -27,12 +30,12 @@ def test_initiator_expects_who_are_you_response():
     unexpected_token = keccak(expected_token)
 
     assert not handshake_initiator.is_response_packet(AuthTagPacketFactory())
-    assert not handshake_initiator.is_response_packet(WhoAreYouPacketFactory(
-        token=unexpected_token,
-    ))
-    assert handshake_initiator.is_response_packet(WhoAreYouPacketFactory(
-        token=expected_token,
-    ))
+    assert not handshake_initiator.is_response_packet(
+        WhoAreYouPacketFactory(token=unexpected_token)
+    )
+    assert handshake_initiator.is_response_packet(
+        WhoAreYouPacketFactory(token=expected_token)
+    )
 
 
 def test_successful_handshake():
@@ -52,13 +55,15 @@ def test_successful_handshake():
         local_private_key=recipient_private_key,
         local_enr=recipient_enr,
         remote_enr=initiator_enr,
-        initiating_packet_auth_tag=initiator.first_packet_to_send.auth_tag
+        initiating_packet_auth_tag=initiator.first_packet_to_send.auth_tag,
     )
 
     initiator_result = initiator.complete_handshake(recipient.first_packet_to_send)
     recipient_result = recipient.complete_handshake(initiator_result.auth_header_packet)
 
-    assert_session_keys_equal(initiator_result.session_keys, recipient_result.session_keys)
+    assert_session_keys_equal(
+        initiator_result.session_keys, recipient_result.session_keys
+    )
 
     assert initiator_result.message is None
     assert initiator_result.enr is None
@@ -86,7 +91,7 @@ def test_successful_handshake_with_enr_update():
     recipient = HandshakeRecipientFactory(
         local_private_key=recipient_private_key,
         remote_enr=old_initiator_enr,
-        initiating_packet_auth_tag=initiator.first_packet_to_send.auth_tag
+        initiating_packet_auth_tag=initiator.first_packet_to_send.auth_tag,
     )
 
     initiator_result = initiator.complete_handshake(recipient.first_packet_to_send)
@@ -112,7 +117,7 @@ def test_successful_handshake_with_new_enr():
         local_enr=recipient_enr,
         remote_enr=None,
         remote_node_id=initiator_enr.node_id,
-        initiating_packet_auth_tag=initiator.first_packet_to_send.auth_tag
+        initiating_packet_auth_tag=initiator.first_packet_to_send.auth_tag,
     )
 
     initiator_result = initiator.complete_handshake(recipient.first_packet_to_send)

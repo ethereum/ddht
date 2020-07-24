@@ -1,73 +1,42 @@
 import hashlib
 import secrets
+from typing import Callable, NamedTuple, Optional, Tuple, Union, cast
 
-from typing import (
-    cast,
-    Callable,
-    NamedTuple,
-    Optional,
-    Tuple,
-    Union,
-)
-
-import rlp
-from rlp.sedes import (
-    big_endian_int,
-)
-from rlp.codec import (
-    consume_length_prefix,
-)
-from rlp.exceptions import (
-    DecodingError,
-    DeserializationError,
-)
-
+from eth_typing import Hash32
 from eth_utils import (
+    ValidationError,
     big_endian_to_int,
     encode_hex,
     is_bytes,
     is_list_like,
-    ValidationError,
 )
-from eth_typing import (
-    Hash32,
-)
+import rlp
+from rlp.codec import consume_length_prefix
+from rlp.exceptions import DecodingError, DeserializationError
+from rlp.sedes import big_endian_int
 
-from eth.validation import (
-    validate_length,
-    validate_length_lte,
+from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
+from ddht.enr import ENR
+from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
+from ddht.v5.constants import (
+    AUTH_RESPONSE_VERSION,
+    AUTH_SCHEME_NAME,
+    ID_NONCE_SIZE,
+    MAGIC_SIZE,
+    NONCE_SIZE,
+    RANDOM_ENCRYPTED_DATA_SIZE,
+    TAG_SIZE,
+    WHO_ARE_YOU_MAGIC_SUFFIX,
+    ZERO_NONCE,
 )
-
-from ddht.enr import (
-    ENR,
-)
-from ddht.v5.encryption import (
-    aesgcm_decrypt,
-    aesgcm_encrypt,
-    validate_nonce,
-)
+from ddht.v5.encryption import aesgcm_decrypt, aesgcm_encrypt, validate_nonce
 from ddht.v5.messages import (
     BaseMessage,
     MessageTypeRegistry,
     default_message_type_registry,
 )
-from ddht.v5.constants import (
-    AUTH_RESPONSE_VERSION,
-    AUTH_SCHEME_NAME,
-    ID_NONCE_SIZE,
-    NONCE_SIZE,
-    RANDOM_ENCRYPTED_DATA_SIZE,
-    TAG_SIZE,
-    MAGIC_SIZE,
-    ZERO_NONCE,
-    WHO_ARE_YOU_MAGIC_SUFFIX,
-)
-from ddht.v5.typing import (
-    Tag,
-)
-from ddht.typing import AES128Key, Nonce, IDNonce, NodeID
-
-from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
+from ddht.v5.typing import Tag
+from eth.validation import validate_length, validate_length_lte
 
 
 #
@@ -87,18 +56,19 @@ class AuthHeaderPacket(NamedTuple):
     encrypted_message: bytes
 
     @classmethod
-    def prepare(cls,
-                *,
-                tag: Tag,
-                auth_tag: Nonce,
-                id_nonce: IDNonce,
-                message: BaseMessage,
-                initiator_key: AES128Key,
-                id_nonce_signature: bytes,
-                auth_response_key: AES128Key,
-                enr: Optional[ENR],
-                ephemeral_public_key: bytes,
-                ) -> "AuthHeaderPacket":
+    def prepare(
+        cls,
+        *,
+        tag: Tag,
+        auth_tag: Nonce,
+        id_nonce: IDNonce,
+        message: BaseMessage,
+        initiator_key: AES128Key,
+        id_nonce_signature: bytes,
+        auth_response_key: AES128Key,
+        enr: Optional[ENR],
+        ephemeral_public_key: bytes,
+    ) -> "AuthHeaderPacket":
         encrypted_auth_response = compute_encrypted_auth_response(
             auth_response_key=auth_response_key,
             id_nonce_signature=id_nonce_signature,
@@ -120,12 +90,12 @@ class AuthHeaderPacket(NamedTuple):
         )
 
         return cls(
-            tag=tag,
-            auth_header=auth_header,
-            encrypted_message=encrypted_message,
+            tag=tag, auth_header=auth_header, encrypted_message=encrypted_message
         )
 
-    def decrypt_auth_response(self, auth_response_key: AES128Key) -> Tuple[bytes, Optional[ENR]]:
+    def decrypt_auth_response(
+        self, auth_response_key: AES128Key
+    ) -> Tuple[bytes, Optional[ENR]]:
         """Extract id nonce signature and optional ENR from auth header packet."""
         plain_text = aesgcm_decrypt(
             key=auth_response_key,
@@ -168,7 +138,9 @@ class AuthHeaderPacket(NamedTuple):
             )
 
         if not is_list_like(serialized_enr):
-            raise ValidationError(f"ENR is bytes instead of list: {encode_hex(serialized_enr)}")
+            raise ValidationError(
+                f"ENR is bytes instead of list: {encode_hex(serialized_enr)}"
+            )
 
         if len(serialized_enr) == 0:
             enr = None
@@ -176,14 +148,17 @@ class AuthHeaderPacket(NamedTuple):
             try:
                 enr = ENR.deserialize(serialized_enr)
             except DeserializationError as error:
-                raise ValidationError("ENR in auth response is not properly encoded") from error
+                raise ValidationError(
+                    "ENR in auth response is not properly encoded"
+                ) from error
 
         return id_nonce_signature, enr
 
-    def decrypt_message(self,
-                        key: AES128Key,
-                        message_type_registry: MessageTypeRegistry = default_message_type_registry,
-                        ) -> BaseMessage:
+    def decrypt_message(
+        self,
+        key: AES128Key,
+        message_type_registry: MessageTypeRegistry = default_message_type_registry,
+    ) -> BaseMessage:
         return _decrypt_message(
             key=key,
             auth_tag=self.auth_header.auth_tag,
@@ -193,11 +168,9 @@ class AuthHeaderPacket(NamedTuple):
         )
 
     def to_wire_bytes(self) -> bytes:
-        encoded_packet = b"".join((
-            self.tag,
-            rlp.encode(self.auth_header),
-            self.encrypted_message,
-        ))
+        encoded_packet = b"".join(
+            (self.tag, rlp.encode(self.auth_header), self.encrypted_message)
+        )
         validate_max_packet_size(encoded_packet)
         return encoded_packet
 
@@ -208,42 +181,25 @@ class AuthTagPacket(NamedTuple):
     encrypted_message: bytes
 
     @classmethod
-    def prepare(cls,
-                *,
-                tag: Tag,
-                auth_tag: Nonce,
-                message: BaseMessage,
-                key: AES128Key,
-                ) -> "AuthTagPacket":
+    def prepare(
+        cls, *, tag: Tag, auth_tag: Nonce, message: BaseMessage, key: AES128Key
+    ) -> "AuthTagPacket":
         encrypted_message = compute_encrypted_message(
-            key=key,
-            auth_tag=auth_tag,
-            message=message,
-            authenticated_data=tag,
+            key=key, auth_tag=auth_tag, message=message, authenticated_data=tag
         )
-        return cls(
-            tag=tag,
-            auth_tag=auth_tag,
-            encrypted_message=encrypted_message,
-        )
+        return cls(tag=tag, auth_tag=auth_tag, encrypted_message=encrypted_message)
 
     @classmethod
-    def prepare_random(cls,
-                       *,
-                       tag: Tag,
-                       auth_tag: Nonce,
-                       random_data: bytes,
-                       ) -> "AuthTagPacket":
-        return cls(
-            tag=tag,
-            auth_tag=auth_tag,
-            encrypted_message=random_data,
-        )
+    def prepare_random(
+        cls, *, tag: Tag, auth_tag: Nonce, random_data: bytes
+    ) -> "AuthTagPacket":
+        return cls(tag=tag, auth_tag=auth_tag, encrypted_message=random_data)
 
-    def decrypt_message(self,
-                        key: AES128Key,
-                        message_type_registry: MessageTypeRegistry = default_message_type_registry,
-                        ) -> BaseMessage:
+    def decrypt_message(
+        self,
+        key: AES128Key,
+        message_type_registry: MessageTypeRegistry = default_message_type_registry,
+    ) -> BaseMessage:
         return _decrypt_message(
             key=key,
             auth_tag=self.auth_tag,
@@ -253,11 +209,9 @@ class AuthTagPacket(NamedTuple):
         )
 
     def to_wire_bytes(self) -> bytes:
-        encoded_packet = b"".join((
-            self.tag,
-            rlp.encode(self.auth_tag),
-            self.encrypted_message,
-        ))
+        encoded_packet = b"".join(
+            (self.tag, rlp.encode(self.auth_tag), self.encrypted_message)
+        )
         validate_max_packet_size(encoded_packet)
         return encoded_packet
 
@@ -269,13 +223,14 @@ class WhoAreYouPacket(NamedTuple):
     enr_sequence_number: int
 
     @classmethod
-    def prepare(cls,
-                *,
-                destination_node_id: NodeID,
-                token: Nonce,
-                id_nonce: IDNonce,
-                enr_sequence_number: int,
-                ) -> "WhoAreYouPacket":
+    def prepare(
+        cls,
+        *,
+        destination_node_id: NodeID,
+        token: Nonce,
+        id_nonce: IDNonce,
+        enr_sequence_number: int,
+    ) -> "WhoAreYouPacket":
         magic = compute_who_are_you_magic(destination_node_id)
         return cls(
             magic=magic,
@@ -285,16 +240,9 @@ class WhoAreYouPacket(NamedTuple):
         )
 
     def to_wire_bytes(self) -> bytes:
-        message = rlp.encode((
-            self.token,
-            self.id_nonce,
-            self.enr_sequence_number,
-        ))
+        message = rlp.encode((self.token, self.id_nonce, self.enr_sequence_number))
 
-        encoded_packet = b"".join((
-            self.magic,
-            message,
-        ))
+        encoded_packet = b"".join((self.magic, message))
 
         validate_who_are_you_packet_size(encoded_packet)
         return encoded_packet
@@ -314,18 +262,14 @@ def validate_who_are_you_packet_size(encoded_packet: bytes) -> None:
             f"{MAGIC_SIZE} bytes of magic"
         )
     if len(encoded_packet) - MAGIC_SIZE < 1:
-        raise ValidationError(
-            f"Encoded packet is missing RLP encoded payload section"
-        )
+        raise ValidationError(f"Encoded packet is missing RLP encoded payload section")
 
 
 def validate_message_packet_size(encoded_packet: bytes) -> None:
     validate_max_packet_size(encoded_packet)
     validate_tag_prefix(encoded_packet)
     if len(encoded_packet) - TAG_SIZE < 1:
-        raise ValidationError(
-            f"Message packet is missing RLP encoded auth section"
-        )
+        raise ValidationError(f"Message packet is missing RLP encoded auth section")
 
 
 def validate_max_packet_size(encoded_packet: bytes) -> None:
@@ -359,9 +303,7 @@ def get_packet_decoder(encoded_packet: bytes) -> Callable[[bytes], Packet]:
     # Therefore, we distinguish the two by reading the RLP length prefix and then checking if there
     # is additional data.
     if MAGIC_SIZE != TAG_SIZE:
-        raise Exception(
-            "Invariant: This check works as magic and tag size are equal"
-        )
+        raise Exception("Invariant: This check works as magic and tag size are equal")
     prefix_size = MAGIC_SIZE
     if len(encoded_packet) < prefix_size + 1:
         raise ValidationError(f"Packet is with {len(encoded_packet)} bytes too short")
@@ -369,7 +311,9 @@ def get_packet_decoder(encoded_packet: bytes) -> Callable[[bytes], Packet]:
     try:
         _, _, rlp_size, _ = consume_length_prefix(encoded_packet, MAGIC_SIZE)
     except DecodingError as error:
-        raise ValidationError("RLP section of packet starts with invalid length prefix") from error
+        raise ValidationError(
+            "RLP section of packet starts with invalid length prefix"
+        ) from error
 
     expected_who_are_you_size = prefix_size + 1 + rlp_size
     if len(encoded_packet) > expected_who_are_you_size:
@@ -385,7 +329,9 @@ def decode_packet(encoded_packet: bytes) -> Packet:
     return decoder(encoded_packet)
 
 
-def decode_message_packet(encoded_packet: bytes) -> Union[AuthTagPacket, AuthHeaderPacket]:
+def decode_message_packet(
+    encoded_packet: bytes
+) -> Union[AuthTagPacket, AuthHeaderPacket]:
     validate_message_packet_size(encoded_packet)
 
     tag = _decode_tag(encoded_packet)
@@ -395,15 +341,11 @@ def decode_message_packet(encoded_packet: bytes) -> Union[AuthTagPacket, AuthHea
     packet: Union[AuthTagPacket, AuthHeaderPacket]
     if is_bytes(auth):
         packet = AuthTagPacket(
-            tag=tag,
-            auth_tag=cast(Nonce, auth),
-            encrypted_message=encrypted_message,
+            tag=tag, auth_tag=cast(Nonce, auth), encrypted_message=encrypted_message
         )
     elif isinstance(auth, AuthHeader):
         packet = AuthHeaderPacket(
-            tag=tag,
-            auth_header=auth,
-            encrypted_message=encrypted_message,
+            tag=tag, auth_header=auth, encrypted_message=encrypted_message
         )
     else:
         raise Exception("Unreachable: decode_auth returns either Nonce or AuthHeader")
@@ -417,10 +359,7 @@ def decode_who_are_you_packet(encoded_packet: bytes) -> WhoAreYouPacket:
     magic = _decode_who_are_you_magic(encoded_packet)
     token, id_nonce, enr_seq = _decode_who_are_you_payload(encoded_packet)
     return WhoAreYouPacket(
-        magic=magic,
-        token=token,
-        id_nonce=id_nonce,
-        enr_sequence_number=enr_seq,
+        magic=magic, token=token, id_nonce=id_nonce, enr_sequence_number=enr_seq
     )
 
 
@@ -430,9 +369,13 @@ def _decode_tag(encoded_packet: bytes) -> Tag:
 
 def _decode_auth(encoded_packet: bytes) -> Tuple[Union[AuthHeader, Nonce], int]:
     try:
-        decoded_auth, _, message_start_index = rlp.codec.consume_item(encoded_packet, TAG_SIZE)
+        decoded_auth, _, message_start_index = rlp.codec.consume_item(
+            encoded_packet, TAG_SIZE
+        )
     except DecodingError as error:
-        raise ValidationError("Packet authentication section is not proper RLP") from error
+        raise ValidationError(
+            "Packet authentication section is not proper RLP"
+        ) from error
 
     if is_bytes(decoded_auth):
         validate_nonce(decoded_auth)
@@ -441,7 +384,9 @@ def _decode_auth(encoded_packet: bytes) -> Tuple[Union[AuthHeader, Nonce], int]:
         validate_length(decoded_auth, 5, "auth header")
         for index, element in enumerate(decoded_auth):
             if not is_bytes(element):
-                raise ValidationError(f"Element {index} in auth header is not bytes: {element}")
+                raise ValidationError(
+                    f"Element {index} in auth header is not bytes: {element}"
+                )
         auth_header = AuthHeader(
             auth_tag=decoded_auth[0],
             id_nonce=decoded_auth[1],
@@ -487,14 +432,17 @@ def _decode_who_are_you_payload(encoded_packet: bytes) -> Tuple[Nonce, IDNonce, 
 #
 # Packet data computation
 #
-def compute_encrypted_auth_response(auth_response_key: AES128Key,
-                                    id_nonce_signature: bytes,
-                                    enr: Optional[ENR],
-                                    ) -> bytes:
+def compute_encrypted_auth_response(
+    auth_response_key: AES128Key, id_nonce_signature: bytes, enr: Optional[ENR]
+) -> bytes:
     if enr:
-        plain_text_auth_response = rlp.encode([AUTH_RESPONSE_VERSION, id_nonce_signature, enr])
+        plain_text_auth_response = rlp.encode(
+            [AUTH_RESPONSE_VERSION, id_nonce_signature, enr]
+        )
     else:
-        plain_text_auth_response = rlp.encode([AUTH_RESPONSE_VERSION, id_nonce_signature, []])
+        plain_text_auth_response = rlp.encode(
+            [AUTH_RESPONSE_VERSION, id_nonce_signature, []]
+        )
 
     encrypted_auth_response = aesgcm_encrypt(
         key=auth_response_key,
@@ -505,11 +453,9 @@ def compute_encrypted_auth_response(auth_response_key: AES128Key,
     return encrypted_auth_response
 
 
-def compute_encrypted_message(key: AES128Key,
-                              auth_tag: Nonce,
-                              message: BaseMessage,
-                              authenticated_data: bytes,
-                              ) -> bytes:
+def compute_encrypted_message(
+    key: AES128Key, auth_tag: Nonce, message: BaseMessage, authenticated_data: bytes
+) -> bytes:
     encrypted_message = aesgcm_encrypt(
         key=key,
         nonce=auth_tag,
@@ -527,12 +473,13 @@ def compute_who_are_you_magic(destination_node_id: NodeID) -> Hash32:
 #
 # Packet decryption
 #
-def _decrypt_message(key: AES128Key,
-                     auth_tag: Nonce,
-                     encrypted_message: bytes,
-                     authenticated_data: bytes,
-                     message_type_registry: MessageTypeRegistry,
-                     ) -> BaseMessage:
+def _decrypt_message(
+    key: AES128Key,
+    auth_tag: Nonce,
+    encrypted_message: bytes,
+    authenticated_data: bytes,
+    message_type_registry: MessageTypeRegistry,
+) -> BaseMessage:
     plain_text = aesgcm_decrypt(
         key=key,
         nonce=auth_tag,

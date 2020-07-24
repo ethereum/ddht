@@ -1,49 +1,31 @@
+from eth_utils import ValidationError, decode_hex
+from hypothesis import given, strategies as st
 import pytest
-
-from hypothesis import (
-    given,
-    strategies as st,
-)
-
-from eth_utils import (
-    decode_hex,
-    ValidationError,
-)
-
 import rlp
 
-from ddht.v5.packets import (
-    AuthTagPacket,
-    AuthHeader,
-    AuthHeaderPacket,
-    WhoAreYouPacket,
-    decode_message_packet,
-    decode_packet,
-    decode_who_are_you_packet,
-)
-from ddht.v5.constants import (
-    NONCE_SIZE,
-    ID_NONCE_SIZE,
-    TAG_SIZE,
-    AUTH_SCHEME_NAME,
-    MAGIC_SIZE,
-)
-
+from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
 from ddht.tools.factories import (
     AuthHeaderFactory,
     AuthHeaderPacketFactory,
     AuthTagPacketFactory,
     WhoAreYouPacketFactory,
 )
-
-from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
-
-from ddht.tools.v5_strategies import (
-    enr_seq_st,
-    id_nonce_st,
-    magic_st,
-    nonce_st,
-    tag_st,
+from ddht.tools.v5_strategies import enr_seq_st, id_nonce_st, magic_st, nonce_st, tag_st
+from ddht.v5.constants import (
+    AUTH_SCHEME_NAME,
+    ID_NONCE_SIZE,
+    MAGIC_SIZE,
+    NONCE_SIZE,
+    TAG_SIZE,
+)
+from ddht.v5.packets import (
+    AuthHeader,
+    AuthHeaderPacket,
+    AuthTagPacket,
+    WhoAreYouPacket,
+    decode_message_packet,
+    decode_packet,
+    decode_who_are_you_packet,
 )
 
 # arbitrary as we're not working with a particular identity scheme
@@ -62,9 +44,7 @@ public_key_st = st.binary(min_size=33, max_size=33)
 def test_auth_tag_packet_encoding_decoding(tag, auth_tag, encrypted_message_size):
     encrypted_message = b"\x00" * encrypted_message_size
     original_packet = AuthTagPacketFactory(
-        tag=tag,
-        auth_tag=auth_tag,
-        encrypted_message=encrypted_message,
+        tag=tag, auth_tag=auth_tag, encrypted_message=encrypted_message
     )
     encoded_packet = original_packet.to_wire_bytes()
     decoded_packet = decode_message_packet(encoded_packet)
@@ -74,7 +54,8 @@ def test_auth_tag_packet_encoding_decoding(tag, auth_tag, encrypted_message_size
 
 def test_oversize_auth_tag_packet_encoding():
     packet = AuthTagPacketFactory(
-        encrypted_message=b"\x00" * (DISCOVERY_MAX_PACKET_SIZE - (1 + TAG_SIZE) - NONCE_SIZE + 1),
+        encrypted_message=b"\x00"
+        * (DISCOVERY_MAX_PACKET_SIZE - (1 + TAG_SIZE) - NONCE_SIZE + 1)
     )
     with pytest.raises(ValidationError):
         packet.to_wire_bytes()
@@ -89,22 +70,28 @@ def test_oversize_auth_tag_packet_encoding():
     encrypted_message_size=st.integers(
         min_value=0,
         # account for various RLP prefixes in auth header and assume max length for all entries
-        max_value=DISCOVERY_MAX_PACKET_SIZE - TAG_SIZE - sum((
-            2,  # rlp list prefix
-            1 + NONCE_SIZE,  # tag
-            1 + len(AUTH_SCHEME_NAME),  # auth scheme name
-            1 + ID_NONCE_SIZE,  # id nonce
-            1 + 33,  # public_key
-            1 + 32,  # encrypted auth response
-        ))
+        max_value=DISCOVERY_MAX_PACKET_SIZE
+        - TAG_SIZE
+        - sum(
+            (
+                2,  # rlp list prefix
+                1 + NONCE_SIZE,  # tag
+                1 + len(AUTH_SCHEME_NAME),  # auth scheme name
+                1 + ID_NONCE_SIZE,  # id nonce
+                1 + 33,  # public_key
+                1 + 32,  # encrypted auth response
+            )
+        ),
     ),
 )
-def test_auth_header_packet_encoding_decoding(tag,
-                                              auth_tag,
-                                              id_nonce,
-                                              ephemeral_public_key,
-                                              encrypted_auth_response,
-                                              encrypted_message_size):
+def test_auth_header_packet_encoding_decoding(
+    tag,
+    auth_tag,
+    id_nonce,
+    ephemeral_public_key,
+    encrypted_auth_response,
+    encrypted_message_size,
+):
     auth_header = AuthHeaderFactory(
         auth_tag=auth_tag,
         id_nonce=id_nonce,
@@ -113,9 +100,7 @@ def test_auth_header_packet_encoding_decoding(tag,
     )
     encrypted_message = b"\x00" * encrypted_message_size
     original_packet = AuthHeaderPacketFactory(
-        tag=tag,
-        auth_header=auth_header,
-        encrypted_message=encrypted_message,
+        tag=tag, auth_header=auth_header, encrypted_message=encrypted_message
     )
     encoded_packet = original_packet.to_wire_bytes()
     decoded_packet = decode_message_packet(encoded_packet)
@@ -129,140 +114,125 @@ def test_oversize_auth_header_packet_encoding():
     encrypted_message_size = DISCOVERY_MAX_PACKET_SIZE - TAG_SIZE - header_size + 1
     encrypted_message = b"\x00" * encrypted_message_size
     packet = AuthHeaderPacketFactory(
-        auth_header=auth_header,
-        encrypted_message=encrypted_message,
+        auth_header=auth_header, encrypted_message=encrypted_message
     )
     with pytest.raises(ValidationError):
         packet.to_wire_bytes()
 
 
-@pytest.mark.parametrize("encoded_packet", (
-    b"",  # empty
-    b"\x00" * TAG_SIZE,  # no auth section
-    b"\x00" * 500,  # invalid RLP auth section
-    # auth header with too few elements
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        AUTH_SCHEME_NAME,
-        b"",
-    )),
-    # auth header with too many elements
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        AUTH_SCHEME_NAME,
-        b"",
-        b"",
-        b"",
-    )),
-    # auth header with invalid tag
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * (NONCE_SIZE - 1),
-        b"\x00" * ID_NONCE_SIZE,
-        AUTH_SCHEME_NAME,
-        b"",
-        b"",
-    )),
-    # auth header with invalid id nonce
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * (NONCE_SIZE - 1),
-        b"\x00" * (ID_NONCE_SIZE - 1),
-        AUTH_SCHEME_NAME,
-        b"",
-        b"",
-    )),
-    # auth header with wrong auth scheme
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        b"no-gcm",
-        b"",
-        b"",
-    )),
-    # auth header with tag being a list
-    b"\x00" * TAG_SIZE + rlp.encode((
-        [b"\x00"] * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        b"gcm",
-        b"",
-        b"",
-    )),
-    # auth header with id nonce being a list
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        [b"\x00"] * ID_NONCE_SIZE,
-        b"gcm",
-        b"",
-        b"",
-    )),
-    # auth header with public key being a list
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        b"gcm",
-        [b""],
-        b"",
-    )),
-    # auth header with auth response being a list
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        b"gcm",
-        b"",
-        [b""],
-    )),
-    # auth header with oversized message
-    b"\x00" * TAG_SIZE + rlp.encode((
-        b"\x00" * NONCE_SIZE,
-        b"\x00" * ID_NONCE_SIZE,
-        b"gcm",
-        b"",
-        b"",
-    )) + b"\x00" * 2000,
-
-    # auth tag with invalid size
-    b"\x00" * TAG_SIZE + rlp.encode(b"\x00" * (NONCE_SIZE - 1)),
-    # auth tag with oversized message
-    b"\x00" * TAG_SIZE + rlp.encode(b"\x00" * NONCE_SIZE) + b"\x00" * 2000,
-))
+@pytest.mark.parametrize(
+    "encoded_packet",
+    (
+        b"",  # empty
+        b"\x00" * TAG_SIZE,  # no auth section
+        b"\x00" * 500,  # invalid RLP auth section
+        # auth header with too few elements
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (b"\x00" * NONCE_SIZE, b"\x00" * ID_NONCE_SIZE, AUTH_SCHEME_NAME, b"")
+        ),
+        # auth header with too many elements
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (
+                b"\x00" * NONCE_SIZE,
+                b"\x00" * ID_NONCE_SIZE,
+                AUTH_SCHEME_NAME,
+                b"",
+                b"",
+                b"",
+            )
+        ),
+        # auth header with invalid tag
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (
+                b"\x00" * (NONCE_SIZE - 1),
+                b"\x00" * ID_NONCE_SIZE,
+                AUTH_SCHEME_NAME,
+                b"",
+                b"",
+            )
+        ),
+        # auth header with invalid id nonce
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (
+                b"\x00" * (NONCE_SIZE - 1),
+                b"\x00" * (ID_NONCE_SIZE - 1),
+                AUTH_SCHEME_NAME,
+                b"",
+                b"",
+            )
+        ),
+        # auth header with wrong auth scheme
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (b"\x00" * NONCE_SIZE, b"\x00" * ID_NONCE_SIZE, b"no-gcm", b"", b"")
+        ),
+        # auth header with tag being a list
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            ([b"\x00"] * NONCE_SIZE, b"\x00" * ID_NONCE_SIZE, b"gcm", b"", b"")
+        ),
+        # auth header with id nonce being a list
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (b"\x00" * NONCE_SIZE, [b"\x00"] * ID_NONCE_SIZE, b"gcm", b"", b"")
+        ),
+        # auth header with public key being a list
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (b"\x00" * NONCE_SIZE, b"\x00" * ID_NONCE_SIZE, b"gcm", [b""], b"")
+        ),
+        # auth header with auth response being a list
+        b"\x00" * TAG_SIZE
+        + rlp.encode(
+            (b"\x00" * NONCE_SIZE, b"\x00" * ID_NONCE_SIZE, b"gcm", b"", [b""])
+        ),
+        # auth header with oversized message
+        b"\x00" * TAG_SIZE
+        + rlp.encode((b"\x00" * NONCE_SIZE, b"\x00" * ID_NONCE_SIZE, b"gcm", b"", b""))
+        + b"\x00" * 2000,
+        # auth tag with invalid size
+        b"\x00" * TAG_SIZE + rlp.encode(b"\x00" * (NONCE_SIZE - 1)),
+        # auth tag with oversized message
+        b"\x00" * TAG_SIZE + rlp.encode(b"\x00" * NONCE_SIZE) + b"\x00" * 2000,
+    ),
+)
 def test_invalid_message_packet_decoding(encoded_packet):
     with pytest.raises(ValidationError):
         decode_message_packet(encoded_packet)
 
 
-@given(
-    magic=magic_st,
-    token=nonce_st,
-    id_nonce=id_nonce_st,
-    enr_seq=enr_seq_st,
-)
+@given(magic=magic_st, token=nonce_st, id_nonce=id_nonce_st, enr_seq=enr_seq_st)
 def test_who_are_you_encoding_decoding(magic, token, id_nonce, enr_seq):
     original_packet = WhoAreYouPacket(
-        magic=magic,
-        token=token,
-        id_nonce=id_nonce,
-        enr_sequence_number=enr_seq,
+        magic=magic, token=token, id_nonce=id_nonce, enr_sequence_number=enr_seq
     )
     encoded_packet = original_packet.to_wire_bytes()
     decoded_packet = decode_who_are_you_packet(encoded_packet)
     assert decoded_packet == original_packet
 
 
-@pytest.mark.parametrize("encoded_packet", (
-    b"",  # empty
-    b"\x00" * MAGIC_SIZE,  # no payload
-    b"\x00" * 500,  # invalid RLP payload
-    b"\x00" * MAGIC_SIZE + rlp.encode(b"payload"),  # payload is not a list
-    # payload too short
-    b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * NONCE_SIZE, b"")),
-    # payload too long
-    b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * NONCE_SIZE, b"", b"", b"")),
-    b"\x00" * (MAGIC_SIZE - 1) + rlp.encode((b"\x00" * NONCE_SIZE, b"", 0)),  # too short
-    b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * 11, b"", 0)),  # invalid nonce
-    # too long
-    b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * NONCE_SIZE, b"\x00" * 2000, 0)),
-))
+@pytest.mark.parametrize(
+    "encoded_packet",
+    (
+        b"",  # empty
+        b"\x00" * MAGIC_SIZE,  # no payload
+        b"\x00" * 500,  # invalid RLP payload
+        b"\x00" * MAGIC_SIZE + rlp.encode(b"payload"),  # payload is not a list
+        # payload too short
+        b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * NONCE_SIZE, b"")),
+        # payload too long
+        b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * NONCE_SIZE, b"", b"", b"")),
+        b"\x00" * (MAGIC_SIZE - 1)
+        + rlp.encode((b"\x00" * NONCE_SIZE, b"", 0)),  # too short
+        b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * 11, b"", 0)),  # invalid nonce
+        # too long
+        b"\x00" * MAGIC_SIZE + rlp.encode((b"\x00" * NONCE_SIZE, b"\x00" * 2000, 0)),
+    ),
+)
 def test_invalid_who_are_you_decoding(encoded_packet):
     with pytest.raises(ValidationError):
         decode_who_are_you_packet(encoded_packet)
@@ -279,11 +249,10 @@ def test_invalid_who_are_you_encoding():
         packet.to_wire_bytes()
 
 
-@pytest.mark.parametrize("packet", (
-    WhoAreYouPacketFactory(),
-    AuthTagPacketFactory(),
-    AuthHeaderPacketFactory(),
-))
+@pytest.mark.parametrize(
+    "packet",
+    (WhoAreYouPacketFactory(), AuthTagPacketFactory(), AuthHeaderPacketFactory()),
+)
 def test_packet_decoding(packet):
     encoded_packet = packet.to_wire_bytes()
     decoded_packet = decode_packet(encoded_packet)
@@ -318,9 +287,7 @@ def test_packet_decoding(packet):
                 "magic": decode_hex(
                     "0x0101010101010101010101010101010101010101010101010101010101010101"
                 ),
-                "token": decode_hex(
-                    "0x020202020202020202020202"
-                ),
+                "token": decode_hex("0x020202020202020202020202"),
                 "id_nonce": decode_hex(
                     "0x0303030303030303030303030303030303030303030303030303030303030303"
                 ),
@@ -331,7 +298,7 @@ def test_packet_decoding(packet):
                 "0202020202a0030303030303030303030303030303030303030303030303030303030303030301"
             ),
         ],
-    ]
+    ],
 )
 def test_official_basic(prep_function, params, encoded):
     packet = prep_function(**params)
@@ -351,9 +318,13 @@ def test_official_basic(prep_function, params, encoded):
     ],
     [
         [
-            decode_hex("0x93a7400fa0d6a694ebc24d5cf570f65d04215b6ac00757875e3f3a5f42107903"),
+            decode_hex(
+                "0x93a7400fa0d6a694ebc24d5cf570f65d04215b6ac00757875e3f3a5f42107903"
+            ),
             decode_hex("0x27b5af763c446acd2749fe8e"),
-            decode_hex("0xe551b1c44264ab92bc0b3c9b26293e1ba4fed9128f3c3645301e8e119f179c65"),
+            decode_hex(
+                "0xe551b1c44264ab92bc0b3c9b26293e1ba4fed9128f3c3645301e8e119f179c65"
+            ),
             decode_hex(
                 "0xb35608c01ee67edff2cffa424b219940a81cf2fb9b66068b1cf96862a17d353e22524fbdcdebc609"
                 "f85cbd58ebe7a872b01e24a3829b97dd5875e8ffbc4eea81"
@@ -374,15 +345,17 @@ def test_official_basic(prep_function, params, encoded):
                 "b3ba55558229867dc13bfa3648"
             ),
         ]
-    ]
+    ],
 )
-def test_official_message(tag,
-                          auth_tag,
-                          id_nonce,
-                          ephemeral_pubkey,
-                          auth_response_cipher_text,
-                          message_cipher_text,
-                          encoded_packet):
+def test_official_message(
+    tag,
+    auth_tag,
+    id_nonce,
+    ephemeral_pubkey,
+    auth_response_cipher_text,
+    message_cipher_text,
+    encoded_packet,
+):
 
     header = AuthHeader(
         auth_tag,

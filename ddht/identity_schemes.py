@@ -1,48 +1,22 @@
-from abc import (
-    ABC,
-    abstractmethod,
-)
-from collections import (
-    UserDict,
-)
-import coincurve
+from abc import ABC, abstractmethod
+from collections import UserDict
+from hashlib import sha256
 import secrets
-from typing import (
-    Tuple,
-    Type,
-    TYPE_CHECKING,
-)
+from typing import TYPE_CHECKING, Tuple, Type
 
+import coincurve
+from cryptography.hazmat.backends import default_backend as cryptography_default_backend
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.backends import default_backend as cryptography_default_backend
+from eth_keys.datatypes import NonRecoverableSignature, PrivateKey, PublicKey
+from eth_keys.exceptions import BadSignature, ValidationError as EthKeysValidationError
+from eth_utils import ValidationError, encode_hex, keccak
 
-from hashlib import sha256
-
-from eth_keys.datatypes import (
-    PrivateKey,
-    PublicKey,
-    NonRecoverableSignature,
-)
-from eth_keys.exceptions import (
-    BadSignature,
-    ValidationError as EthKeysValidationError,
-)
-
-from eth_utils import (
-    encode_hex,
-    keccak,
-    ValidationError,
-)
-
-from ddht.typing import AES128Key, IDNonce, NodeID, SessionKeys
 from ddht.constants import AES128_KEY_SIZE, HKDF_INFO, ID_NONCE_SIGNATURE_PREFIX
+from ddht.typing import AES128Key, IDNonce, NodeID, SessionKeys
 
 if TYPE_CHECKING:
-    from ddht.enr import (  # noqa: F401
-        BaseENR,
-        ENR,
-    )
+    from ddht.enr import BaseENR, ENR  # noqa: F401
 
 # https://github.com/python/mypy/issues/5264#issuecomment-399407428
 if TYPE_CHECKING:
@@ -52,17 +26,16 @@ else:
 
 
 class IdentitySchemeRegistry(IdentitySchemeRegistryBaseType):
-
-    def register(self,
-                 identity_scheme_class: Type["IdentityScheme"]
-                 ) -> Type["IdentityScheme"]:
+    def register(
+        self, identity_scheme_class: Type["IdentityScheme"]
+    ) -> Type["IdentityScheme"]:
         """Class decorator to register identity schemes."""
         if identity_scheme_class.id is None:
             raise ValueError("Identity schemes must define ID")
 
         if identity_scheme_class.id in self:
             raise ValueError(
-                f"Identity scheme with id {identity_scheme_class.id!r} is already registered",
+                f"Identity scheme with id {identity_scheme_class.id!r} is already registered"
             )
 
         self[identity_scheme_class.id] = identity_scheme_class
@@ -128,38 +101,37 @@ class IdentityScheme(ABC):
 
     @classmethod
     @abstractmethod
-    def compute_session_keys(cls,
-                             *,
-                             local_private_key: bytes,
-                             remote_public_key: bytes,
-                             local_node_id: NodeID,
-                             remote_node_id: NodeID,
-                             id_nonce: IDNonce,
-                             is_locally_initiated: bool,
-                             ) -> SessionKeys:
+    def compute_session_keys(
+        cls,
+        *,
+        local_private_key: bytes,
+        remote_public_key: bytes,
+        local_node_id: NodeID,
+        remote_node_id: NodeID,
+        id_nonce: IDNonce,
+        is_locally_initiated: bool,
+    ) -> SessionKeys:
         """Compute the symmetric session keys."""
         ...
 
     @classmethod
     @abstractmethod
-    def create_id_nonce_signature(cls,
-                                  *,
-                                  id_nonce: IDNonce,
-                                  ephemeral_public_key: bytes,
-                                  private_key: bytes,
-                                  ) -> bytes:
+    def create_id_nonce_signature(
+        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes, private_key: bytes
+    ) -> bytes:
         """Sign an id nonce received during handshake."""
         ...
 
     @classmethod
     @abstractmethod
-    def validate_id_nonce_signature(cls,
-                                    *,
-                                    id_nonce: IDNonce,
-                                    ephemeral_public_key: bytes,
-                                    signature: bytes,
-                                    public_key: bytes,
-                                    ) -> None:
+    def validate_id_nonce_signature(
+        cls,
+        *,
+        id_nonce: IDNonce,
+        ephemeral_public_key: bytes,
+        signature: bytes,
+        public_key: bytes,
+    ) -> None:
         """Validate the id nonce signature received from a peer."""
         ...
 
@@ -180,16 +152,13 @@ def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
     return secret_coincurve.format()
 
 
-def hkdf_expand_and_extract(secret: bytes,
-                            initiator_node_id: NodeID,
-                            recipient_node_id: NodeID,
-                            id_nonce: IDNonce,
-                            ) -> Tuple[bytes, bytes, bytes]:
-    info = b"".join((
-        HKDF_INFO,
-        initiator_node_id,
-        recipient_node_id,
-    ))
+def hkdf_expand_and_extract(
+    secret: bytes,
+    initiator_node_id: NodeID,
+    recipient_node_id: NodeID,
+    id_nonce: IDNonce,
+) -> Tuple[bytes, bytes, bytes]:
+    info = b"".join((HKDF_INFO, initiator_node_id, recipient_node_id))
 
     hkdf = HKDF(
         algorithm=SHA256(),
@@ -204,8 +173,8 @@ def hkdf_expand_and_extract(secret: bytes,
         raise Exception("Invariant: Secret is expanded to three AES128 keys")
 
     initiator_key = expanded_key[:AES128_KEY_SIZE]
-    recipient_key = expanded_key[AES128_KEY_SIZE:2 * AES128_KEY_SIZE]
-    auth_response_key = expanded_key[2 * AES128_KEY_SIZE:3 * AES128_KEY_SIZE]
+    recipient_key = expanded_key[AES128_KEY_SIZE : 2 * AES128_KEY_SIZE]
+    auth_response_key = expanded_key[2 * AES128_KEY_SIZE : 3 * AES128_KEY_SIZE]
 
     return initiator_key, recipient_key, auth_response_key
 
@@ -232,7 +201,9 @@ class V4IdentityScheme(IdentityScheme):
     @classmethod
     def validate_enr_structure(cls, enr: "BaseENR") -> None:
         if cls.public_key_enr_key not in enr:
-            raise ValidationError(f"ENR is missing required key {cls.public_key_enr_key!r}")
+            raise ValidationError(
+                f"ENR is missing required key {cls.public_key_enr_key!r}"
+            )
 
         public_key = cls.extract_public_key(enr)
         cls.validate_compressed_public_key(public_key)
@@ -273,15 +244,16 @@ class V4IdentityScheme(IdentityScheme):
         cls.validate_uncompressed_public_key(public_key)
 
     @classmethod
-    def compute_session_keys(cls,
-                             *,
-                             local_private_key: bytes,
-                             remote_public_key: bytes,
-                             local_node_id: NodeID,
-                             remote_node_id: NodeID,
-                             id_nonce: IDNonce,
-                             is_locally_initiated: bool
-                             ) -> SessionKeys:
+    def compute_session_keys(
+        cls,
+        *,
+        local_private_key: bytes,
+        remote_public_key: bytes,
+        local_node_id: NodeID,
+        remote_node_id: NodeID,
+        id_nonce: IDNonce,
+        is_locally_initiated: bool,
+    ) -> SessionKeys:
         secret = ecdh_agree(local_private_key, remote_public_key)
 
         if is_locally_initiated:
@@ -290,10 +262,7 @@ class V4IdentityScheme(IdentityScheme):
             initiator_node_id, recipient_node_id = remote_node_id, local_node_id
 
         initiator_key, recipient_key, auth_response_key = hkdf_expand_and_extract(
-            secret,
-            initiator_node_id,
-            recipient_node_id,
-            id_nonce,
+            secret, initiator_node_id, recipient_node_id, id_nonce
         )
 
         if is_locally_initiated:
@@ -308,36 +277,30 @@ class V4IdentityScheme(IdentityScheme):
         )
 
     @classmethod
-    def create_id_nonce_signature(cls,
-                                  *,
-                                  id_nonce: IDNonce,
-                                  ephemeral_public_key: bytes,
-                                  private_key: bytes,
-                                  ) -> bytes:
+    def create_id_nonce_signature(
+        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes, private_key: bytes
+    ) -> bytes:
         private_key_object = PrivateKey(private_key)
         signature_input = cls.create_id_nonce_signature_input(
-            id_nonce=id_nonce,
-            ephemeral_public_key=ephemeral_public_key,
+            id_nonce=id_nonce, ephemeral_public_key=ephemeral_public_key
         )
         signature = private_key_object.sign_msg_hash_non_recoverable(signature_input)
         return bytes(signature)
 
     @classmethod
-    def validate_id_nonce_signature(cls,
-                                    *,
-                                    id_nonce: IDNonce,
-                                    ephemeral_public_key: bytes,
-                                    signature: bytes,
-                                    public_key: bytes,
-                                    ) -> None:
+    def validate_id_nonce_signature(
+        cls,
+        *,
+        id_nonce: IDNonce,
+        ephemeral_public_key: bytes,
+        signature: bytes,
+        public_key: bytes,
+    ) -> None:
         signature_input = cls.create_id_nonce_signature_input(
-            id_nonce=id_nonce,
-            ephemeral_public_key=ephemeral_public_key,
+            id_nonce=id_nonce, ephemeral_public_key=ephemeral_public_key
         )
         cls.validate_signature(
-            message_hash=signature_input,
-            signature=signature,
-            public_key=public_key,
+            message_hash=signature_input, signature=signature, public_key=public_key
         )
 
     #
@@ -362,12 +325,9 @@ class V4IdentityScheme(IdentityScheme):
             ) from error
 
     @classmethod
-    def validate_signature(cls,
-                           *,
-                           message_hash: bytes,
-                           signature: bytes,
-                           public_key: bytes,
-                           ) -> None:
+    def validate_signature(
+        cls, *, message_hash: bytes, signature: bytes, public_key: bytes
+    ) -> None:
         public_key_object = PublicKey.from_compressed_bytes(public_key)
 
         try:
@@ -384,16 +344,10 @@ class V4IdentityScheme(IdentityScheme):
             )
 
     @classmethod
-    def create_id_nonce_signature_input(cls,
-                                        *,
-                                        id_nonce: IDNonce,
-                                        ephemeral_public_key: bytes,
-                                        ) -> bytes:
-        preimage = b"".join((
-            ID_NONCE_SIGNATURE_PREFIX,
-            id_nonce,
-            ephemeral_public_key,
-        ))
+    def create_id_nonce_signature_input(
+        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes
+    ) -> bytes:
+        preimage = b"".join((ID_NONCE_SIGNATURE_PREFIX, id_nonce, ephemeral_public_key))
         return sha256(preimage).digest()
 
 

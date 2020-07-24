@@ -1,7 +1,4 @@
-from abc import (
-    ABC,
-    abstractmethod,
-)
+from abc import ABC, abstractmethod
 from typing import (
     AsyncContextManager,
     AsyncIterable,
@@ -14,33 +11,22 @@ from typing import (
 
 from ddht.enr import ENR
 from ddht.typing import NodeID
-from ddht.v5.channel_services import (
-    Endpoint,
-    IncomingMessage,
-)
-from p2p.identity_schemes import (
-    IdentityScheme,
-)
-from ddht.v5.messages import (
-    BaseMessage,
-)
-from ddht.v5.packets import (
-    Packet,
-)
-from ddht.v5.typing import (
-    HandshakeResult,
-    Tag,
-)
+from ddht.v5.channel_services import Endpoint, IncomingMessage
+from ddht.v5.messages import BaseMessage
+from ddht.v5.packets import Packet
+from ddht.v5.typing import HandshakeResult, Tag
+from p2p.identity_schemes import IdentityScheme
 
 
 class HandshakeParticipantAPI(ABC):
     @abstractmethod
-    def __init__(self,
-                 is_initiator: bool,
-                 local_private_key: bytes,
-                 local_enr: ENR,
-                 remote_node_id: NodeID,
-                 ) -> None:
+    def __init__(
+        self,
+        is_initiator: bool,
+        local_private_key: bytes,
+        local_enr: ENR,
+        remote_node_id: NodeID,
+    ) -> None:
         ...
 
     @property
@@ -108,11 +94,11 @@ ChannelHandlerAsyncContextManager = AsyncContextManager[
 ]
 
 
-class ChannelHandlerSubscriptionAPI(Generic[ChannelContentType],
-                                    AsyncIterable[ChannelContentType],
-                                    AsyncContextManager[
-                                        "ChannelHandlerSubscriptionAPI[ChannelContentType]"],
-                                    ):
+class ChannelHandlerSubscriptionAPI(
+    Generic[ChannelContentType],
+    AsyncIterable[ChannelContentType],
+    AsyncContextManager["ChannelHandlerSubscriptionAPI[ChannelContentType]"],
+):
     @abstractmethod
     def cancel(self) -> None:
         ...
@@ -129,11 +115,12 @@ class MessageDispatcherAPI(ABC):
         ...
 
     @abstractmethod
-    async def request(self,
-                      receiver_node_id: NodeID,
-                      message: BaseMessage,
-                      endpoint: Optional[Endpoint] = None,
-                      ) -> IncomingMessage:
+    async def request(
+        self,
+        receiver_node_id: NodeID,
+        message: BaseMessage,
+        endpoint: Optional[Endpoint] = None,
+    ) -> IncomingMessage:
         """Send a request to the given peer and return the response.
 
         This is the primary interface for requesting data from a peer. Internally, it will look up
@@ -148,11 +135,12 @@ class MessageDispatcherAPI(ABC):
         ...
 
     @abstractmethod
-    async def request_nodes(self,
-                            receiver_node_id: NodeID,
-                            message: BaseMessage,
-                            endpoint: Optional[Endpoint] = None,
-                            ) -> Tuple[IncomingMessage, ...]:
+    async def request_nodes(
+        self,
+        receiver_node_id: NodeID,
+        message: BaseMessage,
+        endpoint: Optional[Endpoint] = None,
+    ) -> Tuple[IncomingMessage, ...]:
         """Send a request to the given peer and return the collection of Nodes responses.
 
         Similar to `request`, but waits for all Nodes messages sent in response. If a different
@@ -162,9 +150,9 @@ class MessageDispatcherAPI(ABC):
         ...
 
     @abstractmethod
-    def add_request_handler(self,
-                            message_class: Type[BaseMessage],
-                            ) -> ChannelHandlerSubscriptionAPI[IncomingMessage]:
+    def add_request_handler(
+        self, message_class: Type[BaseMessage]
+    ) -> ChannelHandlerSubscriptionAPI[IncomingMessage]:
         """Add a request handler for messages of a given type.
 
         Only one handler per message type can be added.
@@ -172,10 +160,9 @@ class MessageDispatcherAPI(ABC):
         ...
 
     @abstractmethod
-    def add_response_handler(self,
-                             remote_node_id: NodeID,
-                             request_id: int,
-                             ) -> ChannelHandlerSubscriptionAPI[IncomingMessage]:
+    def add_response_handler(
+        self, remote_node_id: NodeID, request_id: int
+    ) -> ChannelHandlerSubscriptionAPI[IncomingMessage]:
         """Add a response handler.
 
         All messages sent by the given peer with the given request id will be send to the returned

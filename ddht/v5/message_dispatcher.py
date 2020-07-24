@@ -1,12 +1,10 @@
 import contextlib
 import logging
 import random
-from types import (
-    TracebackType,
-)
+from types import TracebackType
 from typing import (
-    AsyncIterator,
     AsyncGenerator,
+    AsyncIterator,
     Callable,
     Dict,
     Optional,
@@ -15,45 +13,24 @@ from typing import (
     TypeVar,
 )
 
-import trio
-from trio.abc import (
-    ReceiveChannel,
-    SendChannel,
-)
-from trio.hazmat import (
-    checkpoint,
-)
-
-from eth_utils import (
-    encode_hex,
-)
-
 from async_service import Service
+from eth_utils import encode_hex
+import trio
+from trio.abc import ReceiveChannel, SendChannel
+from trio.hazmat import checkpoint
 
 from ddht.abc import NodeDBAPI
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
-from ddht.exceptions import (
-    UnexpectedMessage,
-)
-from ddht.v5.channel_services import (
-    Endpoint,
-    IncomingMessage,
-    OutgoingMessage,
-)
-from ddht.v5.abc import (
-    ChannelHandlerSubscriptionAPI,
-    MessageDispatcherAPI,
-)
+from ddht.exceptions import UnexpectedMessage
+from ddht.typing import NodeID
+from ddht.v5.abc import ChannelHandlerSubscriptionAPI, MessageDispatcherAPI
+from ddht.v5.channel_services import Endpoint, IncomingMessage, OutgoingMessage
 from ddht.v5.constants import (
+    MAX_NODES_MESSAGE_TOTAL,
     MAX_REQUEST_ID,
     MAX_REQUEST_ID_ATTEMPTS,
-    MAX_NODES_MESSAGE_TOTAL,
 )
-from ddht.v5.messages import (
-    BaseMessage,
-    NodesMessage,
-)
-from ddht.typing import NodeID
+from ddht.v5.messages import BaseMessage, NodesMessage
 
 
 def get_random_request_id() -> int:
@@ -64,11 +41,12 @@ ChannelContentType = TypeVar("ChannelContentType")
 
 
 class ChannelHandlerSubscription(ChannelHandlerSubscriptionAPI[ChannelContentType]):
-    def __init__(self,
-                 send_channel: SendChannel[ChannelContentType],
-                 receive_channel: ReceiveChannel[ChannelContentType],
-                 remove_fn: Callable[[], None],
-                 ) -> None:
+    def __init__(
+        self,
+        send_channel: SendChannel[ChannelContentType],
+        receive_channel: ReceiveChannel[ChannelContentType],
+        remove_fn: Callable[[], None],
+    ) -> None:
         self._send_channel = send_channel
         self.receive_channel = receive_channel
         self.remove_fn = remove_fn
@@ -81,11 +59,12 @@ class ChannelHandlerSubscription(ChannelHandlerSubscriptionAPI[ChannelContentTyp
         await self.receive_channel.__aenter__()
         return self
 
-    async def __aexit__(self,
-                        exc_type: Optional[Type[BaseException]],
-                        exc_value: Optional[BaseException],
-                        traceback: Optional[TracebackType],
-                        ) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
         self.remove_fn()
         await self._send_channel.__aexit__()
         await self.receive_channel.__aexit__()
@@ -109,11 +88,12 @@ IncomingMessageSubscription = ChannelHandlerSubscription[IncomingMessage]
 class MessageDispatcher(Service, MessageDispatcherAPI):
     logger = logging.getLogger("p2p.discv5.message_dispatcher.MessageDispatcher")
 
-    def __init__(self,
-                 node_db: NodeDBAPI,
-                 incoming_message_receive_channel: ReceiveChannel[IncomingMessage],
-                 outgoing_message_send_channel: SendChannel[OutgoingMessage],
-                 ) -> None:
+    def __init__(
+        self,
+        node_db: NodeDBAPI,
+        incoming_message_receive_channel: ReceiveChannel[IncomingMessage],
+        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+    ) -> None:
         self.node_db = node_db
 
         self.incoming_message_receive_channel = incoming_message_receive_channel
@@ -121,8 +101,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
 
         self.request_handler_send_channels: Dict[int, SendChannel[IncomingMessage]] = {}
         self.response_handler_send_channels: Dict[
-            Tuple[NodeID, int],
-            SendChannel[IncomingMessage],
+            Tuple[NodeID, int], SendChannel[IncomingMessage]
         ] = {}
 
     async def run(self) -> None:
@@ -136,7 +115,10 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         request_id = incoming_message.message.request_id
 
         is_request = message_type in self.request_handler_send_channels
-        is_response = (sender_node_id, request_id) in self.response_handler_send_channels
+        is_response = (
+            sender_node_id,
+            request_id,
+        ) in self.response_handler_send_channels
 
         if is_request and is_response:
             self.logger.warning(
@@ -175,7 +157,9 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
                 request_id,
                 encode_hex(sender_node_id),
             )
-            send_channel = self.response_handler_send_channels[sender_node_id, request_id]
+            send_channel = self.response_handler_send_channels[
+                sender_node_id, request_id
+            ]
             await send_channel.send(incoming_message)
 
     def get_free_request_id(self, node_id: NodeID) -> int:
@@ -190,16 +174,17 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
                 f"handlers added right now)"
             )
 
-    def add_request_handler(self,
-                            message_class: Type[BaseMessage],
-                            ) -> IncomingMessageSubscription:
+    def add_request_handler(
+        self, message_class: Type[BaseMessage]
+    ) -> IncomingMessageSubscription:
         message_type = message_class.message_type
         if message_type in self.request_handler_send_channels:
-            raise ValueError(f"Request handler for {message_class.__name__} is already added")
+            raise ValueError(
+                f"Request handler for {message_class.__name__} is already added"
+            )
 
         request_channels: Tuple[
-            SendChannel[IncomingMessage],
-            ReceiveChannel[IncomingMessage],
+            SendChannel[IncomingMessage], ReceiveChannel[IncomingMessage]
         ] = trio.open_memory_channel(0)
         self.request_handler_send_channels[message_type] = request_channels[0]
 
@@ -214,7 +199,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
                 )
             else:
                 self.logger.debug(
-                    "Removing request handler for %s", message_class.__name__,
+                    "Removing request handler for %s", message_class.__name__
                 )
 
         return ChannelHandlerSubscription(
@@ -223,10 +208,9 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             remove_fn=remove,
         )
 
-    def add_response_handler(self,
-                             remote_node_id: NodeID,
-                             request_id: int,
-                             ) -> IncomingMessageSubscription:
+    def add_response_handler(
+        self, remote_node_id: NodeID, request_id: int
+    ) -> IncomingMessageSubscription:
         if (remote_node_id, request_id) in self.response_handler_send_channels:
             raise ValueError(
                 f"Response handler for node id {encode_hex(remote_node_id)} and request id "
@@ -240,10 +224,11 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         )
 
         response_channels: Tuple[
-            SendChannel[IncomingMessage],
-            ReceiveChannel[IncomingMessage],
+            SendChannel[IncomingMessage], ReceiveChannel[IncomingMessage]
         ] = trio.open_memory_channel(0)
-        self.response_handler_send_channels[(remote_node_id, request_id)] = response_channels[0]
+        self.response_handler_send_channels[
+            (remote_node_id, request_id)
+        ] = response_channels[0]
 
         def remove() -> None:
             try:
@@ -289,23 +274,22 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         return Endpoint(ip_address, udp_port)
 
     @contextlib.asynccontextmanager
-    async def request_response_subscription(self,
-                                            receiver_node_id: NodeID,
-                                            message: BaseMessage,
-                                            endpoint: Optional[Endpoint] = None,
-                                            ) -> AsyncGenerator[IncomingMessageSubscription, None]:
+    async def request_response_subscription(
+        self,
+        receiver_node_id: NodeID,
+        message: BaseMessage,
+        endpoint: Optional[Endpoint] = None,
+    ) -> AsyncGenerator[IncomingMessageSubscription, None]:
         if endpoint is None:
             endpoint = await self.get_endpoint_from_node_db(receiver_node_id)
 
         response_channels: Tuple[
-            SendChannel[IncomingMessage],
-            ReceiveChannel[IncomingMessage],
+            SendChannel[IncomingMessage], ReceiveChannel[IncomingMessage]
         ] = trio.open_memory_channel(0)
         response_send_channel, response_receive_channel = response_channels
 
         async with self.add_response_handler(
-            receiver_node_id,
-            message.request_id,
+            receiver_node_id, message.request_id
         ) as response_subscription:
             outgoing_message = OutgoingMessage(
                 message=message,
@@ -321,15 +305,14 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             await self.outgoing_message_send_channel.send(outgoing_message)
             yield response_subscription
 
-    async def request(self,
-                      receiver_node_id: NodeID,
-                      message: BaseMessage,
-                      endpoint: Optional[Endpoint] = None,
-                      ) -> IncomingMessage:
+    async def request(
+        self,
+        receiver_node_id: NodeID,
+        message: BaseMessage,
+        endpoint: Optional[Endpoint] = None,
+    ) -> IncomingMessage:
         async with self.request_response_subscription(
-            receiver_node_id,
-            message,
-            endpoint,
+            receiver_node_id, message, endpoint
         ) as response_subscription:
             response = await response_subscription.receive()
             self.logger.debug(
@@ -340,15 +323,14 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             )
             return response
 
-    async def request_nodes(self,
-                            receiver_node_id: NodeID,
-                            message: BaseMessage,
-                            endpoint: Optional[Endpoint] = None,
-                            ) -> Tuple[IncomingMessage, ...]:
+    async def request_nodes(
+        self,
+        receiver_node_id: NodeID,
+        message: BaseMessage,
+        endpoint: Optional[Endpoint] = None,
+    ) -> Tuple[IncomingMessage, ...]:
         async with self.request_response_subscription(
-            receiver_node_id,
-            message,
-            endpoint,
+            receiver_node_id, message, endpoint
         ) as response_subscription:
             first_response = await response_subscription.receive()
             self.logger.debug(

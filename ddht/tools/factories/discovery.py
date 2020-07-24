@@ -1,65 +1,29 @@
 import random
 import socket
-from typing import (
-    Any,
-    Dict,
-    Tuple,
-)
-
-import factory
+from typing import Any, Dict, Tuple
 
 from eth_keys import keys
+from eth_utils import big_endian_to_int, int_to_big_endian
+from eth_utils.toolz import merge, reduce
+import factory
 
-from eth_utils import (
-    big_endian_to_int,
-    int_to_big_endian,
-)
-from eth_utils.toolz import (
-    merge,
-    reduce,
-)
-
-from ddht.v5.packets import (
-    AuthHeader,
-    AuthHeaderPacket,
-    AuthTagPacket,
-    WhoAreYouPacket,
-)
+from ddht.enr import ENR, UnsignedENR
+from ddht.identity_schemes import V4IdentityScheme
+from ddht.kademlia import compute_log_distance
+from ddht.typing import NodeID
+from ddht.v5.channel_services import Endpoint, IncomingMessage, IncomingPacket
 from ddht.v5.constants import (
     AUTH_SCHEME_NAME,
     ID_NONCE_SIZE,
-    NONCE_SIZE,
     MAGIC_SIZE,
+    NONCE_SIZE,
     TAG_SIZE,
 )
-from ddht.v5.channel_services import (
-    Endpoint,
-    IncomingPacket,
-    IncomingMessage,
-)
-from ddht.v5.endpoint_tracker import (
-    EndpointVote,
-)
-from ddht.enr import (
-    ENR,
-    UnsignedENR,
-)
-from ddht.identity_schemes import (
-    V4IdentityScheme,
-)
-from ddht.v5.messages import (
-    FindNodeMessage,
-    PingMessage,
-)
-from ddht.v5.handshake import (
-    HandshakeInitiator,
-    HandshakeRecipient,
-)
-from ddht.kademlia import compute_log_distance
-from ddht.v5.typing import (
-    Topic,
-)
-from ddht.typing import NodeID
+from ddht.v5.endpoint_tracker import EndpointVote
+from ddht.v5.handshake import HandshakeInitiator, HandshakeRecipient
+from ddht.v5.messages import FindNodeMessage, PingMessage
+from ddht.v5.packets import AuthHeader, AuthHeaderPacket, AuthTagPacket, WhoAreYouPacket
+from ddht.v5.typing import Topic
 
 from .kademlia import AddressFactory
 
@@ -107,7 +71,9 @@ class EndpointFactory(factory.Factory):
     class Meta:
         model = Endpoint
 
-    ip_address = factory.LazyFunction(lambda: socket.inet_aton(factory.Faker("ipv4").generate({})))
+    ip_address = factory.LazyFunction(
+        lambda: socket.inet_aton(factory.Faker("ipv4").generate({}))
+    )
     port = factory.Faker("pyint", min_value=0, max_value=65535)
 
 
@@ -140,7 +106,9 @@ class NodeIDFactory(factory.Factory):
         num_bits = len(reference) * 8
 
         if log_distance > num_bits:
-            raise ValueError("Log distance must not be greater than number of bits in the node id")
+            raise ValueError(
+                "Log distance must not be greater than number of bits in the node id"
+            )
         elif log_distance < 0:
             raise ValueError("Log distance cannot be negative")
 
@@ -154,7 +122,9 @@ class NodeIDFactory(factory.Factory):
         flipped_bit = not reference_bits[flipped_bit_index]
         random_bits = [
             bool(random.randint(0, 1))
-            for _ in range(flipped_bit_index + 1, flipped_bit_index + 1 + num_random_bits)
+            for _ in range(
+                flipped_bit_index + 1, flipped_bit_index + 1 + num_random_bits
+            )
         ]
 
         result_bits = tuple(list(shared_bits) + [flipped_bit] + random_bits)
@@ -167,10 +137,7 @@ class NodeIDFactory(factory.Factory):
 def bytes_to_bits(input_bytes: bytes) -> Tuple[bool, ...]:
     num_bits = len(input_bytes) * 8
     as_int = big_endian_to_int(input_bytes)
-    as_bits = tuple(
-        bool(as_int & (1 << index))
-        for index in range(num_bits)
-    )[::-1]
+    as_bits = tuple(bool(as_int & (1 << index)) for index in range(num_bits))[::-1]
     return as_bits
 
 
@@ -179,10 +146,7 @@ def bits_to_bytes(input_bits: Tuple[bool, ...]) -> bytes:
         raise ValueError("Number of input bits must be a multiple of 8")
     num_bytes = len(input_bits) // 8
 
-    as_int = reduce(
-        lambda rest, bit: rest * 2 + bit,
-        input_bits,
-    )
+    as_int = reduce(lambda rest, bit: rest * 2 + bit, input_bits)
     as_bytes_unpadded = int_to_big_endian(as_int)
     padding = b"\x00" * (num_bytes - len(as_bytes_unpadded))
     return padding + as_bytes_unpadded
@@ -193,18 +157,24 @@ class ENRFactory(factory.Factory):
         model = ENR
 
     sequence_number = factory.Faker("pyint", min_value=0, max_value=100)
-    kv_pairs = factory.LazyAttribute(lambda o: merge({
-        b"id": b"v4",
-        b"secp256k1": keys.PrivateKey(o.private_key).public_key.to_compressed_bytes(),
-        b"ip": o.address.ip_packed,
-        b"udp": o.address.udp_port,
-        b"tcp": o.address.tcp_port,
-    }, o.custom_kv_pairs))
+    kv_pairs = factory.LazyAttribute(
+        lambda o: merge(
+            {
+                b"id": b"v4",
+                b"secp256k1": keys.PrivateKey(
+                    o.private_key
+                ).public_key.to_compressed_bytes(),
+                b"ip": o.address.ip_packed,
+                b"udp": o.address.udp_port,
+                b"tcp": o.address.tcp_port,
+            },
+            o.custom_kv_pairs,
+        )
+    )
     signature = factory.LazyAttribute(
-        lambda o: UnsignedENR(
-            o.sequence_number,
-            o.kv_pairs,
-        ).to_signed_enr(o.private_key).signature
+        lambda o: UnsignedENR(o.sequence_number, o.kv_pairs)
+        .to_signed_enr(o.private_key)
+        .signature
     )
 
     class Params:
@@ -242,27 +212,43 @@ class HandshakeInitiatorFactory(factory.Factory):
     class Meta:
         model = HandshakeInitiator
 
-    local_private_key = factory.Faker("binary", length=V4IdentityScheme.private_key_size)
-    local_enr = factory.LazyAttribute(lambda o: ENRFactory(private_key=o.local_private_key))
-    remote_enr = factory.LazyAttribute(lambda o: ENRFactory(private_key=o.remote_private_key))
+    local_private_key = factory.Faker(
+        "binary", length=V4IdentityScheme.private_key_size
+    )
+    local_enr = factory.LazyAttribute(
+        lambda o: ENRFactory(private_key=o.local_private_key)
+    )
+    remote_enr = factory.LazyAttribute(
+        lambda o: ENRFactory(private_key=o.remote_private_key)
+    )
     initial_message = factory.SubFactory(PingMessageFactory)
 
     class Params:
-        remote_private_key = factory.Faker("binary", length=V4IdentityScheme.private_key_size)
+        remote_private_key = factory.Faker(
+            "binary", length=V4IdentityScheme.private_key_size
+        )
 
 
 class HandshakeRecipientFactory(factory.Factory):
     class Meta:
         model = HandshakeRecipient
 
-    local_private_key = factory.Faker("binary", length=V4IdentityScheme.private_key_size)
-    local_enr = factory.LazyAttribute(lambda o: ENRFactory(private_key=o.local_private_key))
-    remote_enr = factory.LazyAttribute(lambda o: ENRFactory(private_key=o.remote_private_key))
+    local_private_key = factory.Faker(
+        "binary", length=V4IdentityScheme.private_key_size
+    )
+    local_enr = factory.LazyAttribute(
+        lambda o: ENRFactory(private_key=o.local_private_key)
+    )
+    remote_enr = factory.LazyAttribute(
+        lambda o: ENRFactory(private_key=o.remote_private_key)
+    )
     remote_node_id = factory.LazyAttribute(lambda o: o.remote_enr.node_id)
     initiating_packet_auth_tag = factory.Faker("binary", length=NONCE_SIZE)
 
     class Params:
-        remote_private_key = factory.Faker("binary", length=V4IdentityScheme.private_key_size)
+        remote_private_key = factory.Faker(
+            "binary", length=V4IdentityScheme.private_key_size
+        )
 
 
 class TopicFactory(factory.Factory):

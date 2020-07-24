@@ -1,29 +1,16 @@
 import base64
 
+from eth_utils import ValidationError, decode_hex
+from eth_utils.toolz import assoc, assoc_in
 import pytest
-
 import rlp
 
-from eth_utils import (
-    decode_hex,
-    ValidationError,
-)
-from eth_utils.toolz import (
-    assoc,
-    assoc_in,
-)
-
-from ddht.enr import (
-    ENR,
-    ENRSedes,
-    UnsignedENR,
-)
+from ddht.enr import ENR, ENRSedes, UnsignedENR
 from ddht.identity_schemes import (
     IdentityScheme,
-    V4IdentityScheme,
     IdentitySchemeRegistry,
+    V4IdentityScheme,
 )
-
 
 # Source: https://github.com/fjl/EIPs/blob/0acb5939555cbd0efcdd04da0d3acb0cc81d049a/EIPS/eip-778.md
 OFFICIAL_TEST_DATA = {
@@ -32,19 +19,25 @@ OFFICIAL_TEST_DATA = {
         "fj499SZuOh8R33Ls8RRcy5wBgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQPKY0yuDUmstAHY"
         "pMa2_oxVtw0RW_QAdpzBQA8yWM0xOIN1ZHCCdl8"
     ),
-    "private_key": decode_hex("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291"),
-    "public_key": decode_hex("03ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138"),
-    "node_id": decode_hex("a448f24c6d18e575453db13171562b71999873db5b286df957af199ec94617f7"),
+    "private_key": decode_hex(
+        "b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291"
+    ),
+    "public_key": decode_hex(
+        "03ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138"
+    ),
+    "node_id": decode_hex(
+        "a448f24c6d18e575453db13171562b71999873db5b286df957af199ec94617f7"
+    ),
     "identity_scheme": V4IdentityScheme,
     "sequence_number": 1,
     "kv_pairs": {
         b"id": b"v4",
         b"ip": decode_hex("7f000001"),
         b"secp256k1": decode_hex(
-            "03ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138",
+            "03ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138"
         ),
-        b"udp": 0x765f,
-    }
+        b"udp": 0x765F,
+    },
 }
 
 # This is an ENR sent by geth and it includes a fork ID (https://eips.ethereum.org/EIPS/eip-2124)
@@ -55,20 +48,24 @@ REAL_LIFE_TEST_DATA = {
         "-GOBEio6Ultyf1Aog2V0aMrJhGN2AZCDGfCggmlkgnY0gmlwhF4_wLuJc2VjcDI1NmsxoQOt7cA_B_Kg"
         "nQ5RmwyA6ji8M1Y0jfINItRGbOOwy7XgbIN0Y3CCdl-DdWRwgnZf"
     ),
-    "public_key": decode_hex("03adedc03f07f2a09d0e519b0c80ea38bc3356348df20d22d4466ce3b0cbb5e06c"),
-    "node_id": decode_hex("dc8542768b457753669bebfe215d5f9ef4adb7d7df84beabddbe98350869165f"),
+    "public_key": decode_hex(
+        "03adedc03f07f2a09d0e519b0c80ea38bc3356348df20d22d4466ce3b0cbb5e06c"
+    ),
+    "node_id": decode_hex(
+        "dc8542768b457753669bebfe215d5f9ef4adb7d7df84beabddbe98350869165f"
+    ),
     "identity_scheme": V4IdentityScheme,
     "sequence_number": 40,
     "kv_pairs": {
-        b"eth": [[b'cv\x01\x90', b'\x19\xf0\xa0']],
+        b"eth": [[b"cv\x01\x90", b"\x19\xf0\xa0"]],
         b"id": b"v4",
         b"ip": decode_hex("5e3fc0bb"),
         b"secp256k1": decode_hex(
-            "03adedc03f07f2a09d0e519b0c80ea38bc3356348df20d22d4466ce3b0cbb5e06c",
+            "03adedc03f07f2a09d0e519b0c80ea38bc3356348df20d22d4466ce3b0cbb5e06c"
         ),
         b"tcp": 30303,
         b"udp": 30303,
-    }
+    },
 }
 
 
@@ -98,7 +95,7 @@ class MockIdentityScheme(IdentityScheme):
 
     @classmethod
     def extract_node_id(cls, enr) -> bytes:
-        return enr.signature[:cls.private_key_size]
+        return enr.signature[: cls.private_key_size]
 
 
 @pytest.fixture
@@ -115,11 +112,7 @@ def identity_scheme_registry(mock_identity_scheme):
 
 
 def test_mapping_interface(identity_scheme_registry):
-    kv_pairs = {
-        b"id": b"mock",
-        b"key1": b"value1",
-        b"key2": b"value2",
-    }
+    kv_pairs = {b"id": b"mock", b"key1": b"value1", b"key2": b"value2"}
     enr = ENR(
         signature=b"",
         sequence_number=0,
@@ -197,7 +190,7 @@ def test_signing(mock_identity_scheme, identity_scheme_registry):
     unsigned_enr = UnsignedENR(
         sequence_number=0,
         kv_pairs={b"id": b"mock"},
-        identity_scheme_registry=identity_scheme_registry
+        identity_scheme_registry=identity_scheme_registry,
     )
     private_key = b"\x00" * 32
     enr = unsigned_enr.to_signed_enr(private_key)
@@ -215,7 +208,7 @@ def test_signature_validation(mock_identity_scheme, identity_scheme_registry):
         enr.sequence_number,
         dict(enr),
         invalid_signature,
-        identity_scheme_registry=identity_scheme_registry
+        identity_scheme_registry=identity_scheme_registry,
     )
     with pytest.raises(ValidationError):
         invalid_enr.validate_signature()
@@ -247,7 +240,9 @@ def test_signature_scheme_selection(mock_identity_scheme, identity_scheme_regist
     mock_enr = ENR(0, {b"id": b"mock"}, b"", identity_scheme_registry)
     assert mock_enr.identity_scheme is mock_identity_scheme
 
-    v4_enr = ENR(0, {b"id": b"v4", b"secp256k1": b"\x02" * 33}, b"", identity_scheme_registry)
+    v4_enr = ENR(
+        0, {b"id": b"v4", b"secp256k1": b"\x02" * 33}, b"", identity_scheme_registry
+    )
     assert v4_enr.identity_scheme is V4IdentityScheme
 
     with pytest.raises(ValidationError):
@@ -267,50 +262,37 @@ def test_repr(mock_identity_scheme, identity_scheme_registry):
 
 
 def test_deserialization_key_order_validation(identity_scheme_registry):
-    serialized_enr = rlp.encode([
-        b"signature",
-        0,
-        b"key1",
-        b"value1",
-        b"id",
-        b"",
-        b"key2",
-        b"value2",
-    ])
+    serialized_enr = rlp.encode(
+        [b"signature", 0, b"key1", b"value1", b"id", b"", b"key2", b"value2"]
+    )
     with pytest.raises(rlp.DeserializationError):
         rlp.decode(
-            serialized_enr,
-            ENRSedes,
-            identity_scheme_registry=identity_scheme_registry,
+            serialized_enr, ENRSedes, identity_scheme_registry=identity_scheme_registry
         )
 
 
 def test_deserialization_key_uniqueness_validation(identity_scheme_registry):
-    serialized_enr = rlp.encode([
-        b"signature",
-        0,
-        b"key1",
-        b"value1",
-        b"id",
-        b"",
-        b"key1",
-        b"value2",
-    ])
+    serialized_enr = rlp.encode(
+        [b"signature", 0, b"key1", b"value1", b"id", b"", b"key1", b"value2"]
+    )
     with pytest.raises(rlp.DeserializationError):
         rlp.decode(
-            serialized_enr,
-            ENRSedes,
-            identity_scheme_registry=identity_scheme_registry,
+            serialized_enr, ENRSedes, identity_scheme_registry=identity_scheme_registry
         )
 
 
-@pytest.mark.parametrize("incomplete_enr", (
-    (),
-    (b"signature",),
-    (b"signature", 0, b"key1"),
-    (b"signature", 0, b"key1", b"value1", b"id"),
-))
-def test_deserialization_completeness_validation(incomplete_enr, identity_scheme_registry):
+@pytest.mark.parametrize(
+    "incomplete_enr",
+    (
+        (),
+        (b"signature",),
+        (b"signature", 0, b"key1"),
+        (b"signature", 0, b"key1", b"value1", b"id"),
+    ),
+)
+def test_deserialization_completeness_validation(
+    incomplete_enr, identity_scheme_registry
+):
     incomplete_enr_rlp = rlp.encode(incomplete_enr)
     with pytest.raises(rlp.DeserializationError):
         rlp.decode(
@@ -323,22 +305,16 @@ def test_deserialization_completeness_validation(incomplete_enr, identity_scheme
 def test_equality(identity_scheme_registry):
     base_kwargs = {
         "sequence_number": 0,
-        "kv_pairs": {
-            b"id": b"mock",
-            b"key1": b"value1",
-            b"key2": b"value2",
-        },
+        "kv_pairs": {b"id": b"mock", b"key1": b"value1", b"key2": b"value2"},
         "signature": b"signature",
         "identity_scheme_registry": identity_scheme_registry,
     }
 
     base_enr = ENR(**base_kwargs)
     equal_enr = ENR(**base_kwargs)
-    enr_different_sequence_number = ENR(
-        **assoc(base_kwargs, "sequence_number", 1)
-    )
+    enr_different_sequence_number = ENR(**assoc(base_kwargs, "sequence_number", 1))
     enr_different_kv_pairs = ENR(
-        **assoc_in(base_kwargs, ("kv_pairs", b"key1"), b"value2"),
+        **assoc_in(base_kwargs, ("kv_pairs", b"key1"), b"value2")
     )
     enr_different_signature = ENR(
         **assoc(base_kwargs, "signature", b"different-signature")
@@ -364,17 +340,18 @@ def test_serialization_roundtrip(identity_scheme_registry):
     )
     encoded = rlp.encode(original_enr)
     recovered_enr = rlp.decode(
-        encoded,
-        ENR,
-        identity_scheme_registry=identity_scheme_registry,
+        encoded, ENR, identity_scheme_registry=identity_scheme_registry
     )
     assert recovered_enr == original_enr
 
 
-@pytest.mark.parametrize("invalid_kv_pairs", (
-    {b"id": b"v4"},  # missing public key
-    {b"id": b"v4", b"secp256k1": b"\x00"},  # invalid public key
-))
+@pytest.mark.parametrize(
+    "invalid_kv_pairs",
+    (
+        {b"id": b"v4"},  # missing public key
+        {b"id": b"v4", b"secp256k1": b"\x00"},  # invalid public key
+    ),
+)
 def test_v4_structure_validation(invalid_kv_pairs, identity_scheme_registry):
     with pytest.raises(ValidationError):
         UnsignedENR(
@@ -385,7 +362,9 @@ def test_v4_structure_validation(invalid_kv_pairs, identity_scheme_registry):
 
 
 def test_official_test_vector():
-    enr = ENR.from_repr(OFFICIAL_TEST_DATA["repr"])  # use default identity scheme registry
+    enr = ENR.from_repr(
+        OFFICIAL_TEST_DATA["repr"]
+    )  # use default identity scheme registry
 
     assert enr.sequence_number == OFFICIAL_TEST_DATA["sequence_number"]
     assert dict(enr) == OFFICIAL_TEST_DATA["kv_pairs"]

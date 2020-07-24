@@ -1,29 +1,17 @@
+from eth_utils import ValidationError, decode_hex
+from hypothesis import given, strategies as st
 import pytest
 
-from hypothesis import (
-    given,
-    strategies as st,
-)
-
-from eth_utils import (
-    decode_hex,
-    ValidationError,
-)
-
-from ddht.exceptions import (
-    DecryptionError,
-)
+from ddht.constants import AES128_KEY_SIZE
+from ddht.exceptions import DecryptionError
+from ddht.typing import AES128Key, Nonce
+from ddht.v5.constants import NONCE_SIZE
 from ddht.v5.encryption import (
-    aesgcm_encrypt,
     aesgcm_decrypt,
+    aesgcm_encrypt,
     validate_aes128_key,
     validate_nonce,
 )
-from ddht.typing import AES128Key, Nonce
-from ddht.v5.constants import (
-    NONCE_SIZE,
-)
-from ddht.constants import AES128_KEY_SIZE
 
 key_st = st.binary(min_size=AES128_KEY_SIZE, max_size=AES128_KEY_SIZE)
 nonce_st = st.binary(min_size=NONCE_SIZE, max_size=NONCE_SIZE)
@@ -71,27 +59,27 @@ def test_decryption_with_wrong_inputs():
         aesgcm_decrypt(key, nonce, cipher_text, b"")
 
 
-@given(
-    key=key_st,
-    nonce=nonce_st,
-    plain_text=plain_text_st,
-    aad=aad_st,
-)
+@given(key=key_st, nonce=nonce_st, plain_text=plain_text_st, aad=aad_st)
 def test_roundtrip(key, nonce, plain_text, aad):
     cipher_text = aesgcm_encrypt(key, nonce, plain_text, aad)
     plain_text_recovered = aesgcm_decrypt(key, nonce, cipher_text, aad)
     assert plain_text_recovered == plain_text
 
 
-@pytest.mark.parametrize(["key", "nonce", "plain_text", "aad", "cipher_text"], [
+@pytest.mark.parametrize(
+    ["key", "nonce", "plain_text", "aad", "cipher_text"],
     [
-        decode_hex("0x9f2d77db7004bf8a1a85107ac686990b"),
-        decode_hex("0x27b5af763c446acd2749fe8e"),
-        decode_hex("0x01c20101"),
-        decode_hex("0x93a7400fa0d6a694ebc24d5cf570f65d04215b6ac00757875e3f3a5f42107903"),
-        decode_hex("0xa5d12a2d94b8ccb3ba55558229867dc13bfa3648"),
-    ]
-])
+        [
+            decode_hex("0x9f2d77db7004bf8a1a85107ac686990b"),
+            decode_hex("0x27b5af763c446acd2749fe8e"),
+            decode_hex("0x01c20101"),
+            decode_hex(
+                "0x93a7400fa0d6a694ebc24d5cf570f65d04215b6ac00757875e3f3a5f42107903"
+            ),
+            decode_hex("0xa5d12a2d94b8ccb3ba55558229867dc13bfa3648"),
+        ]
+    ],
+)
 def test_encryption_official(key, nonce, plain_text, aad, cipher_text):
     encrypted = aesgcm_encrypt(key, nonce, plain_text, aad)
     assert encrypted == cipher_text

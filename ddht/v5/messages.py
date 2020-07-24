@@ -1,31 +1,13 @@
-from typing import (
-    Type,
-    TYPE_CHECKING,
-)
-from collections import (
-    UserDict,
-)
+from collections import UserDict
+from typing import TYPE_CHECKING, Type
 
+from eth_utils import int_to_big_endian
 import rlp
-from rlp.sedes import (
-    big_endian_int,
-    binary,
-    boolean,
-    Binary,
-    CountableList,
-)
+from rlp.sedes import Binary, CountableList, big_endian_int, binary, boolean
 
-from eth_utils import (
-    int_to_big_endian,
-)
-
-from ddht.enr import (
-    ENR,
-)
-from ddht.v5.constants import (
-    TOPIC_HASH_SIZE,
-)
 from ddht.constants import IP_V4_SIZE, IP_V6_SIZE
+from ddht.enr import ENR
+from ddht.v5.constants import TOPIC_HASH_SIZE
 
 # https://github.com/python/mypy/issues/5264#issuecomment-399407428
 if TYPE_CHECKING:
@@ -41,7 +23,6 @@ topic_sedes = Binary.fixed_length(TOPIC_HASH_SIZE)
 
 
 class IPAddressSedes(Binary):
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -53,10 +34,7 @@ ip_address_sedes = IPAddressSedes()
 
 
 class MessageTypeRegistry(MessageTypeRegistryBaseType):
-
-    def register(self,
-                 message_data_class: Type["BaseMessage"]
-                 ) -> Type["BaseMessage"]:
+    def register(self, message_data_class: Type["BaseMessage"]) -> Type["BaseMessage"]:
         """Class Decorator to register BaseMessage classes."""
         message_type = message_data_class.message_type
         if message_type is None:
@@ -72,7 +50,7 @@ class MessageTypeRegistry(MessageTypeRegistryBaseType):
 
         if not message_type == expected_message_type:
             raise ValueError(
-                f"Expected message type {expected_message_type}, but got {message_type}",
+                f"Expected message type {expected_message_type}, but got {message_type}"
             )
 
         self[message_type] = message_data_class
@@ -90,20 +68,14 @@ class BaseMessage(rlp.Serializable):
     message_type: int
 
     def to_bytes(self) -> bytes:
-        return b"".join((
-            int_to_big_endian(self.message_type),
-            rlp.encode(self),
-        ))
+        return b"".join((int_to_big_endian(self.message_type), rlp.encode(self)))
 
 
 @default_message_type_registry.register
 class PingMessage(BaseMessage):
     message_type = 1
 
-    fields = (
-        ("request_id", big_endian_int),
-        ("enr_seq", big_endian_int),
-    )
+    fields = (("request_id", big_endian_int), ("enr_seq", big_endian_int))
 
 
 @default_message_type_registry.register
@@ -122,10 +94,7 @@ class PongMessage(BaseMessage):
 class FindNodeMessage(BaseMessage):
     message_type = 3
 
-    fields = (
-        ("request_id", big_endian_int),
-        ("distance", big_endian_int),
-    )
+    fields = (("request_id", big_endian_int), ("distance", big_endian_int))
 
 
 @default_message_type_registry.register
@@ -143,10 +112,7 @@ class NodesMessage(BaseMessage):
 class ReqTicketMessage(BaseMessage):
     message_type = 5
 
-    fields = (
-        ("request_id", big_endian_int),
-        ("topic", topic_sedes),
-    )
+    fields = (("request_id", big_endian_int), ("topic", topic_sedes))
 
 
 @default_message_type_registry.register
@@ -164,28 +130,18 @@ class TicketMessage(BaseMessage):
 class RegTopicMessage(BaseMessage):
     message_type = 7
 
-    fields = (
-        ("request_id", big_endian_int),
-        ("ticket", binary),
-        ("node_record", ENR),
-    )
+    fields = (("request_id", big_endian_int), ("ticket", binary), ("node_record", ENR))
 
 
 @default_message_type_registry.register
 class RegConfirmationMessage(BaseMessage):
     message_type = 8
 
-    fields = (
-        ("request_id", big_endian_int),
-        ("registered", boolean),
-    )
+    fields = (("request_id", big_endian_int), ("registered", boolean))
 
 
 @default_message_type_registry.register
 class TopicQueryMessage(BaseMessage):
     message_type = 9
 
-    fields = (
-        ("request_id", big_endian_int),
-        ("topic", topic_sedes),
-    )
+    fields = (("request_id", big_endian_int), ("topic", topic_sedes))

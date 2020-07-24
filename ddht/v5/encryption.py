@@ -1,22 +1,11 @@
-from cryptography.hazmat.primitives.ciphers.aead import (
-    AESGCM,
-)
-from cryptography.exceptions import (
-    InvalidTag,
-)
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from eth.validation import (
-    validate_length,
-)
-
-from ddht.exceptions import (
-    DecryptionError,
-)
-from ddht.v5.constants import (
-    NONCE_SIZE,
-)
 from ddht.constants import AES128_KEY_SIZE
+from ddht.exceptions import DecryptionError
 from ddht.typing import AES128Key, Nonce
+from ddht.v5.constants import NONCE_SIZE
+from eth.validation import validate_length
 
 
 def validate_aes128_key(key: AES128Key) -> None:
@@ -27,11 +16,9 @@ def validate_nonce(nonce: bytes) -> None:
     validate_length(nonce, NONCE_SIZE, "nonce")
 
 
-def aesgcm_encrypt(key: AES128Key,
-                   nonce: Nonce,
-                   plain_text: bytes,
-                   authenticated_data: bytes
-                   ) -> bytes:
+def aesgcm_encrypt(
+    key: AES128Key, nonce: Nonce, plain_text: bytes, authenticated_data: bytes
+) -> bytes:
     validate_aes128_key(key)
     validate_nonce(nonce)
 
@@ -40,11 +27,9 @@ def aesgcm_encrypt(key: AES128Key,
     return cipher_text
 
 
-def aesgcm_decrypt(key: AES128Key,
-                   nonce: Nonce,
-                   cipher_text: bytes,
-                   authenticated_data: bytes
-                   ) -> bytes:
+def aesgcm_decrypt(
+    key: AES128Key, nonce: Nonce, cipher_text: bytes, authenticated_data: bytes
+) -> bytes:
     validate_aes128_key(key)
     validate_nonce(nonce)
 

@@ -1,81 +1,43 @@
-import logging
 import itertools
+import logging
 import math
-import rlp
 import secrets
 import time
-from typing import (
-    Generator,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-)
+from typing import Generator, List, Optional, Sequence, Set, Tuple
 
-from eth_utils import (
-    encode_hex,
-    to_tuple,
-)
-from eth_utils.toolz import (
-    take,
-)
-
+from async_service import Service
+from eth_utils import encode_hex, to_tuple
+from eth_utils.toolz import take
+from mypy_extensions import TypedDict
+import rlp
 import trio
-from trio.abc import (
-    SendChannel,
-)
+from trio.abc import SendChannel
 
-from mypy_extensions import (
-    TypedDict,
-)
-
-from async_service import (
-    Service,
-)
-from ddht._utils import (
-    every,
-)
-
-from ddht.v5.abc import (
-    MessageDispatcherAPI,
-)
+from ddht._utils import every
 from ddht.abc import NodeDBAPI
-from ddht.v5.channel_services import (
-    Endpoint,
-    IncomingMessage,
-    OutgoingMessage,
-)
+from ddht.enr import ENR
+from ddht.exceptions import UnexpectedMessage
+from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
+from ddht.typing import NodeID
+from ddht.v5.abc import MessageDispatcherAPI
+from ddht.v5.channel_services import Endpoint, IncomingMessage, OutgoingMessage
 from ddht.v5.constants import (
     FIND_NODE_RESPONSE_TIMEOUT,
-    LOOKUP_RETRY_THRESHOLD,
     LOOKUP_PARALLELIZATION_FACTOR,
+    LOOKUP_RETRY_THRESHOLD,
     NODES_MESSAGE_PAYLOAD_SIZE,
     REQUEST_RESPONSE_TIMEOUT,
     ROUTING_TABLE_LOOKUP_INTERVAL,
     ROUTING_TABLE_PING_INTERVAL,
 )
-from ddht.v5.endpoint_tracker import (
-    EndpointVote,
-)
-from ddht.enr import (
-    ENR,
-)
-from ddht.v5.messages import (
-    FindNodeMessage,
-    NodesMessage,
-    PingMessage,
-    PongMessage,
-)
-from ddht.kademlia import compute_distance, compute_log_distance, KademliaRoutingTable
-from ddht.typing import NodeID
-from ddht.exceptions import UnexpectedMessage
+from ddht.v5.endpoint_tracker import EndpointVote
+from ddht.v5.messages import FindNodeMessage, NodesMessage, PingMessage, PongMessage
 
 
 @to_tuple
-def partition_enr_indices_by_size(enr_sizes: Sequence[int],
-                                  max_payload_size: int,
-                                  ) -> Generator[Tuple[int, ...], None, None]:
+def partition_enr_indices_by_size(
+    enr_sizes: Sequence[int], max_payload_size: int
+) -> Generator[Tuple[int, ...], None, None]:
     current_partition: Tuple[int, ...] = ()
     current_partition_size = 0
     for index, size in enumerate(enr_sizes):
@@ -94,7 +56,9 @@ def partition_enr_indices_by_size(enr_sizes: Sequence[int],
         yield current_partition
 
 
-def partition_enrs(enrs: Sequence[ENR], max_payload_size: int) -> Tuple[Tuple[ENR, ...], ...]:
+def partition_enrs(
+    enrs: Sequence[ENR], max_payload_size: int
+) -> Tuple[Tuple[ENR, ...], ...]:
     """Partition a list of ENRs to groups to be sent in separate NODES messages.
 
     The goal is to send as few messages as possible, but each message must not exceed the maximum
@@ -106,22 +70,24 @@ def partition_enrs(enrs: Sequence[ENR], max_payload_size: int) -> Tuple[Tuple[EN
     enr_sizes = tuple(len(serialized_enr) for serialized_enr in serialized_enrs)
     partitioned_enr_indices = partition_enr_indices_by_size(enr_sizes, max_payload_size)
     return tuple(
-        tuple(enrs[index] for index in indices)
-        for indices in partitioned_enr_indices
+        tuple(enrs[index] for index in indices) for indices in partitioned_enr_indices
     )
 
 
 class BaseRoutingTableManagerComponent(Service):
     """Base class for services that participate in managing the routing table."""
 
-    logger = logging.getLogger("ddht.v5.routing_table_manager.BaseRoutingTableManagerComponent")
+    logger = logging.getLogger(
+        "ddht.v5.routing_table_manager.BaseRoutingTableManagerComponent"
+    )
 
-    def __init__(self,
-                 local_node_id: NodeID,
-                 routing_table: KademliaRoutingTable,
-                 message_dispatcher: MessageDispatcherAPI,
-                 node_db: NodeDBAPI,
-                 ) -> None:
+    def __init__(
+        self,
+        local_node_id: NodeID,
+        routing_table: KademliaRoutingTable,
+        message_dispatcher: MessageDispatcherAPI,
+        node_db: NodeDBAPI,
+    ) -> None:
         self.local_node_id = local_node_id
         self.routing_table = routing_table
         self.message_dispatcher = message_dispatcher
@@ -161,7 +127,7 @@ class BaseRoutingTableManagerComponent(Service):
             self.logger.warning(
                 "No ENR of %s present in the database even though it should post handshake. "
                 "Requesting it now.",
-                encode_hex(incoming_message.sender_node_id)
+                encode_hex(incoming_message.sender_node_id),
             )
             request_update = True
         else:
@@ -199,10 +165,14 @@ class BaseRoutingTableManagerComponent(Service):
 
     async def request_remote_enr(self, incoming_message: IncomingMessage) -> None:
         """Request the ENR of the sender of an incoming message and store it in the ENR db."""
-        self.logger.debug("Requesting ENR from %s", encode_hex(incoming_message.sender_node_id))
+        self.logger.debug(
+            "Requesting ENR from %s", encode_hex(incoming_message.sender_node_id)
+        )
 
         find_nodes_message = FindNodeMessage(
-            request_id=self.message_dispatcher.get_free_request_id(incoming_message.sender_node_id),
+            request_id=self.message_dispatcher.get_free_request_id(
+                incoming_message.sender_node_id
+            ),
             distance=0,  # request enr of the peer directly
         )
         try:
@@ -257,18 +227,21 @@ class PingHandlerService(BaseRoutingTableManagerComponent):
 
     logger = logging.getLogger("ddht.v5.routing_table_manager.PingHandlerService")
 
-    def __init__(self,
-                 local_node_id: NodeID,
-                 routing_table: KademliaRoutingTable,
-                 message_dispatcher: MessageDispatcherAPI,
-                 node_db: NodeDBAPI,
-                 outgoing_message_send_channel: SendChannel[OutgoingMessage]
-                 ) -> None:
+    def __init__(
+        self,
+        local_node_id: NodeID,
+        routing_table: KademliaRoutingTable,
+        message_dispatcher: MessageDispatcherAPI,
+        node_db: NodeDBAPI,
+        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+    ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
         self.outgoing_message_send_channel = outgoing_message_send_channel
 
     async def run(self) -> None:
-        channel_handler_subscription = self.message_dispatcher.add_request_handler(PingMessage)
+        channel_handler_subscription = self.message_dispatcher.add_request_handler(
+            PingMessage
+        )
         async with channel_handler_subscription:
             async for incoming_message in channel_handler_subscription:
                 self.logger.debug(
@@ -297,8 +270,7 @@ class PingHandlerService(BaseRoutingTableManagerComponent):
         )
         outgoing_message = incoming_message.to_response(pong)
         self.logger.debug(
-            "Responding with Pong to %s",
-            encode_hex(outgoing_message.receiver_node_id),
+            "Responding with Pong to %s", encode_hex(outgoing_message.receiver_node_id)
         )
         await self.outgoing_message_send_channel.send(outgoing_message)
 
@@ -308,18 +280,21 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
 
     logger = logging.getLogger("ddht.v5.routing_table_manager.FindNodeHandlerService")
 
-    def __init__(self,
-                 local_node_id: NodeID,
-                 routing_table: KademliaRoutingTable,
-                 message_dispatcher: MessageDispatcherAPI,
-                 node_db: NodeDBAPI,
-                 outgoing_message_send_channel: SendChannel[OutgoingMessage]
-                 ) -> None:
+    def __init__(
+        self,
+        local_node_id: NodeID,
+        routing_table: KademliaRoutingTable,
+        message_dispatcher: MessageDispatcherAPI,
+        node_db: NodeDBAPI,
+        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+    ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
         self.outgoing_message_send_channel = outgoing_message_send_channel
 
     async def run(self) -> None:
-        handler_subscription = self.message_dispatcher.add_request_handler(FindNodeMessage)
+        handler_subscription = self.message_dispatcher.add_request_handler(
+            FindNodeMessage
+        )
         async with handler_subscription:
             async for incoming_message in handler_subscription:
                 self.update_routing_table(incoming_message.sender_node_id)
@@ -339,9 +314,7 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         """Send a Nodes message containing the local ENR in response to an incoming message."""
         local_enr = self.get_local_enr()
         nodes_message = NodesMessage(
-            request_id=incoming_message.message.request_id,
-            total=1,
-            enrs=(local_enr,),
+            request_id=incoming_message.message.request_id, total=1, enrs=(local_enr,)
         )
         outgoing_message = incoming_message.to_response(nodes_message)
 
@@ -353,7 +326,9 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
 
     async def respond_with_remote_enrs(self, incoming_message: IncomingMessage) -> None:
         """Send a Nodes message containing ENRs of peers at a given node distance."""
-        node_ids = self.routing_table.get_nodes_at_log_distance(incoming_message.message.distance)
+        node_ids = self.routing_table.get_nodes_at_log_distance(
+            incoming_message.message.distance
+        )
 
         enrs = []
         for node_id in node_ids:
@@ -387,20 +362,23 @@ class PingSenderService(BaseRoutingTableManagerComponent):
 
     logger = logging.getLogger("ddht.v5.routing_table_manager.PingSenderService")
 
-    def __init__(self,
-                 local_node_id: NodeID,
-                 routing_table: KademliaRoutingTable,
-                 message_dispatcher: MessageDispatcherAPI,
-                 node_db: NodeDBAPI,
-                 endpoint_vote_send_channel: SendChannel[EndpointVote]
-                 ) -> None:
+    def __init__(
+        self,
+        local_node_id: NodeID,
+        routing_table: KademliaRoutingTable,
+        message_dispatcher: MessageDispatcherAPI,
+        node_db: NodeDBAPI,
+        endpoint_vote_send_channel: SendChannel[EndpointVote],
+    ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
         self.endpoint_vote_send_channel = endpoint_vote_send_channel
 
     async def run(self) -> None:
         async for _ in every(ROUTING_TABLE_PING_INTERVAL):  # noqa: F841
             if not self.routing_table.is_empty:
-                log_distance = self.routing_table.get_least_recently_updated_log_distance()
+                log_distance = (
+                    self.routing_table.get_least_recently_updated_log_distance()
+                )
                 candidates = self.routing_table.get_nodes_at_log_distance(log_distance)
                 node_id = candidates[-1]
                 self.logger.debug("Pinging %s", encode_hex(node_id))
@@ -420,9 +398,7 @@ class PingSenderService(BaseRoutingTableManagerComponent):
                 incoming_message = await self.message_dispatcher.request(node_id, ping)
         except ValueError as value_error:
             self.logger.warning(
-                f"Failed to send ping to %s: %s",
-                encode_hex(node_id),
-                value_error,
+                f"Failed to send ping to %s: %s", encode_hex(node_id), value_error
             )
         except trio.TooSlowError:
             self.logger.warning(f"Ping to %s timed out", encode_hex(node_id))
@@ -440,13 +416,10 @@ class PingSenderService(BaseRoutingTableManagerComponent):
 
                 pong = incoming_message.message
                 local_endpoint = Endpoint(
-                    ip_address=pong.packet_ip,
-                    port=pong.packet_port,
+                    ip_address=pong.packet_ip, port=pong.packet_port
                 )
                 endpoint_vote = EndpointVote(
-                    endpoint=local_endpoint,
-                    node_id=node_id,
-                    timestamp=time.monotonic(),
+                    endpoint=local_endpoint, node_id=node_id, timestamp=time.monotonic()
                 )
                 await self.endpoint_vote_send_channel.send(endpoint_vote)
 
@@ -483,21 +456,23 @@ class LookupService(BaseRoutingTableManagerComponent):
                 unresponsive_node_ids.add(peer)
 
         for lookup_round_counter in itertools.count():
-            candidates = iter_closest_nodes(target, self.routing_table, received_node_ids)
-            responsive_candidates = itertools.dropwhile(
-                lambda node: node in unresponsive_node_ids,
-                candidates,
+            candidates = iter_closest_nodes(
+                target, self.routing_table, received_node_ids
             )
-            closest_k_candidates = take(self.routing_table.bucket_size, responsive_candidates)
+            responsive_candidates = itertools.dropwhile(
+                lambda node: node in unresponsive_node_ids, candidates
+            )
+            closest_k_candidates = take(
+                self.routing_table.bucket_size, responsive_candidates
+            )
             closest_k_unqueried_candidates = (
                 candidate
                 for candidate in closest_k_candidates
                 if candidate not in queried_node_ids
             )
-            nodes_to_query = tuple(take(
-                LOOKUP_PARALLELIZATION_FACTOR,
-                closest_k_unqueried_candidates,
-            ))
+            nodes_to_query = tuple(
+                take(LOOKUP_PARALLELIZATION_FACTOR, closest_k_unqueried_candidates)
+            )
 
             if nodes_to_query:
                 self.logger.debug(
@@ -516,8 +491,12 @@ class LookupService(BaseRoutingTableManagerComponent):
                 )
                 break
 
-    async def lookup_at_peer(self, peer: NodeID, target: NodeID) -> Optional[Tuple[ENR, ...]]:
-        self.logger.debug("Looking up %s at node %s", encode_hex(target), encode_hex(peer))
+    async def lookup_at_peer(
+        self, peer: NodeID, target: NodeID
+    ) -> Optional[Tuple[ENR, ...]]:
+        self.logger.debug(
+            "Looking up %s at node %s", encode_hex(target), encode_hex(peer)
+        )
         distance = compute_log_distance(peer, target)
         first_attempt = await self.request_nodes(peer, target, distance)
         if first_attempt is None:
@@ -525,7 +504,8 @@ class LookupService(BaseRoutingTableManagerComponent):
             return None
         elif len(first_attempt) >= LOOKUP_RETRY_THRESHOLD:
             self.logger.debug(
-                "Node %s responded with %d nodes with single attempt", encode_hex(peer),
+                "Node %s responded with %d nodes with single attempt",
+                encode_hex(peer),
                 len(first_attempt),
             )
             return first_attempt
@@ -533,16 +513,15 @@ class LookupService(BaseRoutingTableManagerComponent):
             second_attempt = await self.request_nodes(peer, target, distance)
             both_attempts = first_attempt + (second_attempt or ())
             self.logger.debug(
-                "Node %s responded with %d nodes in two attempts", encode_hex(peer),
+                "Node %s responded with %d nodes in two attempts",
+                encode_hex(peer),
                 len(both_attempts),
             )
             return both_attempts
 
-    async def request_nodes(self,
-                            peer: NodeID,
-                            target: NodeID,
-                            distance: int,
-                            ) -> Optional[Tuple[ENR, ...]]:
+    async def request_nodes(
+        self, peer: NodeID, target: NodeID, distance: int
+    ) -> Optional[Tuple[ENR, ...]]:
         """Send a FindNode request to the given peer and return the ENRs in the response.
 
         If the peer does not respond or fails to respond properly, `None` is returned
@@ -554,12 +533,12 @@ class LookupService(BaseRoutingTableManagerComponent):
         )
         try:
             with trio.fail_after(FIND_NODE_RESPONSE_TIMEOUT):
-                incoming_messages = await self.message_dispatcher.request_nodes(peer, request)
+                incoming_messages = await self.message_dispatcher.request_nodes(
+                    peer, request
+                )
         except ValueError as value_error:
             self.logger.warning(
-                f"Failed to send FindNode to %s: %s",
-                encode_hex(peer),
-                value_error,
+                f"Failed to send FindNode to %s: %s", encode_hex(peer), value_error
             )
             return None
         except UnexpectedMessage as unexpected_message_error:
@@ -571,8 +550,7 @@ class LookupService(BaseRoutingTableManagerComponent):
             return None
         except trio.TooSlowError:
             self.logger.warning(
-                "Peer %s did not respond in time to FindNode request",
-                encode_hex(peer),
+                "Peer %s did not respond in time to FindNode request", encode_hex(peer)
             )
             return None
         else:
@@ -588,26 +566,32 @@ class LookupService(BaseRoutingTableManagerComponent):
 class RoutingTableManager(Service):
     """Manages the routing table. The actual work is delegated to a few sub components."""
 
-    def __init__(self,
-                 local_node_id: NodeID,
-                 routing_table: KademliaRoutingTable,
-                 message_dispatcher: MessageDispatcherAPI,
-                 node_db: NodeDBAPI,
-                 outgoing_message_send_channel: SendChannel[OutgoingMessage],
-                 endpoint_vote_send_channel: SendChannel[EndpointVote],
-                 ) -> None:
-        SharedComponentKwargType = TypedDict("SharedComponentKwargType", {
-            "local_node_id": NodeID,
-            "routing_table": KademliaRoutingTable,
-            "message_dispatcher": MessageDispatcherAPI,
-            "node_db": NodeDBAPI,
-        })
-        shared_component_kwargs = SharedComponentKwargType({
-            "local_node_id": local_node_id,
-            "routing_table": routing_table,
-            "message_dispatcher": message_dispatcher,
-            "node_db": node_db,
-        })
+    def __init__(
+        self,
+        local_node_id: NodeID,
+        routing_table: KademliaRoutingTable,
+        message_dispatcher: MessageDispatcherAPI,
+        node_db: NodeDBAPI,
+        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+        endpoint_vote_send_channel: SendChannel[EndpointVote],
+    ) -> None:
+        SharedComponentKwargType = TypedDict(
+            "SharedComponentKwargType",
+            {
+                "local_node_id": NodeID,
+                "routing_table": KademliaRoutingTable,
+                "message_dispatcher": MessageDispatcherAPI,
+                "node_db": NodeDBAPI,
+            },
+        )
+        shared_component_kwargs = SharedComponentKwargType(
+            {
+                "local_node_id": local_node_id,
+                "routing_table": routing_table,
+                "message_dispatcher": message_dispatcher,
+                "node_db": node_db,
+            }
+        )
 
         self.ping_handler_service = PingHandlerService(
             outgoing_message_send_channel=outgoing_message_send_channel,
@@ -636,13 +620,13 @@ class RoutingTableManager(Service):
         await self.manager.wait_finished()
 
 
-def iter_closest_nodes(target: NodeID,
-                       routing_table: KademliaRoutingTable,
-                       seen_nodes: Sequence[NodeID],
-                       ) -> Generator[NodeID, None, None]:
+def iter_closest_nodes(
+    target: NodeID, routing_table: KademliaRoutingTable, seen_nodes: Sequence[NodeID]
+) -> Generator[NodeID, None, None]:
     """Iterate over the nodes in the routing table as well as additional nodes in order of
     distance to the target. Duplicates will only be yielded once.
     """
+
     def dist(node: NodeID) -> float:
         if node is not None:
             return compute_distance(target, node)

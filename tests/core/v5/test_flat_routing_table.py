@@ -1,12 +1,7 @@
 import pytest
 
-from ddht.v5.routing_table import (
-    FlatRoutingTable,
-)
-
-from ddht.tools.factories.discovery import (
-    NodeIDFactory,
-)
+from ddht.tools.factories.discovery import NodeIDFactory
+from ddht.v5.routing_table import FlatRoutingTable
 
 
 @pytest.fixture

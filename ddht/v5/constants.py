@@ -1,6 +1,4 @@
-from ddht.constants import (
-    DISCOVERY_MAX_PACKET_SIZE,
-)
+from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
 from ddht.typing import Nonce
 
 NONCE_SIZE = 12  # size of an AESGCM nonce
@@ -19,16 +17,24 @@ TOPIC_HASH_SIZE = 32  # size of a topic hash
 
 WHO_ARE_YOU_MAGIC_SUFFIX = b"WHOAREYOU"
 
-MAX_REQUEST_ID = 2**32 - 1  # highest request id used for outgoing requests
-MAX_REQUEST_ID_ATTEMPTS = 100  # number of attempts we take to guess a available request id
+MAX_REQUEST_ID = 2 ** 32 - 1  # highest request id used for outgoing requests
+MAX_REQUEST_ID_ATTEMPTS = (
+    100
+)  # number of attempts we take to guess a available request id
 
-REQUEST_RESPONSE_TIMEOUT = 0.5  # timeout for waiting for response after request was sent
+REQUEST_RESPONSE_TIMEOUT = (
+    0.5
+)  # timeout for waiting for response after request was sent
 # timeout for waiting for node messages in response to find node requests
 FIND_NODE_RESPONSE_TIMEOUT = 1.0
 HANDSHAKE_TIMEOUT = 1  # timeout for performing a handshake
-ROUTING_TABLE_PING_INTERVAL = 30  # interval of outgoing pings sent to maintain the routing table
+ROUTING_TABLE_PING_INTERVAL = (
+    30
+)  # interval of outgoing pings sent to maintain the routing table
 ROUTING_TABLE_LOOKUP_INTERVAL = 60  # intervals between lookups
-LOOKUP_RETRY_THRESHOLD = 5  # minimum number of ENRs desired in responses to FindNode requests
+LOOKUP_RETRY_THRESHOLD = (
+    5
+)  # minimum number of ENRs desired in responses to FindNode requests
 LOOKUP_PARALLELIZATION_FACTOR = 3  # number of parallel lookup requests (aka alpha)
 
 MAX_NODES_MESSAGE_TOTAL = 8  # max allowed total value for nodes messages

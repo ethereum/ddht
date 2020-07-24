@@ -1,52 +1,36 @@
-from typing import (
-    Optional,
-    Type,
-)
 import secrets
-
-from eth_utils import (
-    encode_hex,
-    ValidationError,
-)
+from typing import Optional, Type
 
 from eth_keys.datatypes import PublicKey
+from eth_utils import ValidationError, encode_hex
 
-from ddht.exceptions import (
-    DecryptionError,
-    HandshakeFailure,
-)
-
-from ddht.v5.abc import HandshakeParticipantAPI
 from ddht.enr import ENR
+from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.identity_schemes import IdentityScheme
+from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
+from ddht.v5.abc import HandshakeParticipantAPI
 from ddht.v5.messages import BaseMessage
 from ddht.v5.packets import (
     AuthHeaderPacket,
     AuthTagPacket,
+    Packet,
+    WhoAreYouPacket,
     get_random_auth_tag,
     get_random_encrypted_data,
     get_random_id_nonce,
-    Packet,
-    WhoAreYouPacket,
 )
-from ddht.v5.tags import (
-    compute_tag,
-    recover_source_id_from_tag,
-)
-from ddht.v5.typing import (
-    HandshakeResult,
-    Tag,
-)
-from ddht.typing import AES128Key, Nonce, IDNonce, NodeID
+from ddht.v5.tags import compute_tag, recover_source_id_from_tag
+from ddht.v5.typing import HandshakeResult, Tag
 
 
 class BaseHandshakeParticipant(HandshakeParticipantAPI):
-    def __init__(self,
-                 is_initiator: bool,
-                 local_private_key: bytes,
-                 local_enr: ENR,
-                 remote_node_id: NodeID,
-                 ) -> None:
+    def __init__(
+        self,
+        is_initiator: bool,
+        local_private_key: bytes,
+        local_enr: ENR,
+        remote_node_id: NodeID,
+    ) -> None:
         self._is_initiator = is_initiator
 
         self._local_enr = local_enr
@@ -76,19 +60,19 @@ class BaseHandshakeParticipant(HandshakeParticipantAPI):
     @property
     def tag(self) -> Tag:
         return compute_tag(
-            source_node_id=self.local_node_id,
-            destination_node_id=self.remote_node_id,
+            source_node_id=self.local_node_id, destination_node_id=self.remote_node_id
         )
 
 
 class HandshakeInitiator(BaseHandshakeParticipant):
-    def __init__(self,
-                 *,
-                 local_private_key: bytes,
-                 local_enr: ENR,
-                 remote_enr: ENR,
-                 initial_message: BaseMessage,
-                 ) -> None:
+    def __init__(
+        self,
+        *,
+        local_private_key: bytes,
+        local_enr: ENR,
+        remote_enr: ENR,
+        initial_message: BaseMessage,
+    ) -> None:
         super().__init__(
             is_initiator=True,
             local_enr=local_enr,
@@ -113,14 +97,15 @@ class HandshakeInitiator(BaseHandshakeParticipant):
         return self.initiating_packet
 
     def is_response_packet(self, packet: Packet) -> bool:
-        return (
-            isinstance(packet, WhoAreYouPacket) and
-            secrets.compare_digest(packet.token, self.initiating_packet.auth_tag)
+        return isinstance(packet, WhoAreYouPacket) and secrets.compare_digest(
+            packet.token, self.initiating_packet.auth_tag
         )
 
     def complete_handshake(self, response_packet: Packet) -> HandshakeResult:
         if not self.is_response_packet(response_packet):
-            raise ValueError(f"Packet {response_packet} is not the expected response packet")
+            raise ValueError(
+                f"Packet {response_packet} is not the expected response packet"
+            )
         if not isinstance(response_packet, WhoAreYouPacket):
             raise TypeError("Invariant: Only WhoAreYou packets are valid responses")
         who_are_you_packet = response_packet
@@ -131,7 +116,9 @@ class HandshakeInitiator(BaseHandshakeParticipant):
             ephemeral_public_key,
         ) = self.identity_scheme.create_handshake_key_pair()
 
-        remote_public_key_object = PublicKey.from_compressed_bytes(self.remote_enr.public_key)
+        remote_public_key_object = PublicKey.from_compressed_bytes(
+            self.remote_enr.public_key
+        )
         remote_public_key_uncompressed = remote_public_key_object.to_bytes()
         session_keys = self.identity_scheme.compute_session_keys(
             local_private_key=ephemeral_private_key,
@@ -175,16 +162,19 @@ class HandshakeInitiator(BaseHandshakeParticipant):
 
 
 class HandshakeRecipient(BaseHandshakeParticipant):
-    def __init__(self,
-                 *,
-                 local_private_key: bytes,
-                 local_enr: ENR,
-                 remote_node_id: Optional[NodeID],
-                 remote_enr: Optional[ENR],
-                 initiating_packet_auth_tag: Nonce,
-                 ) -> None:
+    def __init__(
+        self,
+        *,
+        local_private_key: bytes,
+        local_enr: ENR,
+        remote_node_id: Optional[NodeID],
+        remote_enr: Optional[ENR],
+        initiating_packet_auth_tag: Nonce,
+    ) -> None:
         if remote_enr is None and remote_node_id is None:
-            raise ValueError("Either the peer's ENR, its node id, or both must be given")
+            raise ValueError(
+                "Either the peer's ENR, its node id, or both must be given"
+            )
         elif remote_enr is not None and remote_node_id is not None:
             if remote_node_id != remote_enr.node_id:
                 raise ValueError(
@@ -223,11 +213,9 @@ class HandshakeRecipient(BaseHandshakeParticipant):
 
     def is_response_packet(self, packet: Packet) -> bool:
         return (
-            isinstance(packet, AuthHeaderPacket) and
-            recover_source_id_from_tag(
-                packet.tag,
-                self.local_node_id,
-            ) == self.remote_node_id
+            isinstance(packet, AuthHeaderPacket)
+            and recover_source_id_from_tag(packet.tag, self.local_node_id)
+            == self.remote_node_id
         )
 
     def complete_handshake(self, response_packet: Packet) -> HandshakeResult:
@@ -261,24 +249,23 @@ class HandshakeRecipient(BaseHandshakeParticipant):
             self.who_are_you_packet.id_nonce,
         )
         message = self.decrypt_and_validate_message(
-            auth_header_packet,
-            session_keys.decryption_key,
+            auth_header_packet, session_keys.decryption_key
         )
 
         return HandshakeResult(
-            session_keys=session_keys,
-            enr=enr,
-            message=message,
-            auth_header_packet=None,
+            session_keys=session_keys, enr=enr, message=message, auth_header_packet=None
         )
 
-    def decrypt_and_validate_auth_response(self,
-                                           auth_header_packet: AuthHeaderPacket,
-                                           auth_response_key: AES128Key,
-                                           id_nonce: IDNonce,
-                                           ) -> Optional[ENR]:
+    def decrypt_and_validate_auth_response(
+        self,
+        auth_header_packet: AuthHeaderPacket,
+        auth_response_key: AES128Key,
+        id_nonce: IDNonce,
+    ) -> Optional[ENR]:
         try:
-            id_nonce_signature, enr = auth_header_packet.decrypt_auth_response(auth_response_key)
+            id_nonce_signature, enr = auth_header_packet.decrypt_auth_response(
+                auth_response_key
+            )
         except DecryptionError as error:
             raise HandshakeFailure("Unable to decrypt auth response") from error
         except ValidationError as error:
@@ -294,7 +281,9 @@ class HandshakeRecipient(BaseHandshakeParticipant):
             try:
                 enr.validate_signature()
             except ValidationError as error:
-                raise HandshakeFailure("ENR in auth response contains invalid signature") from error
+                raise HandshakeFailure(
+                    "ENR in auth response contains invalid signature"
+                ) from error
 
             if self.remote_enr is not None:
                 if enr.sequence_number <= self.remote_enr.sequence_number:
@@ -318,14 +307,15 @@ class HandshakeRecipient(BaseHandshakeParticipant):
                 public_key=current_remote_enr.public_key,
             )
         except ValidationError as error:
-            raise HandshakeFailure("Invalid id nonce signature in auth response") from error
+            raise HandshakeFailure(
+                "Invalid id nonce signature in auth response"
+            ) from error
 
         return enr
 
-    def decrypt_and_validate_message(self,
-                                     auth_header_packet: AuthHeaderPacket,
-                                     decryption_key: AES128Key
-                                     ) -> BaseMessage:
+    def decrypt_and_validate_message(
+        self, auth_header_packet: AuthHeaderPacket, decryption_key: AES128Key
+    ) -> BaseMessage:
         try:
             return auth_header_packet.decrypt_message(decryption_key)
         except DecryptionError as error:

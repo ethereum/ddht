@@ -58,10 +58,12 @@ setup(
     url='https://github.com/ethereum/ddht',
     include_package_data=True,
     install_requires=[
-        "eth-utils>=1.8.4,<2",
+        "cached-property>=1.5.1,<2",
+        "coincurve>=10.0.0,<11.0.0",
         "async-service==0.1.0a8",
         "eth-hash>=0.1.4,<1",
         "eth-keys>=0.3.3,<0.4.0",
+        "eth-utils>=1.8.4,<2",
         "rlp>=1.1.0,<2.0.0",
         'trio>=0.13.0,<0.14',
         'trio-typing>=0.3.0,<0.4',

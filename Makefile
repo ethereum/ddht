@@ -28,6 +28,7 @@ lint:
 
 lint-roll:
 	isort --recursive ddht tests
+	black ddht tests
 	$(MAKE) lint
 
 test:
