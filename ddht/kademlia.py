@@ -54,7 +54,7 @@ def compute_log_distance(left_node_id: NodeID, right_node_id: NodeID) -> int:
 class KademliaRoutingTable:
 
     def __init__(self, center_node_id: NodeID, bucket_size: int) -> None:
-        self.logger = get_logger("p2p.kademlia.KademliaRoutingTable")
+        self.logger = get_logger("ddht.kademlia.KademliaRoutingTable")
         self.center_node_id = center_node_id
         self.bucket_size = bucket_size
 
