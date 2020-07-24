@@ -1,6 +1,6 @@
-<MODULE_NAME>
-<PYPI_NAME>
-<REPO_NAME>
-<RTD_NAME>
-<PROJECT_NAME>
-<SHORT_DESCRIPTION>
+ddht
+ddht
+ddht
+ddht
+Discovery V5 DHT
+Implementation of the P2P Discoveryv5 Protocol

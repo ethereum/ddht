@@ -1,7 +1,7 @@
-<PROJECT_NAME>
+Discovery V5 DHT
 ==============================
 
-<SHORT_DESCRIPTION>
+Implementation of the P2P Discoveryv5 Protocol
 
 Contents
 --------
@@ -9,7 +9,7 @@ Contents
 .. toctree::
     :maxdepth: 3
 
-    <MODULE_NAME>
+    ddht
     release_notes
 
 
