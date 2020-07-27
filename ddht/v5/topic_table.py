@@ -39,7 +39,8 @@ class TopicTable:
         return len(self.topic_queues[topic]) >= self.max_queue_size
 
     def get_enrs_for_topic(self, topic: Topic) -> Tuple[ENR, ...]:
-        """Get all ENRs registered for a given topic.
+        """
+        Get all ENRs registered for a given topic.
 
         The result will be ordered from newest to oldest entry.
         """
@@ -73,7 +74,8 @@ class TopicTable:
         return max(next_registration_time - current_time, 0)
 
     def register(self, topic: Topic, enr: ENR, current_time: float) -> None:
-        """Register a new ad.
+        """
+        Register a new ad.
 
         A `ValueError` will be raised if the ad cannot be added because the table is full,
         because the node already is present in the queue, or because the topic's wait time is

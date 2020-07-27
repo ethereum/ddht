@@ -393,7 +393,8 @@ class PeerPacker(Service):
         return self.handshake_participant is None and self.session_keys is not None
 
     def reset_handshake_state(self) -> None:
-        """Return to the pre handshake state.
+        """
+        Return to the pre handshake state.
 
         This deletes the session keys, the handshake participant instance, and all messages on the
         message backlog. After this method is called, a new handshake can be initiated.
@@ -406,7 +407,8 @@ class PeerPacker(Service):
         self.handshake_finished_event = None
 
     def is_expecting_handshake_packet(self, incoming_packet: IncomingPacket) -> bool:
-        """Check if the peer packer is waiting for the given packet to complete a handshake.
+        """
+        Check if the peer packer is waiting for the given packet to complete a handshake.
 
         This should be called before putting the packet in question on the peer's incoming packet
         channel.

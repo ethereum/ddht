@@ -16,7 +16,8 @@ from ddht.typing import NodeID
 
 
 def check_relayed_addr(sender: AddressAPI, addr: AddressAPI) -> bool:
-    """Check if an address relayed by the given sender is valid.
+    """
+    Check if an address relayed by the given sender is valid.
 
     Reserved and unspecified addresses are always invalid.
     Private addresses are valid if the sender is a private host.
@@ -32,13 +33,8 @@ def check_relayed_addr(sender: AddressAPI, addr: AddressAPI) -> bool:
     return True
 
 
-def int_to_big_endian4(integer: int) -> bytes:
-    """ 4 bytes big endian integer"""
-    return struct.pack(">I", integer)
-
-
-def enc_port(p: int) -> bytes:
-    return int_to_big_endian4(p)[-2:]
+def enc_port(port: int) -> bytes:
+    return struct.pack(">H", port)
 
 
 class Address(AddressAPI):
@@ -136,7 +132,8 @@ class KademliaRoutingTable:
         return index, bucket, replacement_cache
 
     def update(self, node_id: NodeID) -> Optional[NodeID]:
-        """Insert a node into the routing table or move it to the top if already present.
+        """
+        Insert a node into the routing table or move it to the top if already present.
 
         If the bucket is already full, the node id will be added to the replacement cache and
         the oldest node is returned as an eviction candidate. Otherwise, the return value is
@@ -209,7 +206,8 @@ class KademliaRoutingTable:
         self.bucket_update_order.appendleft(bucket_index)
 
     def remove(self, node_id: NodeID) -> None:
-        """Remove a node from the routing table if it is present.
+        """
+        Remove a node from the routing table if it is present.
 
         If possible, the node will be replaced with the newest entry in the replacement cache.
         """
@@ -277,7 +275,8 @@ class KademliaRoutingTable:
         return all(len(bucket) == 0 for bucket in self.buckets)
 
     def get_least_recently_updated_log_distance(self) -> int:
-        """Get the log distance whose corresponding bucket was updated least recently.
+        """
+        Get the log distance whose corresponding bucket was updated least recently.
 
         Only non-empty buckets are considered. If all buckets are empty, a `ValueError` is raised.
         """

@@ -138,7 +138,8 @@ class IdentityScheme(ABC):
 
 
 def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
-    """Perform the ECDH key agreement.
+    """
+    Perform the ECDH key agreement.
 
     The public key is expected in uncompressed format and the resulting secret point will be
     formatted as a 0x02 or 0x03 prefix (depending on the sign of the secret's y component)

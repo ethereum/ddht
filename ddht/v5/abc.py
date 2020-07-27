@@ -122,7 +122,8 @@ class MessageDispatcherAPI(ABC):
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
     ) -> IncomingMessage:
-        """Send a request to the given peer and return the response.
+        """
+        Send a request to the given peer and return the response.
 
         This is the primary interface for requesting data from a peer. Internally, it will look up
         the peer's ENR in the database, extract endpoint information from it, add a response
@@ -142,7 +143,8 @@ class MessageDispatcherAPI(ABC):
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
     ) -> Tuple[IncomingMessage, ...]:
-        """Send a request to the given peer and return the collection of Nodes responses.
+        """
+        Send a request to the given peer and return the collection of Nodes responses.
 
         Similar to `request`, but waits for all Nodes messages sent in response. If a different
         message type is received or the messages are in some other way invalid, an
@@ -154,7 +156,8 @@ class MessageDispatcherAPI(ABC):
     def add_request_handler(
         self, message_class: Type[BaseMessage]
     ) -> ChannelHandlerSubscriptionAPI[IncomingMessage]:
-        """Add a request handler for messages of a given type.
+        """
+        Add a request handler for messages of a given type.
 
         Only one handler per message type can be added.
         """
@@ -164,7 +167,8 @@ class MessageDispatcherAPI(ABC):
     def add_response_handler(
         self, remote_node_id: NodeID, request_id: int
     ) -> ChannelHandlerSubscriptionAPI[IncomingMessage]:
-        """Add a response handler.
+        """
+        Add a response handler.
 
         All messages sent by the given peer with the given request id will be send to the returned
         handler's channel.

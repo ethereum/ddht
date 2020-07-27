@@ -59,7 +59,8 @@ def partition_enr_indices_by_size(
 def partition_enrs(
     enrs: Sequence[ENR], max_payload_size: int
 ) -> Tuple[Tuple[ENR, ...], ...]:
-    """Partition a list of ENRs to groups to be sent in separate NODES messages.
+    """
+    Partition a list of ENRs to groups to be sent in separate NODES messages.
 
     The goal is to send as few messages as possible, but each message must not exceed the maximum
     allowed size.
@@ -94,7 +95,8 @@ class BaseRoutingTableManagerComponent(Service):
         self.node_db = node_db
 
     def update_routing_table(self, node_id: NodeID) -> None:
-        """Update a peer's entry in the routing table.
+        """
+        Update a peer's entry in the routing table.
 
         This method should be called, whenever we receive a message from them.
         """
@@ -522,7 +524,8 @@ class LookupService(BaseRoutingTableManagerComponent):
     async def request_nodes(
         self, peer: NodeID, target: NodeID, distance: int
     ) -> Optional[Tuple[ENR, ...]]:
-        """Send a FindNode request to the given peer and return the ENRs in the response.
+        """
+        Send a FindNode request to the given peer and return the ENRs in the response.
 
         If the peer does not respond or fails to respond properly, `None` is returned
         indicating that retrying with a larger distance is futile.
@@ -623,9 +626,12 @@ class RoutingTableManager(Service):
 def iter_closest_nodes(
     target: NodeID, routing_table: KademliaRoutingTable, seen_nodes: Sequence[NodeID]
 ) -> Generator[NodeID, None, None]:
-    """Iterate over the nodes in the routing table as well as additional nodes in order of
+    """
+    Iterate over the nodes in the routing table as well as additional nodes in order of
     distance to the target. Duplicates will only be yielded once.
     """
+    yielded_nodes: Set[NodeID] = set()
+    routing_iter = routing_table.iter_nodes_around(target)
 
     def dist(node: Optional[NodeID]) -> float:
         if node is not None:
@@ -633,8 +639,6 @@ def iter_closest_nodes(
         else:
             return math.inf
 
-    yielded_nodes: Set[NodeID] = set()
-    routing_iter = routing_table.iter_nodes_around(target)
     seen_iter = iter(sorted(seen_nodes, key=dist))
     closest_routing = next(routing_iter, None)
     closest_seen = next(seen_iter, None)

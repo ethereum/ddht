@@ -28,7 +28,8 @@ AsyncFnsAndArgsType = Union[Callable[..., Awaitable[Any]], Tuple[Any, ...]]
 
 
 async def gather(*async_fns_and_args: AsyncFnsAndArgsType) -> Tuple[Any, ...]:
-    """Run a collection of async functions in parallel and collect their results.
+    """
+    Run a collection of async functions in parallel and collect their results.
 
     The results will be in the same order as the corresponding async functions.
     """
@@ -61,7 +62,8 @@ async def gather(*async_fns_and_args: AsyncFnsAndArgsType) -> Tuple[Any, ...]:
 async def every(
     interval: float, initial_delay: float = 0
 ) -> AsyncGenerator[float, Optional[float]]:
-    """Generator used to perform a task in regular intervals.
+    """
+    Generator used to perform a task in regular intervals.
 
     The generator will attempt to yield at a sequence of target times, defined as
     `start_time + initial_delay + N * interval` seconds where `start_time` is trio's current time
