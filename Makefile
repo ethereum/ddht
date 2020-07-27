@@ -27,7 +27,8 @@ lint:
 	tox -elint
 
 lint-roll:
-	isort --recursive ddht tests
+	isort ddht tests
+	black ddht tests
 	$(MAKE) lint
 
 test:

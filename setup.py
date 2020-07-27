@@ -7,14 +7,18 @@ from setuptools import (
 
 extras_require = {
     'test': [
+        "factory-boy==2.12.0",
+        "hypothesis>=4.45.1,<5",
         "pytest==5.4.1",
+        "pytest-trio>=0.5.2,<0.6",
         "pytest-xdist",
         "tox==3.14.6",
     ],
     'lint': [
-        "flake8==3.7.9",
-        "isort>=4.2.15,<5",
-        "mypy==0.770",
+        "black==19.10b0",
+        "flake8==3.8.3",
+        "isort>=5.1.4,<6",
+        "mypy==0.782",
         "pydocstyle>=3.0.0,<4",
     ],
     'doc': [
@@ -55,9 +59,18 @@ setup(
     url='https://github.com/ethereum/ddht',
     include_package_data=True,
     install_requires=[
-        "eth-utils>=1,<2",
+        "cached-property>=1.5.1,<2",
+        "coincurve>=10.0.0,<11.0.0",
+        "cryptography==3.0",
+        "async-service==0.1.0a8",
+        "eth-hash[pycryptodome]>=0.1.4,<1",
+        "eth-keys>=0.3.3,<0.4.0",
+        "eth-utils>=1.8.4,<2",
+        "rlp>=1.1.0,<2.0.0",
+        'trio>=0.13.0,<0.14',
+        'trio-typing>=0.3.0,<0.4',
     ],
-    python_requires='>=3.6, <4',
+    python_requires='>=3.7, <4',
     extras_require=extras_require,
     py_modules=['ddht'],
     license="MIT",
@@ -70,8 +83,7 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: Implementation :: PyPy',
+        'Programming Language :: Python :: 3.8',
     ],
 )
