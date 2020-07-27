@@ -61,6 +61,7 @@ setup(
     install_requires=[
         "cached-property>=1.5.1,<2",
         "coincurve>=10.0.0,<11.0.0",
+        "cryptography==3.0",
         "async-service==0.1.0a8",
         "eth-hash[pycryptodome]>=0.1.4,<1",
         "eth-keys>=0.3.3,<0.4.0",
