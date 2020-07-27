@@ -68,7 +68,7 @@ setup(
         'trio>=0.13.0,<0.14',
         'trio-typing>=0.3.0,<0.4',
     ],
-    python_requires='>=3.8, <4',
+    python_requires='>=3.7, <4',
     extras_require=extras_require,
     py_modules=['ddht'],
     license="MIT",
@@ -81,6 +81,7 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
     ],
 )
