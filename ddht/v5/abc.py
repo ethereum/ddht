@@ -9,7 +9,6 @@ from typing import (
     TypeVar,
 )
 
-
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentityScheme
 from ddht.typing import NodeID
