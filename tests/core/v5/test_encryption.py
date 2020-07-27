@@ -1,5 +1,6 @@
 from eth_utils import ValidationError, decode_hex
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 import pytest
 
 from ddht.constants import AES128_KEY_SIZE

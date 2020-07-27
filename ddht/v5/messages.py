@@ -22,7 +22,7 @@ else:
 topic_sedes = Binary.fixed_length(TOPIC_HASH_SIZE)
 
 
-class IPAddressSedes(Binary):
+class IPAddressSedes(Binary):  # type: ignore
     def __init__(self) -> None:
         super().__init__()
 
@@ -64,7 +64,7 @@ default_message_type_registry = MessageTypeRegistry()
 #
 # Message types
 #
-class BaseMessage(rlp.Serializable):
+class BaseMessage(rlp.Serializable):  # type: ignore
     message_type: int
 
     def to_bytes(self) -> bytes:

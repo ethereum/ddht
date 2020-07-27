@@ -74,7 +74,7 @@ class EndpointTracker(Service):
             )
             signed_enr = new_unsigned_enr.to_signed_enr(self.local_private_key)
             self.logger.info(
-                f"Updating local endpoint to %s (new ENR sequence number: %d)",
+                "Updating local endpoint to %s (new ENR sequence number: %d)",
                 vote.endpoint,
                 signed_enr.sequence_number,
             )

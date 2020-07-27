@@ -7,4 +7,4 @@ def get_open_port() -> int:
     s.listen(1)
     port = s.getsockname()[1]
     s.close()
-    return port
+    return port  # type: ignore

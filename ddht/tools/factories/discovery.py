@@ -28,7 +28,7 @@ from ddht.v5.typing import Topic
 from .kademlia import AddressFactory
 
 
-class AuthTagPacketFactory(factory.Factory):
+class AuthTagPacketFactory(factory.Factory):  # type: ignore
     class Meta:
         model = AuthTagPacket
 
@@ -37,7 +37,7 @@ class AuthTagPacketFactory(factory.Factory):
     encrypted_message = b"\x00" * 10
 
 
-class AuthHeaderFactory(factory.Factory):
+class AuthHeaderFactory(factory.Factory):  # type: ignore
     class Meta:
         model = AuthHeader
 
@@ -48,7 +48,7 @@ class AuthHeaderFactory(factory.Factory):
     encrypted_auth_response = b"\x00" * 10
 
 
-class AuthHeaderPacketFactory(factory.Factory):
+class AuthHeaderPacketFactory(factory.Factory):  # type: ignore
     class Meta:
         model = AuthHeaderPacket
 
@@ -57,7 +57,7 @@ class AuthHeaderPacketFactory(factory.Factory):
     encrypted_message = b"\x00" * 10
 
 
-class WhoAreYouPacketFactory(factory.Factory):
+class WhoAreYouPacketFactory(factory.Factory):  # type: ignore
     class Meta:
         model = WhoAreYouPacket
 
@@ -67,7 +67,7 @@ class WhoAreYouPacketFactory(factory.Factory):
     enr_sequence_number = 0
 
 
-class EndpointFactory(factory.Factory):
+class EndpointFactory(factory.Factory):  # type: ignore
     class Meta:
         model = Endpoint
 
@@ -77,7 +77,7 @@ class EndpointFactory(factory.Factory):
     port = factory.Faker("pyint", min_value=0, max_value=65535)
 
 
-class EndpointVoteFactory(factory.Factory):
+class EndpointVoteFactory(factory.Factory):  # type: ignore
     class Meta:
         model = EndpointVote
 
@@ -86,7 +86,7 @@ class EndpointVoteFactory(factory.Factory):
     timestamp = factory.Faker("unix_time")
 
 
-class IncomingPacketFactory(factory.Factory):
+class IncomingPacketFactory(factory.Factory):  # type: ignore
     class Meta:
         model = IncomingPacket
 
@@ -94,7 +94,7 @@ class IncomingPacketFactory(factory.Factory):
     sender_endpoint = factory.SubFactory(EndpointFactory)
 
 
-class NodeIDFactory(factory.Factory):
+class NodeIDFactory(factory.Factory):  # type: ignore
     class Meta:
         model = NodeID
         inline_args = ("node_id",)
@@ -152,7 +152,7 @@ def bits_to_bytes(input_bits: Tuple[bool, ...]) -> bytes:
     return padding + as_bytes_unpadded
 
 
-class ENRFactory(factory.Factory):
+class ENRFactory(factory.Factory):  # type: ignore
     class Meta:
         model = ENR
 
@@ -183,7 +183,7 @@ class ENRFactory(factory.Factory):
         custom_kv_pairs: Dict[bytes, Any] = {}
 
 
-class PingMessageFactory(factory.Factory):
+class PingMessageFactory(factory.Factory):  # type: ignore
     class Meta:
         model = PingMessage
 
@@ -191,7 +191,7 @@ class PingMessageFactory(factory.Factory):
     enr_seq = factory.Faker("pyint", min_value=0, max_value=100)
 
 
-class FindNodeMessageFactory(factory.Factory):
+class FindNodeMessageFactory(factory.Factory):  # type: ignore
     class Meta:
         model = FindNodeMessage
 
@@ -199,7 +199,7 @@ class FindNodeMessageFactory(factory.Factory):
     distance = factory.Faker("pyint", min_value=0, max_value=32)
 
 
-class IncomingMessageFactory(factory.Factory):
+class IncomingMessageFactory(factory.Factory):  # type: ignore
     class Meta:
         model = IncomingMessage
 
@@ -208,7 +208,7 @@ class IncomingMessageFactory(factory.Factory):
     sender_node_id = factory.SubFactory(NodeIDFactory)
 
 
-class HandshakeInitiatorFactory(factory.Factory):
+class HandshakeInitiatorFactory(factory.Factory):  # type: ignore
     class Meta:
         model = HandshakeInitiator
 
@@ -229,7 +229,7 @@ class HandshakeInitiatorFactory(factory.Factory):
         )
 
 
-class HandshakeRecipientFactory(factory.Factory):
+class HandshakeRecipientFactory(factory.Factory):  # type: ignore
     class Meta:
         model = HandshakeRecipient
 
@@ -251,7 +251,7 @@ class HandshakeRecipientFactory(factory.Factory):
         )
 
 
-class TopicFactory(factory.Factory):
+class TopicFactory(factory.Factory):  # type: ignore
     class Meta:
         model = Topic
         inline_args = ("topic",)

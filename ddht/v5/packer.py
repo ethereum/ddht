@@ -29,6 +29,8 @@ class PeerPacker(Service):
     handshake_participant: Optional[HandshakeParticipantAPI] = None
     session_keys: Optional[SessionKeys] = None
 
+    handshake_successful_event: trio.Event
+
     def __init__(
         self,
         local_private_key: bytes,
@@ -62,13 +64,11 @@ class PeerPacker(Service):
         # being processed.
         self.handling_lock = trio.Lock()
 
-        self.handshake_successful_event: Optional[trio.Event] = None
-
     def __str__(self) -> str:
         return f"{self.__class__.__name__}[{encode_hex(self.remote_node_id)[2:10]}]"
 
     async def run(self) -> None:
-        async with self.incoming_packet_receive_channel, self.incoming_message_send_channel, self.outgoing_message_receive_channel, self.outgoing_packet_send_channel:
+        async with self.incoming_packet_receive_channel, self.incoming_message_send_channel, self.outgoing_message_receive_channel, self.outgoing_packet_send_channel:  # noqa: E501
             self.manager.run_daemon_task(self.handle_incoming_packets)
             self.manager.run_daemon_task(self.handle_outgoing_messages)
             await self.manager.wait_finished()
@@ -113,6 +113,8 @@ class PeerPacker(Service):
             raise ValueError("Can only handle packets pre handshake")
 
         if isinstance(incoming_packet.packet, AuthTagPacket):
+            remote_enr: Optional[ENR]
+
             try:
                 remote_enr = self.node_db.get_enr(self.remote_node_id)
             except KeyError:
@@ -411,10 +413,13 @@ class PeerPacker(Service):
         """
         return (
             self.is_during_handshake
+            and self.handshake_participant is not None
             and self.handshake_participant.is_response_packet(incoming_packet.packet)
         )
 
     async def send_first_handshake_packet(self, receiver_endpoint: Endpoint) -> None:
+        if self.handshake_participant is None:
+            raise Exception("Invariant: this code path should not occur")
         outgoing_packet = OutgoingPacket(
             self.handshake_participant.first_packet_to_send, receiver_endpoint
         )

@@ -398,10 +398,10 @@ class PingSenderService(BaseRoutingTableManagerComponent):
                 incoming_message = await self.message_dispatcher.request(node_id, ping)
         except ValueError as value_error:
             self.logger.warning(
-                f"Failed to send ping to %s: %s", encode_hex(node_id), value_error
+                "Failed to send ping to %s: %s", encode_hex(node_id), value_error
             )
         except trio.TooSlowError:
-            self.logger.warning(f"Ping to %s timed out", encode_hex(node_id))
+            self.logger.warning("Ping to %s timed out", encode_hex(node_id))
         else:
             if not isinstance(incoming_message.message, PongMessage):
                 self.logger.warning(
@@ -538,12 +538,12 @@ class LookupService(BaseRoutingTableManagerComponent):
                 )
         except ValueError as value_error:
             self.logger.warning(
-                f"Failed to send FindNode to %s: %s", encode_hex(peer), value_error
+                "Failed to send FindNode to %s: %s", encode_hex(peer), value_error
             )
             return None
         except UnexpectedMessage as unexpected_message_error:
             self.logger.warning(
-                f"Peer %s sent unexpected message to FindNode request: %s",
+                "Peer %s sent unexpected message to FindNode request: %s",
                 encode_hex(peer),
                 unexpected_message_error,
             )
@@ -627,7 +627,7 @@ def iter_closest_nodes(
     distance to the target. Duplicates will only be yielded once.
     """
 
-    def dist(node: NodeID) -> float:
+    def dist(node: Optional[NodeID]) -> float:
         if node is not None:
             return compute_distance(target, node)
         else:
@@ -640,11 +640,13 @@ def iter_closest_nodes(
     closest_seen = next(seen_iter, None)
 
     while not (closest_routing is None and closest_seen is None):
+        node_to_yield: NodeID
+
         if dist(closest_routing) < dist(closest_seen):
-            node_to_yield = closest_routing
+            node_to_yield = closest_routing  # type: ignore
             closest_routing = next(routing_iter, None)
         else:
-            node_to_yield = closest_seen
+            node_to_yield = closest_seen  # type: ignore
             closest_seen = next(seen_iter, None)
 
         if node_to_yield not in yielded_nodes:

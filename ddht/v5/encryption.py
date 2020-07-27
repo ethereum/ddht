@@ -1,11 +1,11 @@
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from eth.validation import validate_length
 
 from ddht.constants import AES128_KEY_SIZE
 from ddht.exceptions import DecryptionError
 from ddht.typing import AES128Key, Nonce
 from ddht.v5.constants import NONCE_SIZE
-from eth.validation import validate_length
 
 
 def validate_aes128_key(key: AES128Key) -> None:

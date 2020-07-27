@@ -1,18 +1,16 @@
 from typing import Any
 
-from eth_utils import int_to_big_endian
 import factory
 
 from ddht.abc import AddressAPI
 from ddht.kademlia import Address
 
-from .keys import PublicKeyFactory
 from .socket import get_open_port
 
 IPAddressFactory = factory.Faker("ipv4")
 
 
-class AddressFactory(factory.Factory):
+class AddressFactory(factory.Factory):  # type: ignore
     class Meta:
         model = Address
 

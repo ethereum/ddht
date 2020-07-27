@@ -122,8 +122,8 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
 
         if is_request and is_response:
             self.logger.warning(
-                f"%s from %s is both a response to an earlier request (id %d) and a request a "
-                f"handler is present for (message type %d). Message will be handled twice.",
+                "%s from %s is both a response to an earlier request (id %d) and a request a "
+                "handler is present for (message type %d). Message will be handled twice.",
                 incoming_message,
                 encode_hex(sender_node_id),
                 request_id,
@@ -131,8 +131,8 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             )
         if not is_request and not is_response:
             self.logger.warning(
-                f"Dropping %s from %s (request id %d, message type %d) as neither a request nor a "
-                f"response handler is present",
+                "Dropping %s from %s (request id %d, message type %d) as neither a request nor a "
+                "response handler is present",
                 incoming_message,
                 encode_hex(sender_node_id),
                 request_id,

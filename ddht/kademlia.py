@@ -2,26 +2,16 @@ import collections
 import functools
 import ipaddress
 import itertools
-import operator
+import logging
 import random
 import struct
-from typing import Any, Deque, Dict, Iterable, Iterator, List, Tuple, Type, TypeVar
-from urllib import parse as urlparse
+from typing import Any, Deque, Iterator, List, Optional, Tuple, Type, cast
 
 from cached_property import cached_property
-from eth_hash.auto import keccak
-from eth_keys import datatypes, keys
-from eth_utils import big_endian_to_int, decode_hex, encode_hex, remove_0x_prefix
+from eth_utils import big_endian_to_int, encode_hex
 
-from ddht.abc import AddressAPI, NodeAPI, TAddress
-from ddht.constants import (
-    IP_V4_ADDRESS_ENR_KEY,
-    NUM_ROUTING_TABLE_BUCKETS,
-    TCP_PORT_ENR_KEY,
-    UDP_PORT_ENR_KEY,
-)
-from ddht.enr import ENR, IDENTITY_SCHEME_ENR_KEY
-from ddht.identity_schemes import V4CompatIdentityScheme
+from ddht.abc import AddressAPI, TAddress
+from ddht.constants import NUM_ROUTING_TABLE_BUCKETS
 from ddht.typing import NodeID
 
 
@@ -42,11 +32,20 @@ def check_relayed_addr(sender: AddressAPI, addr: AddressAPI) -> bool:
     return True
 
 
+def int_to_big_endian4(integer: int) -> bytes:
+    """ 4 bytes big endian integer"""
+    return struct.pack(">I", integer)
+
+
+def enc_port(p: int) -> bytes:
+    return int_to_big_endian4(p)[-2:]
+
+
 class Address(AddressAPI):
     def __init__(self, ip: str, udp_port: int, tcp_port: int) -> None:
         self.udp_port = udp_port
         self.tcp_port = tcp_port
-        self._ip = ipaddress.ip_address(ip)
+        self._ip = cast(ipaddress.IPv4Address, ipaddress.ip_address(ip))
 
     @property
     def is_loopback(self) -> bool:
@@ -69,7 +68,7 @@ class Address(AddressAPI):
         return str(self._ip)
 
     @cached_property
-    def ip_packed(self) -> str:
+    def ip_packed(self) -> bytes:
         """The binary representation of this IP address."""
         return self._ip.packed
 
@@ -104,7 +103,7 @@ def compute_log_distance(left_node_id: NodeID, right_node_id: NodeID) -> int:
 
 class KademliaRoutingTable:
     def __init__(self, center_node_id: NodeID, bucket_size: int) -> None:
-        self.logger = get_logger("ddht.kademlia.KademliaRoutingTable")
+        self.logger = logging.getLogger("ddht.kademlia.KademliaRoutingTable")
         self.center_node_id = center_node_id
         self.bucket_size = bucket_size
 
@@ -136,7 +135,7 @@ class KademliaRoutingTable:
         replacement_cache = self.replacement_caches[index]
         return index, bucket, replacement_cache
 
-    def update(self, node_id: NodeID) -> NodeID:
+    def update(self, node_id: NodeID) -> Optional[NodeID]:
         """Insert a node into the routing table or move it to the top if already present.
 
         If the bucket is already full, the node id will be added to the replacement cache and
@@ -146,34 +145,36 @@ class KademliaRoutingTable:
         if node_id == self.center_node_id:
             raise ValueError("Cannot insert center node into routing table")
 
-        bucket_index, bucket, replacement_cache = self.get_index_bucket_and_replacement_cache(
-            node_id
-        )
+        (
+            bucket_index,
+            bucket,
+            replacement_cache,
+        ) = self.get_index_bucket_and_replacement_cache(node_id)
 
         is_bucket_full = len(bucket) >= self.bucket_size
         is_node_in_bucket = node_id in bucket
 
         if not is_node_in_bucket and not is_bucket_full:
-            self.logger.debug2(
+            self.logger.debug(
                 "Adding %s to bucket %d", encode_hex(node_id), bucket_index
             )
             self.update_bucket_unchecked(node_id)
             eviction_candidate = None
         elif is_node_in_bucket:
-            self.logger.debug2(
+            self.logger.debug(
                 "Updating %s in bucket %d", encode_hex(node_id), bucket_index
             )
             self.update_bucket_unchecked(node_id)
             eviction_candidate = None
         elif not is_node_in_bucket and is_bucket_full:
             if node_id not in replacement_cache:
-                self.logger.debug2(
+                self.logger.debug(
                     "Adding %s to replacement cache of bucket %d",
                     encode_hex(node_id),
                     bucket_index,
                 )
             else:
-                self.logger.debug2(
+                self.logger.debug(
                     "Updating %s in replacement cache of bucket %d",
                     encode_hex(node_id),
                     bucket_index,
@@ -188,9 +189,11 @@ class KademliaRoutingTable:
 
     def update_bucket_unchecked(self, node_id: NodeID) -> None:
         """Add or update assuming the node is either present already or the bucket is not full."""
-        bucket_index, bucket, replacement_cache = self.get_index_bucket_and_replacement_cache(
-            node_id
-        )
+        (
+            bucket_index,
+            bucket,
+            replacement_cache,
+        ) = self.get_index_bucket_and_replacement_cache(node_id)
 
         for container in (bucket, replacement_cache):
             try:
@@ -210,9 +213,11 @@ class KademliaRoutingTable:
 
         If possible, the node will be replaced with the newest entry in the replacement cache.
         """
-        bucket_index, bucket, replacement_cache = self.get_index_bucket_and_replacement_cache(
-            node_id
-        )
+        (
+            bucket_index,
+            bucket,
+            replacement_cache,
+        ) = self.get_index_bucket_and_replacement_cache(node_id)
 
         in_bucket = node_id in bucket
         in_replacement_cache = node_id in replacement_cache

@@ -22,10 +22,9 @@ from rlp.sedes import Binary, big_endian_int, binary, raw
 
 from ddht.constants import ENR_REPR_PREFIX, IP_V4_SIZE, IP_V6_SIZE, MAX_ENR_SIZE
 from ddht.identity_schemes import (
-    IdentityScheme,
-    IdentitySchemeRegistry,
     default_identity_scheme_registry as default_id_scheme_registry,
 )
+from ddht.identity_schemes import IdentityScheme, IdentitySchemeRegistry
 from ddht.typing import NodeID
 
 
@@ -232,7 +231,7 @@ class BaseENR(Mapping[bytes, Any], ABC):
             )
 
     def get_signing_message(self) -> bytes:
-        return rlp.encode(self, ENRContentSedes)
+        return rlp.encode(self, ENRContentSedes)  # type: ignore
 
     #
     # Mapping interface
@@ -314,7 +313,7 @@ class ENR(BaseENR, ENRSedes):
         unpadded_b64 = representation[4:]
         padded_b64 = unpadded_b64 + "=" * (4 - len(unpadded_b64) % 4)
         rlp_encoded = base64.urlsafe_b64decode(padded_b64)
-        return rlp.decode(
+        return rlp.decode(  # type: ignore
             rlp_encoded, cls, identity_scheme_registry=identity_scheme_registry
         )
 

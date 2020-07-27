@@ -153,8 +153,8 @@ def test_iter_all_random(routing_table, center_node_id):
 
     # We iterate over all nodes
     table_length = sum(
-        len(l)
-        for l in itertools.chain(
+        len(bucket_or_cache)
+        for bucket_or_cache in itertools.chain(
             routing_table.buckets, routing_table.replacement_caches
         )
     )

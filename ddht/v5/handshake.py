@@ -136,6 +136,8 @@ class HandshakeInitiator(BaseHandshakeParticipant):
             private_key=self.local_private_key,
         )
 
+        enr: Optional[ENR]
+
         if who_are_you_packet.enr_sequence_number < self.local_enr.sequence_number:
             enr = self.local_enr
         else:
@@ -182,7 +184,7 @@ class HandshakeRecipient(BaseHandshakeParticipant):
                     f"explicitly given one ({encode_hex(remote_node_id)})"
                 )
         if remote_node_id is None:
-            remote_node_id = remote_enr.node_id
+            remote_node_id = remote_enr.node_id  # type: ignore
 
         super().__init__(
             is_initiator=False,

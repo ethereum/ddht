@@ -1,5 +1,4 @@
 from ddht.kademlia import Address, check_relayed_addr
-from ddht.tools.factories.kademlia import AddressFactory
 
 
 def test_check_relayed_addr():

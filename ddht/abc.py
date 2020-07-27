@@ -43,7 +43,7 @@ class AddressAPI(ABC):
 
     @property
     @abstractmethod
-    def ip_packed(self) -> str:
+    def ip_packed(self) -> bytes:
         ...
 
     @abstractmethod

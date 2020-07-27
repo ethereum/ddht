@@ -285,7 +285,7 @@ def test_session_key_derivation(initiator_private_key, recipient_private_key, id
                 "0xfb757dc581730490a1d7a00deea65e9b1936924caaea8f44d476014856b68736"
             ),
             decode_hex(
-                "0x9961e4c2356d61bedb83052c115d311acb3a96f5777296dcf297351130266231503061ac4aaee666073d"
+                "0x9961e4c2356d61bedb83052c115d311acb3a96f5777296dcf297351130266231503061ac4aaee666073d"  # noqa: E501
                 "7e5bc2c80c3f5c5b500c1cb5fd0a76abbb6b675ad157"
             ),
             decode_hex(

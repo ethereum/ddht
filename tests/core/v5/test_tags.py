@@ -1,5 +1,6 @@
 from eth_utils import decode_hex
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 import pytest
 
 from ddht.v5.tags import compute_tag, recover_source_id_from_tag

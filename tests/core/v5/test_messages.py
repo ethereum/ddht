@@ -86,23 +86,23 @@ def test_message_encoding():
                 "total": 0x01,
                 "enrs": [
                     ENR.from_repr(
-                        "enr:-HW4QBzimRxkmT18hMKaAL3IcZF1UcfTMPyi3Q1pxwZZbcZVRI8DC5infUAB_UauARLOJtYTxa"
-                        "agKoGmIjzQxO2qUygBgmlkgnY0iXNlY3AyNTZrMaEDymNMrg1JrLQB2KTGtv6MVbcNEVv0AHacwUAP"
+                        "enr:-HW4QBzimRxkmT18hMKaAL3IcZF1UcfTMPyi3Q1pxwZZbcZVRI8DC5infUAB_UauARLOJtYTxa"  # noqa: E501
+                        "agKoGmIjzQxO2qUygBgmlkgnY0iXNlY3AyNTZrMaEDymNMrg1JrLQB2KTGtv6MVbcNEVv0AHacwUAP"  # noqa: E501
                         "MljNMTg"
                     ),
                     ENR.from_repr(
-                        "enr:-HW4QNfxw543Ypf4HXKXdYxkyzfcxcO-6p9X986WldfVpnVTQX1xlTnWrktEWUbeTZnmgOuAY_"
-                        "KUhbVV1Ft98WoYUBMBgmlkgnY0iXNlY3AyNTZrMaEDDiy3QkHAxPyOgWbxp5oF1bDdlYE6dLCUUp8x"
+                        "enr:-HW4QNfxw543Ypf4HXKXdYxkyzfcxcO-6p9X986WldfVpnVTQX1xlTnWrktEWUbeTZnmgOuAY_"  # noqa: E501
+                        "KUhbVV1Ft98WoYUBMBgmlkgnY0iXNlY3AyNTZrMaEDDiy3QkHAxPyOgWbxp5oF1bDdlYE6dLCUUp8x"  # noqa: E501
                         "fVw50jU"
                     ),
                 ],
             },
             decode_hex(
-                "0x04f8f20101f8eef875b8401ce2991c64993d7c84c29a00bdc871917551c7d330fca2dd0d69c706596dc6"
-                "55448f030b98a77d4001fd46ae0112ce26d613c5a6a02a81a6223cd0c4edaa532801826964827634897365"
-                "63703235366b31a103ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138f875"
-                "b840d7f1c39e376297f81d7297758c64cb37dcc5c3beea9f57f7ce9695d7d5a67553417d719539d6ae4b44"
-                "5946de4d99e680eb8063f29485b555d45b7df16a1850130182696482763489736563703235366b31a1030e"
+                "0x04f8f20101f8eef875b8401ce2991c64993d7c84c29a00bdc871917551c7d330fca2dd0d69c706596dc6"  # noqa: E501
+                "55448f030b98a77d4001fd46ae0112ce26d613c5a6a02a81a6223cd0c4edaa532801826964827634897365"  # noqa: E501
+                "63703235366b31a103ca634cae0d49acb401d8a4c6b6fe8c55b70d115bf400769cc1400f3258cd3138f875"  # noqa: E501
+                "b840d7f1c39e376297f81d7297758c64cb37dcc5c3beea9f57f7ce9695d7d5a67553417d719539d6ae4b44"  # noqa: E501
+                "5946de4d99e680eb8063f29485b555d45b7df16a1850130182696482763489736563703235366b31a1030e"  # noqa: E501
                 "2cb74241c0c4fc8e8166f1a79a05d5b0dd95813a74b094529f317d5c39d235"
             ),
         ],

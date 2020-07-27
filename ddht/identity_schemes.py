@@ -9,14 +9,15 @@ from cryptography.hazmat.backends import default_backend as cryptography_default
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from eth_keys.datatypes import NonRecoverableSignature, PrivateKey, PublicKey
-from eth_keys.exceptions import BadSignature, ValidationError as EthKeysValidationError
+from eth_keys.exceptions import BadSignature
+from eth_keys.exceptions import ValidationError as EthKeysValidationError
 from eth_utils import ValidationError, encode_hex, keccak
 
 from ddht.constants import AES128_KEY_SIZE, HKDF_INFO, ID_NONCE_SIGNATURE_PREFIX
 from ddht.typing import AES128Key, IDNonce, NodeID, SessionKeys
 
 if TYPE_CHECKING:
-    from ddht.enr import BaseENR, ENR  # noqa: F401
+    from ddht.enr import ENR, BaseENR  # noqa: F401
 
 # https://github.com/python/mypy/issues/5264#issuecomment-399407428
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ discv4_identity_scheme_registry = IdentitySchemeRegistry()
 
 class IdentityScheme(ABC):
 
-    id: bytes = None
+    id: bytes
 
     #
     # ENR
@@ -149,7 +150,7 @@ def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
     public_key_compressed = public_key_eth_keys.to_compressed_bytes()
     public_key_coincurve = coincurve.keys.PublicKey(public_key_compressed)
     secret_coincurve = public_key_coincurve.multiply(private_key)
-    return secret_coincurve.format()
+    return secret_coincurve.format()  # type: ignore
 
 
 def hkdf_expand_and_extract(
@@ -173,8 +174,10 @@ def hkdf_expand_and_extract(
         raise Exception("Invariant: Secret is expanded to three AES128 keys")
 
     initiator_key = expanded_key[:AES128_KEY_SIZE]
-    recipient_key = expanded_key[AES128_KEY_SIZE : 2 * AES128_KEY_SIZE]
-    auth_response_key = expanded_key[2 * AES128_KEY_SIZE : 3 * AES128_KEY_SIZE]
+    recipient_key = expanded_key[AES128_KEY_SIZE : 2 * AES128_KEY_SIZE]  # noqa: E203
+    auth_response_key = expanded_key[
+        2 * AES128_KEY_SIZE : 3 * AES128_KEY_SIZE  # noqa: E203
+    ]
 
     return initiator_key, recipient_key, auth_response_key
 
@@ -220,7 +223,7 @@ class V4IdentityScheme(IdentityScheme):
     @classmethod
     def extract_public_key(cls, enr: "BaseENR") -> bytes:
         try:
-            return enr[cls.public_key_enr_key]
+            return enr[cls.public_key_enr_key]  # type: ignore
         except KeyError as error:
             raise KeyError("ENR does not contain public key") from error
 

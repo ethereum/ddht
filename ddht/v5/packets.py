@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from typing import Callable, NamedTuple, Optional, Tuple, Union, cast
 
+from eth.validation import validate_length, validate_length_lte
 from eth_typing import Hash32
 from eth_utils import (
     ValidationError,
@@ -36,7 +37,6 @@ from ddht.v5.messages import (
     default_message_type_registry,
 )
 from ddht.v5.typing import Tag
-from eth.validation import validate_length, validate_length_lte
 
 
 #
@@ -262,14 +262,14 @@ def validate_who_are_you_packet_size(encoded_packet: bytes) -> None:
             f"{MAGIC_SIZE} bytes of magic"
         )
     if len(encoded_packet) - MAGIC_SIZE < 1:
-        raise ValidationError(f"Encoded packet is missing RLP encoded payload section")
+        raise ValidationError("Encoded packet is missing RLP encoded payload section")
 
 
 def validate_message_packet_size(encoded_packet: bytes) -> None:
     validate_max_packet_size(encoded_packet)
     validate_tag_prefix(encoded_packet)
     if len(encoded_packet) - TAG_SIZE < 1:
-        raise ValidationError(f"Message packet is missing RLP encoded auth section")
+        raise ValidationError("Message packet is missing RLP encoded auth section")
 
 
 def validate_max_packet_size(encoded_packet: bytes) -> None:
@@ -330,7 +330,7 @@ def decode_packet(encoded_packet: bytes) -> Packet:
 
 
 def decode_message_packet(
-    encoded_packet: bytes
+    encoded_packet: bytes,
 ) -> Union[AuthTagPacket, AuthHeaderPacket]:
     validate_message_packet_size(encoded_packet)
 
@@ -502,7 +502,7 @@ def _decrypt_message(
     except DecodingError as error:
         raise ValidationError("Encrypted message does not contain valid RLP") from error
 
-    return message
+    return message  # type: ignore
 
 
 #
