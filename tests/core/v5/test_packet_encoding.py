@@ -5,7 +5,7 @@ import pytest
 import rlp
 
 from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
-from ddht.tools.factories import (
+from ddht.tools.factories.discovery import (
     AuthHeaderFactory,
     AuthHeaderPacketFactory,
     AuthTagPacketFactory,

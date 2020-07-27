@@ -9,9 +9,9 @@ from typing import (
     TypeVar,
 )
 
-from p2p.identity_schemes import IdentityScheme
 
 from ddht.enr import ENR
+from ddht.identity_schemes import IdentityScheme
 from ddht.typing import NodeID
 from ddht.v5.channel_services import Endpoint, IncomingMessage
 from ddht.v5.messages import BaseMessage

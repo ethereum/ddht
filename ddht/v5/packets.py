@@ -2,7 +2,6 @@ import hashlib
 import secrets
 from typing import Callable, NamedTuple, Optional, Tuple, Union, cast
 
-from eth.validation import validate_length, validate_length_lte
 from eth_typing import Hash32
 from eth_utils import (
     ValidationError,
@@ -37,6 +36,7 @@ from ddht.v5.messages import (
     default_message_type_registry,
 )
 from ddht.v5.typing import Tag
+from ddht.validation import validate_length, validate_length_lte
 
 
 #
