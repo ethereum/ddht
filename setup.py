@@ -59,6 +59,7 @@ setup(
     url='https://github.com/ethereum/ddht',
     include_package_data=True,
     install_requires=[
+        "async-service==0.1.0a8",
         "cached-property>=1.5.1,<2",
         "coincurve>=10.0.0,<11.0.0",
         "cryptography==3.0",
@@ -86,4 +87,9 @@ setup(
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
     ],
+    entry_points={
+        'console_scripts': [
+            'ddht=ddht._boot:_boot',
+        ],
+    },
 )
