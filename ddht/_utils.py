@@ -1,6 +1,9 @@
 import asyncio
 import itertools
 import operator
+import os
+import pathlib
+import secrets
 from typing import (
     Any,
     AsyncGenerator,
@@ -12,6 +15,7 @@ from typing import (
     Union,
 )
 
+from eth_keys import keys
 import trio
 
 
@@ -89,3 +93,14 @@ async def every(
         additional_delay = yield yield_time
         if additional_delay is not None:
             delay += additional_delay
+
+
+def generate_node_key_file(path: pathlib.Path) -> None:
+    if path.exists():
+        raise FileExistsError(f"Keyfile path already exists {path}")
+    key = secrets.token_bytes(32)
+    path.write_bytes(key)
+
+
+def read_node_key_file(path: pathlib.Path) -> keys.PrivateKey:
+    return keys.PrivateKey(path.read_bytes())
