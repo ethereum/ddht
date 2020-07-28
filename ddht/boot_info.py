@@ -6,10 +6,10 @@ from typing import Optional, Sequence, Tuple, TypedDict, Union
 
 from eth_keys import keys
 from eth_utils import decode_hex
-import xdg
 
 from ddht.constants import DEFAULT_BOOTNODES, DEFAULT_LISTEN, DEFAULT_PORT
 from ddht.enr import ENR
+from ddht.xdg import get_xdg_ddht_root
 
 AnyIPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 
@@ -26,7 +26,7 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
     if args.base_dir is not None:
         base_dir = args.base_dir.expanduser().resolve()
     else:
-        base_dir = xdg.XDG_DATA_HOME / "ddht"
+        base_dir = get_xdg_ddht_root()
 
     if args.port is None:
         port = DEFAULT_PORT

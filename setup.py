@@ -69,7 +69,6 @@ setup(
         "rlp>=1.1.0,<2.0.0",
         "trio>=0.13.0,<0.14",
         "trio-typing>=0.3.0,<0.4",
-        "xdg==4.0.1",
     ],
     python_requires=">=3.8, <4",
     extras_require=extras_require,
