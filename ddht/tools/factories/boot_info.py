@@ -10,6 +10,7 @@ class BootInfoFactory(factory.Factory):  # type: ignore
     class Meta:
         model = BootInfo
 
+    private_key = None
     base_dir = factory.LazyFunction(get_xdg_ddht_root)
     port = DEFAULT_PORT
     listen_on = DEFAULT_LISTEN

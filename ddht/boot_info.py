@@ -19,7 +19,7 @@ class BootInfoKwargs(TypedDict, total=False):
     port: int
     listen_on: AnyIPAddress
     bootnodes: Tuple[ENR, ...]
-    private_key: keys.PrivateKey
+    private_key: Optional[keys.PrivateKey]
 
 
 def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
@@ -65,7 +65,7 @@ class BootInfo:
     port: int
     listen_on: AnyIPAddress
     bootnodes: Tuple[ENR, ...]
-    private_key: keys.PrivateKey
+    private_key: Optional[keys.PrivateKey]
 
     @classmethod
     def from_cli_args(cls, args: Sequence[str]) -> "BootInfo":
