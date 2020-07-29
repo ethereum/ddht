@@ -235,8 +235,9 @@ class PeerPacker(Service):
                 self.reset_handshake_state()
                 await self.handle_incoming_packet_pre_handshake(incoming_packet)
             except ValidationError as validation_error:
-                self.logger.warning("Received invalid packet: %s", validation_error)
-                raise  # let the service fail
+                self.logger.debug("Received invalid packet: %s", validation_error)
+                self.manager.cancel()
+                return
             else:
                 incoming_message = IncomingMessage(
                     message, incoming_packet.sender_endpoint, self.remote_node_id

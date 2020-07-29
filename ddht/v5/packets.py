@@ -499,7 +499,7 @@ def _decrypt_message(
 
     try:
         message = rlp.decode(plain_text[1:], message_class)
-    except DecodingError as error:
+    except (DecodingError, DeserializationError) as error:
         raise ValidationError("Encrypted message does not contain valid RLP") from error
 
     return message  # type: ignore
