@@ -41,6 +41,7 @@ ENR_B = ENRFactory()
             ("--bootnode", repr(ENR_A), "--bootnode", repr(ENR_B)),
             (dict(bootnodes=(ENR_A, ENR_B))),
         ),
+        (("--disable-upnp",), (dict(is_upnp_enabled=False)),),
     ),
 )
 def test_cli_args_to_boot_info(args, factory_kwargs):

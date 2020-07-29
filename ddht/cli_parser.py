@@ -75,6 +75,9 @@ class NormalizeAndAppendENR(argparse.Action):
 
 
 network_parser.add_argument(
+    "--disable-upnp", action="store_true", help="Disable UPnP port forwarding",
+)
+network_parser.add_argument(
     "--port", type=int, help="Port number for the discovery service"
 )
 network_parser.add_argument(
