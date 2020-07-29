@@ -1,4 +1,5 @@
 import logging
+import shutil
 
 from ddht.boot_info import BootInfo
 from ddht.cli_parser import parser
@@ -30,7 +31,7 @@ async def main() -> None:
     boot_info = BootInfo.from_namespace(args)
 
     if not boot_info.base_dir.exists():
-        if get_xdg_data_home() in boot_info.base_dir.parents:
+        if boot_info.is_ephemeral or get_xdg_data_home() in boot_info.base_dir.parents:
             boot_info.base_dir.mkdir(exist_ok=True)
         else:
             raise FileNotFoundError(
@@ -38,4 +39,8 @@ async def main() -> None:
                 f"not under the $XDG_DATA_HOME: {boot_info.base_dir}"
             )
 
-    await args.func(boot_info)
+    try:
+        await args.func(boot_info)
+    finally:
+        if boot_info.is_ephemeral:
+            shutil.rmtree(boot_info.base_dir)

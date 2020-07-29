@@ -3,6 +3,7 @@ import itertools
 import operator
 import pathlib
 import secrets
+import socket
 from typing import (
     Any,
     AsyncGenerator,
@@ -103,3 +104,12 @@ def generate_node_key_file(path: pathlib.Path) -> None:
 
 def read_node_key_file(path: pathlib.Path) -> keys.PrivateKey:
     return keys.PrivateKey(path.read_bytes())
+
+
+def get_open_port() -> int:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port  # type: ignore
