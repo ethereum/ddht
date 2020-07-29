@@ -70,7 +70,10 @@ def get_local_enr(
         logger.info(f"No Node for {encode_hex(node_id)} found, creating new one")
         return minimal_enr
     else:
-        if any(base_enr[key] != value for key, value in minimal_enr.items()):
+        if any(
+            key not in base_enr or base_enr[key] != value
+            for key, value in minimal_enr.items()
+        ):
             logger.debug("Updating local ENR")
             return UnsignedENR(
                 sequence_number=base_enr.sequence_number + 1,
