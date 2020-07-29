@@ -24,15 +24,11 @@ KEY = keys.PrivateKey(KEY_RAW)
         ),
         (
             ("--base-dir", "~/test-home-gets-resolved"),
-            dict(
-                base_dir=pathlib.Path("~/test-home-gets-resolved").expanduser()
-            ),
+            dict(base_dir=pathlib.Path("~/test-home-gets-resolved").expanduser()),
         ),
         (
             ("--base-dir", "./../test-relative-gets-resolved"),
-            dict(
-                base_dir=pathlib.Path("./../test-relative-gets-resolved").resolve()
-            ),
+            dict(base_dir=pathlib.Path("./../test-relative-gets-resolved").resolve()),
         ),
         (("--private-key", KEY_HEX), dict(private_key=KEY)),
     ),
