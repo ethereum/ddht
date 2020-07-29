@@ -7,6 +7,7 @@ import rlp
 
 from ddht.abc import NodeDBAPI
 from ddht.enr import ENR
+from ddht.exceptions import OldSequenceNumber
 from ddht.identity_schemes import IdentitySchemeRegistry
 from ddht.typing import NodeID
 
@@ -46,7 +47,7 @@ class NodeDB(NodeDBAPI):
         except KeyError:
             existing_enr = None
         if existing_enr and existing_enr.sequence_number > enr.sequence_number:
-            raise ValueError(
+            raise OldSequenceNumber(
                 f"Cannot overwrite existing ENR ({existing_enr.sequence_number}) with old one "
                 f"({enr.sequence_number})"
             )
