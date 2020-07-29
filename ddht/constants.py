@@ -1,3 +1,15 @@
+import ipaddress
+from typing import Tuple
+
+# Default bootnodes
+DEFAULT_BOOTNODES: Tuple[str, ...] = ()
+
+# Default port number
+DEFAULT_PORT: int = 30303
+
+# Default listen address
+DEFAULT_LISTEN: ipaddress.IPv4Address = ipaddress.ip_address("0.0.0.0")
+
 # Max size of discovery packets.
 DISCOVERY_MAX_PACKET_SIZE = 1280
 

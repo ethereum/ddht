@@ -86,7 +86,7 @@ IncomingMessageSubscription = ChannelHandlerSubscription[IncomingMessage]
 
 
 class MessageDispatcher(Service, MessageDispatcherAPI):
-    logger = logging.getLogger("p2p.discv5.message_dispatcher.MessageDispatcher")
+    logger = logging.getLogger("ddht.v5.message_dispatcher.MessageDispatcher")
 
     def __init__(
         self,

@@ -22,7 +22,7 @@ class EndpointVote(NamedTuple):
 
 class EndpointTracker(Service):
 
-    logger = logging.getLogger("p2p.discv5.endpoint_tracker.EndpointTracker")
+    logger = logging.getLogger("ddht.v5.endpoint_tracker.EndpointTracker")
 
     def __init__(
         self,
