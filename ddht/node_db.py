@@ -7,7 +7,7 @@ import rlp
 
 from ddht.abc import NodeDBAPI
 from ddht.enr import ENR
-from ddht.exceptions import OldSequenceNumber
+from ddht.exceptions import OldSequenceNumber, UnknownIdentityScheme
 from ddht.identity_schemes import IdentitySchemeRegistry
 from ddht.typing import NodeID
 
@@ -34,7 +34,7 @@ class NodeDB(NodeDBAPI):
         we don't know the identity scheme).
         """
         if enr.identity_scheme.id not in self.identity_scheme_registry:
-            raise ValueError(
+            raise UnknownIdentityScheme(
                 f"ENRs identity scheme with id {enr.identity_scheme.id!r} unknown to ENR DBs "
                 f"identity scheme registry"
             )
