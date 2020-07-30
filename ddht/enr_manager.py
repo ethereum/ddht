@@ -1,58 +1,80 @@
+import logging
+from typing import Mapping, Tuple
+
 from async_service import Service
+from eth_keys import keys
+from eth_utils.toolz import merge
+import trio
 
 from ddht.abc import NodeDBAPI
-from ddht.enr import ENR
-from ddht.exceptions import OldSequenceNumber
+from ddht.enr import ENR, UnsignedENR
+from ddht.identity_schemes import (
+    IdentitySchemeRegistry,
+    default_identity_scheme_registry,
+)
+from ddht.typing import NodeID
 
-def get_local_enr(
-    boot_info: BootInfo,
-    node_db: NodeDBAPI,
-    local_private_key: keys.PrivateKey,
-    local_ip_address: Optional[AnyIPAddress],
-) -> ENR:
-    kv_pairs = {
-        b"id": b"v4",
-        b"secp256k1": local_private_key.public_key.to_compressed_bytes(),
-        b"udp": boot_info.port,
-    }
-    if local_ip_address is not None:
-        kv_pairs[IP_V4_ADDRESS_ENR_KEY] = local_ip_address.packed
-    minimal_enr = UnsignedENR(
-        sequence_number=1,
-        kv_pairs=kv_pairs,
-        identity_scheme_registry=default_identity_scheme_registry,
-    ).to_signed_enr(local_private_key.to_bytes())
-    node_id = minimal_enr.node_id
-
-    try:
-        base_enr = node_db.get_enr(node_id)
-    except KeyError:
-        logger.info(f"No Node for {encode_hex(node_id)} found, creating new one")
-        return minimal_enr
-    else:
-        if any(
-            key not in base_enr or base_enr[key] != value
-            for key, value in minimal_enr.items()
-        ):
-            logger.debug("Updating local ENR")
-            return UnsignedENR(
-                sequence_number=base_enr.sequence_number + 1,
-                kv_pairs=merge(dict(base_enr), dict(minimal_enr)),
-                identity_scheme_registry=default_identity_scheme_registry,
-            ).to_signed_enr(local_private_key.to_bytes())
-        else:
-            return base_enr
 
 class ENRManager(Service):
     _node_db: NodeDBAPI
     _enr: ENR
+    _node_id: NodeID
+    _identity_scheme_registry: IdentitySchemeRegistry
 
-    def __init__(self,
-                 node_db: NodeDBAPI,
-                 base_enr: ENR) -> None:
+    logger = logging.getLogger("ddht.ENRManager")
+
+    _send_channel: trio.abc.SendChannel[Tuple[bytes, bytes]]
+    _receive_channel: trio.abc.ReceiveChannel[Tuple[bytes, bytes]]
+
+    def __init__(
+        self,
+        node_db: NodeDBAPI,
+        private_key: keys.PrivateKey,
+        base_kv_pairs: Mapping[bytes, bytes],
+        identity_scheme_registry: IdentitySchemeRegistry = default_identity_scheme_registry,  # noqa: E501
+    ) -> None:
         self._node_db = node_db
+        self._identity_scheme_registry = identity_scheme_registry
+        self._private_key = private_key
+        self._send_channel, self._receive_channel = trio.open_memory_channel[
+            Tuple[bytes, bytes]
+        ](0)
+
+        minimal_enr = UnsignedENR(
+            sequence_number=1,
+            kv_pairs=dict(base_kv_pairs),
+            identity_scheme_registry=self._identity_scheme_registry,
+        ).to_signed_enr(self._private_key.to_bytes())
+        self._node_id = minimal_enr.node_id
 
         try:
-            self._node_db.set_enr(base_enr)
+            base_enr = node_db.get_enr(self._node_id)
+        except KeyError:
+            self.logger.info("Local ENR created: %r", minimal_enr)
+            self._enr = minimal_enr
+            node_db.set_enr(self._enr)
+        else:
+            self._enr = base_enr
+            self.update(*tuple(dict(minimal_enr).items()))
 
-    def update(self, *kv_pair: Tuple[bytes, bytes]) ->
+    @property
+    def enr(self) -> ENR:
+        return self._enr
+
+    def update(self, *kv_pairs: Tuple[bytes, bytes]) -> ENR:
+        if any(
+            key not in self._enr or self._enr[key] != value for key, value in kv_pairs
+        ):
+            self._enr = UnsignedENR(
+                sequence_number=self._enr.sequence_number + 1,
+                kv_pairs=merge(dict(self._enr), dict(kv_pairs)),
+                identity_scheme_registry=self._identity_scheme_registry,
+            ).to_signed_enr(self._private_key.to_bytes())
+            self._node_db.set_enr(self._enr)
+            self.logger.info("Local ENR Updated: %r", self.enr)
+        return self._enr
+
+    async def run(self) -> None:
+        async with self._receive_channel:
+            async for key, value in self._receive_channel:
+                self.update((key, value))
