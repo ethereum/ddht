@@ -12,6 +12,7 @@ from ddht.abc import NodeDBAPI
 from ddht.boot_info import BootInfo
 from ddht.constants import NUM_ROUTING_TABLE_BUCKETS
 from ddht.enr import ENR, UnsignedENR
+from ddht.exceptions import OldSequenceNumber
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.kademlia import KademliaRoutingTable
 from ddht.node_db import NodeDB
@@ -107,7 +108,10 @@ class Application(Service):
 
         node_db.set_enr(local_enr)
         for enr in self._boot_info.bootnodes:
-            node_db.set_enr(enr)
+            try:
+                node_db.set_enr(enr)
+            except OldSequenceNumber:
+                pass
             routing_table.update(enr.node_id)
 
         port = self._boot_info.port

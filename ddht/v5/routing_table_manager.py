@@ -16,7 +16,7 @@ from trio.abc import SendChannel
 from ddht._utils import every
 from ddht.abc import NodeDBAPI
 from ddht.enr import ENR
-from ddht.exceptions import UnexpectedMessage
+from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
 from ddht.typing import NodeID
 from ddht.v5.abc import MessageDispatcherAPI
@@ -451,9 +451,14 @@ class LookupService(BaseRoutingTableManagerComponent):
             queried_node_ids.add(peer)
             if enrs is not None:
                 for enr in enrs:
-                    received_enrs.append(enr)
                     received_node_ids.append(enr.node_id)
-                    self.node_db.set_enr(enr)
+
+                    try:
+                        self.node_db.set_enr(enr)
+                    except OldSequenceNumber:
+                        received_enrs.append(self.node_db.get_enr(enr.node_id))
+                    else:
+                        received_enrs.append(enr)
             else:
                 unresponsive_node_ids.add(peer)
 
