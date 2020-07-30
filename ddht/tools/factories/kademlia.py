@@ -2,10 +2,9 @@ from typing import Any
 
 import factory
 
+from ddht._utils import get_open_port
 from ddht.abc import AddressAPI
 from ddht.kademlia import Address
-
-from .socket import get_open_port
 
 IPAddressFactory = factory.Faker("ipv4")
 

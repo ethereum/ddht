@@ -28,8 +28,14 @@ network_parser = parser.add_argument_group("network")
 #
 # Core
 #
-ddht_parser.add_argument("--base-dir", type=pathlib.Path)
 ddht_parser.add_argument("--private-key", help="Hex encoded 32 byte private key")
+
+base_dir_parser = ddht_parser.add_mutually_exclusive_group()
+
+base_dir_parser.add_argument("--base-dir", type=pathlib.Path)
+base_dir_parser.add_argument(
+    "--ephemeral", action="store_true",
+)
 
 #
 # Logging

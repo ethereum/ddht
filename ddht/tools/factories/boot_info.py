@@ -17,3 +17,4 @@ class BootInfoFactory(factory.Factory):  # type: ignore
     bootnodes = factory.LazyFunction(
         lambda: tuple(ENR.from_repr(enr_repr) for enr_repr in DEFAULT_BOOTNODES)
     )
+    is_ephemeral = False
