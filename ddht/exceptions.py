@@ -37,3 +37,11 @@ class OldSequenceNumber(Exception):
     """
 
     pass
+
+
+class UnknownIdentityScheme(Exception):
+    """
+    Raised when trying to instantiate an ENR with an unknown identity scheme
+    """
+
+    pass
