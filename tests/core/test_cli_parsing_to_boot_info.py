@@ -6,11 +6,16 @@ import pytest
 
 from ddht.boot_info import BootInfo
 from ddht.tools.factories.boot_info import BootInfoFactory
+from ddht.tools.factories.discovery import ENRFactory
 
 KEY_RAW = b"unicornsrainbowsunicornsrainbows"
 KEY_HEX = KEY_RAW.hex()
 KEY_HEX_PREFIXED = "0x" + KEY_HEX
 KEY = keys.PrivateKey(KEY_RAW)
+
+
+ENR_A = ENRFactory()
+ENR_B = ENRFactory()
 
 
 @pytest.mark.parametrize(
@@ -31,6 +36,11 @@ KEY = keys.PrivateKey(KEY_RAW)
             dict(base_dir=pathlib.Path("./../test-relative-gets-resolved").resolve()),
         ),
         (("--private-key", KEY_HEX), dict(private_key=KEY)),
+        (("--bootnode", repr(ENR_A)), (dict(bootnodes=(ENR_A,))),),
+        (
+            ("--bootnode", repr(ENR_A), "--bootnode", repr(ENR_B)),
+            (dict(bootnodes=(ENR_A, ENR_B))),
+        ),
     ),
 )
 def test_cli_args_to_boot_info(args, factory_kwargs):
