@@ -1,7 +1,7 @@
 import logging
-from typing import Mapping, Tuple
+from typing import Mapping, Optional, Tuple
 
-from async_service import Service
+from async_service import Service, external_trio_api
 from eth_keys import keys
 from eth_utils.toolz import merge
 import trio
@@ -23,14 +23,14 @@ class ENRManager(Service):
 
     logger = logging.getLogger("ddht.ENRManager")
 
-    _send_channel: trio.abc.SendChannel[Tuple[bytes, bytes]]
+    send_channel: trio.abc.SendChannel[Tuple[bytes, bytes]]
     _receive_channel: trio.abc.ReceiveChannel[Tuple[bytes, bytes]]
 
     def __init__(
         self,
         node_db: NodeDBAPI,
         private_key: keys.PrivateKey,
-        base_kv_pairs: Mapping[bytes, bytes],
+        kv_pairs: Optional[Mapping[bytes, bytes]] = None,
         identity_scheme_registry: IdentitySchemeRegistry = default_identity_scheme_registry,  # noqa: E501
     ) -> None:
         self._node_db = node_db
@@ -40,9 +40,20 @@ class ENRManager(Service):
             Tuple[bytes, bytes]
         ](0)
 
+        if kv_pairs is None:
+            kv_pairs = {}
+
+        if b'id' in kv_pairs:
+            identity_kv_pairs = {}
+        else:
+            identity_kv_pairs = {
+                b"id": b"v4",
+                b"secp256k1": self._private_key.public_key.to_compressed_bytes(),
+            }
+
         minimal_enr = UnsignedENR(
             sequence_number=1,
-            kv_pairs=dict(base_kv_pairs),
+            kv_pairs=merge(identity_kv_pairs, kv_pairs),
             identity_scheme_registry=self._identity_scheme_registry,
         ).to_signed_enr(self._private_key.to_bytes())
         self._node_id = minimal_enr.node_id
@@ -73,6 +84,11 @@ class ENRManager(Service):
             self._node_db.set_enr(self._enr)
             self.logger.info("Local ENR Updated: %r", self.enr)
         return self._enr
+
+    @external_trio_api
+    async def async_update(self, *kv_pairs: Tuple[bytes, bytes]) -> None:
+        for kv_pair in kv_pairs:
+            await self._send_channel.send(kv_pair)
 
     async def run(self) -> None:
         async with self._receive_channel:
