@@ -66,14 +66,7 @@ class Application(Service):
 
         local_private_key = get_local_private_key(self._boot_info)
 
-        enr_manager = ENRManager(
-            node_db=node_db,
-            private_key=local_private_key,
-            base_kv_pairs={
-                b"id": b"v4",
-                b"secp256k1": local_private_key.public_key.to_compressed_bytes,
-            },
-        )
+        enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
         self.manager.run_daemon_child_service(enr_manager)
 
         routing_table = KademliaRoutingTable(

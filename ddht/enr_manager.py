@@ -43,7 +43,7 @@ class ENRManager(Service):
         if kv_pairs is None:
             kv_pairs = {}
 
-        if b'id' in kv_pairs:
+        if b"id" in kv_pairs:
             identity_kv_pairs = {}
         else:
             identity_kv_pairs = {
