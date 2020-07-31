@@ -369,11 +369,11 @@ class PeerPacker(Service):
                 # Only the timeout for successful handshakes has to be checked as a failure during
                 # handshake will make the service as a whole fail.
                 await handshake_successful_event.wait()
-        except trio.TooSlowError as too_slow_error:
+        except trio.TooSlowError:
             self.logger.warning(
                 "Handshake with %s has timed out", encode_hex(self.remote_node_id)
             )
-            raise HandshakeFailure("Handshake has timed out") from too_slow_error
+            self.manager.cancel()
 
     #
     # Handshake states
@@ -555,9 +555,13 @@ class Packer(Service):
                 encode_hex(remote_node_id),
             )
             managed_peer_packer = self.managed_peer_packers[remote_node_id]
-            await managed_peer_packer.outgoing_message_send_channel.send(
-                outgoing_message
-            )
+            try:
+                await managed_peer_packer.outgoing_message_send_channel.send(
+                    outgoing_message
+                )
+            except trio.BrokenResourceError:
+                if not managed_peer_packer.manager.is_cancelled:
+                    raise
 
     #
     # Peer packer handling
