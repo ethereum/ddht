@@ -1,5 +1,5 @@
 import logging
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Optional
 
 from async_service import Service, external_trio_api
 from eth_keys import keys
@@ -12,7 +12,7 @@ from ddht.identity_schemes import (
     IdentitySchemeRegistry,
     default_identity_scheme_registry,
 )
-from ddht.typing import NodeID
+from ddht.typing import ENR_KV, NodeID
 
 
 class ENRManager(Service):
@@ -23,8 +23,8 @@ class ENRManager(Service):
 
     logger = logging.getLogger("ddht.ENRManager")
 
-    send_channel: trio.abc.SendChannel[Tuple[bytes, bytes]]
-    _receive_channel: trio.abc.ReceiveChannel[Tuple[bytes, bytes]]
+    _send_channel: trio.abc.SendChannel[ENR_KV]
+    _receive_channel: trio.abc.ReceiveChannel[ENR_KV]
 
     def __init__(
         self,
@@ -36,9 +36,7 @@ class ENRManager(Service):
         self._node_db = node_db
         self._identity_scheme_registry = identity_scheme_registry
         self._private_key = private_key
-        self._send_channel, self._receive_channel = trio.open_memory_channel[
-            Tuple[bytes, bytes]
-        ](0)
+        self._send_channel, self._receive_channel = trio.open_memory_channel[ENR_KV](0)
 
         if kv_pairs is None:
             kv_pairs = {}
@@ -72,7 +70,7 @@ class ENRManager(Service):
     def enr(self) -> ENR:
         return self._enr
 
-    def update(self, *kv_pairs: Tuple[bytes, bytes]) -> ENR:
+    def update(self, *kv_pairs: ENR_KV) -> ENR:
         if any(
             key not in self._enr or self._enr[key] != value for key, value in kv_pairs
         ):
@@ -86,7 +84,7 @@ class ENRManager(Service):
         return self._enr
 
     @external_trio_api
-    async def async_update(self, *kv_pairs: Tuple[bytes, bytes]) -> None:
+    async def async_update(self, *kv_pairs: ENR_KV) -> None:
         for kv_pair in kv_pairs:
             await self._send_channel.send(kv_pair)
 

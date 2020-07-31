@@ -1,32 +1,32 @@
 import argparse
 from dataclasses import dataclass
-import ipaddress
 import pathlib
 import tempfile
-from typing import Optional, Sequence, Tuple, TypedDict, Union
+from typing import Optional, Sequence, Tuple, TypedDict
 
 from eth_keys import keys
 from eth_utils import decode_hex
 
 from ddht._utils import get_open_port
-from ddht.constants import DEFAULT_BOOTNODES, DEFAULT_LISTEN, DEFAULT_PORT
+from ddht.constants import DEFAULT_BOOTNODES, DEFAULT_PORT
 from ddht.enr import ENR
+from ddht.typing import AnyIPAddress
 from ddht.xdg import get_xdg_ddht_root
-
-AnyIPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 
 
 class BootInfoKwargs(TypedDict, total=False):
     base_dir: pathlib.Path
     port: int
-    listen_on: AnyIPAddress
+    listen_on: Optional[AnyIPAddress]
     bootnodes: Tuple[ENR, ...]
     private_key: Optional[keys.PrivateKey]
     is_ephemeral: bool
+    is_upnp_enabled: bool
 
 
 def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
     is_ephemeral = args.ephemeral is True
+    is_upnp_enabled = not args.disable_upnp
 
     if args.base_dir is not None:
         base_dir = args.base_dir.expanduser().resolve()
@@ -42,8 +42,10 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
     else:
         port = DEFAULT_PORT
 
+    listen_on: Optional[AnyIPAddress]
+
     if args.listen_address is None:
-        listen_on = DEFAULT_LISTEN
+        listen_on = None
     else:
         listen_on = args.listen_address
 
@@ -66,6 +68,7 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
         bootnodes=bootnodes,
         private_key=private_key,
         is_ephemeral=is_ephemeral,
+        is_upnp_enabled=is_upnp_enabled,
     )
 
 
@@ -73,10 +76,11 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
 class BootInfo:
     base_dir: pathlib.Path
     port: int
-    listen_on: AnyIPAddress
+    listen_on: Optional[AnyIPAddress]
     bootnodes: Tuple[ENR, ...]
     private_key: Optional[keys.PrivateKey]
     is_ephemeral: bool
+    is_upnp_enabled: bool
 
     @classmethod
     def from_cli_args(cls, args: Sequence[str]) -> "BootInfo":

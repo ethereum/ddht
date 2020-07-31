@@ -8,12 +8,18 @@ import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
 from ddht.boot_info import BootInfo
-from ddht.constants import NUM_ROUTING_TABLE_BUCKETS
+from ddht.constants import (
+    DEFAULT_LISTEN,
+    IP_V4_ADDRESS_ENR_KEY,
+    NUM_ROUTING_TABLE_BUCKETS,
+)
 from ddht.enr_manager import ENRManager
 from ddht.exceptions import OldSequenceNumber
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.kademlia import KademliaRoutingTable
 from ddht.node_db import NodeDB
+from ddht.typing import AnyIPAddress
+from ddht.upnp import UPnPService
 from ddht.v5.channel_services import (
     DatagramReceiver,
     DatagramSender,
@@ -56,6 +62,19 @@ class Application(Service):
     def __init__(self, boot_info: BootInfo) -> None:
         self._boot_info = boot_info
 
+    async def _update_enr_ip_from_upnp(
+        self, enr_manager: ENRManager, upnp_service: UPnPService
+    ) -> None:
+        await upnp_service.get_manager().wait_started()
+
+        with trio.move_on_after(10):
+            _, external_ip = await upnp_service.get_ip_addresses()
+            await enr_manager.async_update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
+
+        while self.manager.is_running:
+            _, external_ip = await upnp_service.wait_ip_changed()
+            await enr_manager.async_update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
+
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
         message_type_registry = default_message_type_registry
@@ -69,6 +88,26 @@ class Application(Service):
         enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
         self.manager.run_daemon_child_service(enr_manager)
 
+        port = self._boot_info.port
+
+        if b"udp" not in enr_manager.enr:
+            enr_manager.update((b"udp", port))
+
+        listen_on: AnyIPAddress
+        if self._boot_info.listen_on is None:
+            listen_on = DEFAULT_LISTEN
+        else:
+            listen_on = self._boot_info.listen_on
+            # Update the ENR if an explicit listening address was provided
+            enr_manager.update((IP_V4_ADDRESS_ENR_KEY, listen_on.packed))
+
+        if self._boot_info.is_upnp_enabled:
+            upnp_service = UPnPService(port)
+            self.manager.run_daemon_child_service(upnp_service)
+            self.manager.run_daemon_task(
+                self._update_enr_ip_from_upnp, enr_manager, upnp_service
+            )
+
         routing_table = KademliaRoutingTable(
             enr_manager.enr.node_id, NUM_ROUTING_TABLE_BUCKETS
         )
@@ -79,9 +118,6 @@ class Application(Service):
             except OldSequenceNumber:
                 pass
             routing_table.update(enr.node_id)
-
-        port = self._boot_info.port
-        listen_on = self._boot_info.listen_on
 
         socket = trio.socket.socket(
             family=trio.socket.AF_INET, type=trio.socket.SOCK_DGRAM
