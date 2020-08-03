@@ -13,7 +13,7 @@ from ddht.v5.messages import (
     NodesMessage,
     PingMessage,
     PongMessage,
-    default_message_type_registry,
+    v5_registry,
 )
 
 
@@ -25,22 +25,22 @@ def test_default_message_registry():
         and issubclass(member, BaseMessage)
         and member is not BaseMessage
     )
-    assert len(default_message_type_registry) == len(message_data_classes)
+    assert len(v5_registry) == len(message_data_classes)
     for message_data_class in message_data_classes:
         message_type = message_data_class.message_type
-        assert message_type in default_message_type_registry
-        assert default_message_type_registry[message_type] is message_data_class
+        assert message_type in v5_registry
+        assert v5_registry[message_type] is message_data_class
 
 
 def test_all_messages_have_request_id():
-    for message_data_class in default_message_type_registry.values():
+    for message_data_class in v5_registry.values():
         first_field_name, first_field_sedes = message_data_class._meta.fields[0]
         assert first_field_name == "request_id"
         assert first_field_sedes == big_endian_int
 
 
 def test_message_types_are_continuous():
-    sorted_message_types = sorted(default_message_type_registry.keys())
+    sorted_message_types = sorted(v5_registry.keys())
     assert sorted_message_types == list(range(1, len(sorted_message_types) + 1))
 
 

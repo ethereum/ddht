@@ -3,6 +3,7 @@ from hypothesis import given
 import pytest
 import rlp
 
+from ddht.encryption import aesgcm_decrypt
 from ddht.enr import ENR
 from ddht.identity_schemes import V4IdentityScheme
 from ddht.tools.v5_strategies import (
@@ -21,8 +22,7 @@ from ddht.v5.constants import (
     MAGIC_SIZE,
     ZERO_NONCE,
 )
-from ddht.v5.encryption import aesgcm_decrypt
-from ddht.v5.messages import PingMessage, default_message_type_registry
+from ddht.v5.messages import PingMessage, v5_registry
 from ddht.v5.packets import (
     AuthHeader,
     AuthHeaderPacket,
@@ -322,7 +322,7 @@ def test_official_auth_header_packet_preparation(
     auth_message_rlp,
 ):
     message_type_id = encoded_message[0]
-    message_type = default_message_type_registry[message_type_id]
+    message_type = v5_registry[message_type_id]
     message = rlp.decode(encoded_message[1:], message_type)
     assert message.to_bytes() == encoded_message
 
