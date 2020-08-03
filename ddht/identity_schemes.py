@@ -147,7 +147,10 @@ def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
     """
     # We cannot use `cryptography.hazmat.primitives.asymmetric.ec.ECDH only gives us the x
     # component of the shared secret point, but we need both x and y.
-    public_key_eth_keys = PublicKey(public_key)
+    if len(public_key) == 33:
+        public_key_eth_keys = PublicKey.from_compressed_bytes(public_key)
+    else:
+        public_key_eth_keys = PublicKey(public_key)
     public_key_compressed = public_key_eth_keys.to_compressed_bytes()
     public_key_coincurve = coincurve.keys.PublicKey(public_key_compressed)
     secret_coincurve = public_key_coincurve.multiply(private_key)

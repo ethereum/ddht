@@ -9,11 +9,11 @@ from typing import (
     TypeVar,
 )
 
+from ddht.base_message import BaseMessage, IncomingMessage
+from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentityScheme
 from ddht.typing import NodeID
-from ddht.v5.channel_services import Endpoint, IncomingMessage
-from ddht.v5.messages import BaseMessage
 from ddht.v5.packets import Packet
 from ddht.v5.typing import HandshakeResult, Tag
 

@@ -4,6 +4,7 @@ import pytest
 import pytest_trio
 import trio
 
+from ddht.base_message import IncomingMessage
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import (
@@ -12,7 +13,6 @@ from ddht.tools.factories.discovery import (
     PingMessageFactory,
 )
 from ddht.tools.factories.keys import PrivateKeyFactory
-from ddht.v5.channel_services import IncomingMessage
 from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.messages import FindNodeMessage, NodesMessage, PingMessage
 

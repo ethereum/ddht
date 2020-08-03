@@ -8,6 +8,7 @@ import pytest_trio
 import trio
 from trio.testing import wait_all_tasks_blocked
 
+from ddht.base_message import IncomingMessage
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
 from ddht.node_db import NodeDB
@@ -19,7 +20,6 @@ from ddht.tools.factories.discovery import (
     NodeIDFactory,
     PingMessageFactory,
 )
-from ddht.v5.channel_services import IncomingMessage
 from ddht.v5.constants import ROUTING_TABLE_PING_INTERVAL
 from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.messages import FindNodeMessage, NodesMessage, PingMessage, PongMessage

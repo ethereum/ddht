@@ -15,12 +15,13 @@ from trio.abc import SendChannel
 
 from ddht._utils import every
 from ddht.abc import NodeDBAPI
+from ddht.base_message import IncomingMessage, OutgoingMessage
+from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
 from ddht.typing import NodeID
 from ddht.v5.abc import MessageDispatcherAPI
-from ddht.v5.channel_services import Endpoint, IncomingMessage, OutgoingMessage
 from ddht.v5.constants import (
     FIND_NODE_RESPONSE_TIMEOUT,
     LOOKUP_PARALLELIZATION_FACTOR,
