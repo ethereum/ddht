@@ -7,7 +7,6 @@ import random
 import struct
 from typing import Any, Deque, Iterator, List, Optional, Tuple, Type, cast
 
-from cached_property import cached_property
 from eth_utils import big_endian_to_int, encode_hex
 
 from ddht.abc import AddressAPI, TAddress
@@ -63,7 +62,7 @@ class Address(AddressAPI):
     def ip(self) -> str:
         return str(self._ip)
 
-    @cached_property
+    @property
     def ip_packed(self) -> bytes:
         """The binary representation of this IP address."""
         return self._ip.packed
