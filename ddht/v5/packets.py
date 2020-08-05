@@ -15,8 +15,11 @@ from rlp.codec import consume_length_prefix
 from rlp.exceptions import DecodingError, DeserializationError
 from rlp.sedes import big_endian_int
 
+from ddht.base_message import BaseMessage
 from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
+from ddht.encryption import aesgcm_decrypt, aesgcm_encrypt, validate_nonce
 from ddht.enr import ENR
+from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
 from ddht.v5.constants import (
     AUTH_RESPONSE_VERSION,
@@ -29,12 +32,7 @@ from ddht.v5.constants import (
     WHO_ARE_YOU_MAGIC_SUFFIX,
     ZERO_NONCE,
 )
-from ddht.v5.encryption import aesgcm_decrypt, aesgcm_encrypt, validate_nonce
-from ddht.v5.messages import (
-    BaseMessage,
-    MessageTypeRegistry,
-    default_message_type_registry,
-)
+from ddht.v5.messages import v5_registry
 from ddht.v5.typing import Tag
 from ddht.validation import validate_length, validate_length_lte
 
@@ -155,9 +153,7 @@ class AuthHeaderPacket(NamedTuple):
         return id_nonce_signature, enr
 
     def decrypt_message(
-        self,
-        key: AES128Key,
-        message_type_registry: MessageTypeRegistry = default_message_type_registry,
+        self, key: AES128Key, message_type_registry: MessageTypeRegistry = v5_registry,
     ) -> BaseMessage:
         return _decrypt_message(
             key=key,
@@ -196,9 +192,7 @@ class AuthTagPacket(NamedTuple):
         return cls(tag=tag, auth_tag=auth_tag, encrypted_message=random_data)
 
     def decrypt_message(
-        self,
-        key: AES128Key,
-        message_type_registry: MessageTypeRegistry = default_message_type_registry,
+        self, key: AES128Key, message_type_registry: MessageTypeRegistry = v5_registry,
     ) -> BaseMessage:
         return _decrypt_message(
             key=key,

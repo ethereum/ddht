@@ -4,15 +4,15 @@ from hypothesis import strategies as st
 import pytest
 
 from ddht.constants import AES128_KEY_SIZE
-from ddht.exceptions import DecryptionError
-from ddht.typing import AES128Key, Nonce
-from ddht.v5.constants import NONCE_SIZE
-from ddht.v5.encryption import (
+from ddht.encryption import (
     aesgcm_decrypt,
     aesgcm_encrypt,
     validate_aes128_key,
     validate_nonce,
 )
+from ddht.exceptions import DecryptionError
+from ddht.typing import AES128Key, Nonce
+from ddht.v5.constants import NONCE_SIZE
 
 key_st = st.binary(min_size=AES128_KEY_SIZE, max_size=AES128_KEY_SIZE)
 nonce_st = st.binary(min_size=NONCE_SIZE, max_size=NONCE_SIZE)

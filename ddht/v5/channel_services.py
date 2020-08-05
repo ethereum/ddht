@@ -8,6 +8,7 @@ from trio.abc import ReceiveChannel, SendChannel
 from trio.socket import SocketType
 
 from ddht.constants import DISCOVERY_DATAGRAM_BUFFER_SIZE
+from ddht.endpoint import Endpoint
 from ddht.typing import NodeID
 from ddht.v5.messages import BaseMessage
 from ddht.v5.packets import Packet, decode_packet
@@ -16,14 +17,6 @@ from ddht.v5.packets import Packet, decode_packet
 #
 # Data structures
 #
-class Endpoint(NamedTuple):
-    ip_address: bytes
-    port: int
-
-    def __str__(self) -> str:
-        return str((inet_ntoa(self.ip_address), self.port))
-
-
 class IncomingDatagram(NamedTuple):
     datagram: bytes
     sender_endpoint: Endpoint

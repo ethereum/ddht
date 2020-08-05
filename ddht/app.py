@@ -34,7 +34,7 @@ from ddht.v5.channel_services import (
 )
 from ddht.v5.endpoint_tracker import EndpointTracker, EndpointVote
 from ddht.v5.message_dispatcher import MessageDispatcher
-from ddht.v5.messages import default_message_type_registry
+from ddht.v5.messages import v5_registry
 from ddht.v5.packer import Packer
 from ddht.v5.routing_table_manager import RoutingTableManager
 
@@ -77,7 +77,7 @@ class Application(Service):
 
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
-        message_type_registry = default_message_type_registry
+        message_type_registry = v5_registry
 
         enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
         enr_database_dir.mkdir(exist_ok=True)

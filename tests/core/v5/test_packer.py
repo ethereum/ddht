@@ -15,7 +15,7 @@ from ddht.tools.factories.discovery import (
 )
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.v5.channel_services import IncomingPacket, OutgoingMessage
-from ddht.v5.messages import default_message_type_registry
+from ddht.v5.messages import v5_registry
 from ddht.v5.packer import Packer, PeerPacker
 from ddht.v5.packets import AuthHeaderPacket, AuthTagPacket, WhoAreYouPacket
 from ddht.v5.tags import compute_tag
@@ -148,7 +148,7 @@ async def peer_packer(
         local_node_id=enr.node_id,
         remote_node_id=remote_enr.node_id,
         node_db=node_db,
-        message_type_registry=default_message_type_registry,
+        message_type_registry=v5_registry,
         incoming_packet_receive_channel=incoming_packet_channels[1],
         incoming_message_send_channel=incoming_message_channels[0],
         outgoing_message_receive_channel=outgoing_message_channels[1],
@@ -174,7 +174,7 @@ async def remote_peer_packer(
         local_node_id=remote_enr.node_id,
         remote_node_id=enr.node_id,
         node_db=node_db,
-        message_type_registry=default_message_type_registry,
+        message_type_registry=v5_registry,
         incoming_packet_receive_channel=remote_incoming_packet_channels[1],
         incoming_message_send_channel=remote_incoming_message_channels[0],
         outgoing_message_receive_channel=remote_outgoing_message_channels[1],
@@ -198,7 +198,7 @@ async def packer(
         local_private_key=private_key,
         local_node_id=enr.node_id,
         node_db=node_db,
-        message_type_registry=default_message_type_registry,
+        message_type_registry=v5_registry,
         incoming_packet_receive_channel=incoming_packet_channels[1],
         incoming_message_send_channel=incoming_message_channels[0],
         outgoing_message_receive_channel=outgoing_message_channels[1],
@@ -223,7 +223,7 @@ async def remote_packer(
         local_private_key=remote_private_key,
         local_node_id=remote_enr.node_id,
         node_db=node_db,
-        message_type_registry=default_message_type_registry,
+        message_type_registry=v5_registry,
         incoming_packet_receive_channel=remote_incoming_packet_channels[1],
         incoming_message_send_channel=remote_incoming_message_channels[0],
         outgoing_message_receive_channel=remote_outgoing_message_channels[1],
