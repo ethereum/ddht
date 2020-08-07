@@ -1,0 +1,49 @@
+import logging
+from typing import AsyncIterator, Set
+
+from async_generator import asynccontextmanager
+import trio
+
+from ddht.abc import EventAPI, TEventPayload
+
+
+class Event(EventAPI[TEventPayload]):
+    logger = logging.getLogger("alexandria.events.Event")
+
+    _channels: Set[trio.abc.SendChannel[TEventPayload]]
+
+    def __init__(self, name: str, buffer_size: int = 256) -> None:
+        self.name = name
+        self._buffer_size = buffer_size
+        self._lock = trio.Lock()
+        self._channels = set()
+
+    async def trigger(self, payload: TEventPayload) -> None:
+        self.logger.debug("Triggering event: %s(%s)", self.name, payload)
+        async with self._lock:
+            for send_channel in self._channels:
+                try:
+                    await send_channel.send(payload)
+                except trio.BrokenResourceError:
+                    pass
+
+    @asynccontextmanager
+    async def subscribe(self) -> AsyncIterator[trio.abc.ReceiveChannel[TEventPayload]]:
+        send_channel, receive_channel = trio.open_memory_channel[TEventPayload](
+            self._buffer_size
+        )
+
+        async with self._lock:
+            self._channels.add(send_channel)
+
+        try:
+            async with receive_channel:
+                yield receive_channel
+        finally:
+            async with self._lock:
+                self._channels.remove(send_channel)
+
+    async def wait(self) -> TEventPayload:
+        async with self.subscribe() as subscription:
+            result = await subscription.receive()
+        return result

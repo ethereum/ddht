@@ -1,5 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, MutableMapping, Type, TypeVar
+from typing import (
+    Any,
+    AsyncContextManager,
+    Generic,
+    List,
+    MutableMapping,
+    Type,
+    TypeVar,
+)
+
+import trio
 
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentitySchemeRegistry
@@ -73,6 +83,21 @@ class DatabaseAPI(MutableMapping[bytes, bytes], ABC):
 
     @abstractmethod
     def delete(self, key: bytes) -> None:
+        ...
+
+
+TEventPayload = TypeVar("TEventPayload")
+
+
+class EventAPI(Generic[TEventPayload]):
+    name: str
+
+    @abstractmethod
+    async def trigger(self, payload: TEventPayload) -> None:
+        ...
+
+    @abstractmethod
+    def subscribe(self) -> AsyncContextManager[trio.abc.ReceiveChannel[TEventPayload]]:
         ...
 
 
