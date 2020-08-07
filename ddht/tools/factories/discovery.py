@@ -7,11 +7,13 @@ from eth_utils import big_endian_to_int, int_to_big_endian
 from eth_utils.toolz import merge, reduce
 import factory
 
+from ddht.base_message import IncomingMessage
+from ddht.endpoint import Endpoint
 from ddht.enr import ENR, UnsignedENR
 from ddht.identity_schemes import V4IdentityScheme
 from ddht.kademlia import compute_log_distance
 from ddht.typing import NodeID
-from ddht.v5.channel_services import Endpoint, IncomingMessage, IncomingPacket
+from ddht.v5.channel_services import IncomingPacket
 from ddht.v5.constants import (
     AUTH_SCHEME_NAME,
     ID_NONCE_SIZE,

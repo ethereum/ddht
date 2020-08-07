@@ -1,5 +1,12 @@
+import math
+from typing import Iterator
+
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers.algorithms import AES
+from cryptography.hazmat.primitives.ciphers.modes import CTR
 
 from ddht.constants import AES128_KEY_SIZE
 from ddht.exceptions import DecryptionError
@@ -40,3 +47,26 @@ def aesgcm_decrypt(
         raise DecryptionError() from error
     else:
         return plain_text
+
+
+def aesctr_encrypt(key: AES128Key, iv: bytes, plain_text: bytes) -> bytes:
+    cipher = Cipher(AES(key), CTR(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    return encryptor.update(plain_text) + encryptor.finalize()
+
+
+def aesctr_decrypt_stream(
+    key: AES128Key, iv: bytes, cipher_text: bytes
+) -> Iterator[int]:
+    cipher = Cipher(AES(key), CTR(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    num_blocks = int(math.ceil(len(cipher_text) / 16))
+    for i in range(num_blocks):
+        cipher_text_block = cipher_text[i * 16 : (i + 1) * 16]
+        plain_text_block = decryptor.update(cipher_text_block)
+        yield from plain_text_block
+    yield from decryptor.finalize()
+
+
+def aesctr_decrypt(key: AES128Key, iv: bytes, cipher_text: bytes) -> bytes:
+    return bytes(aesctr_decrypt_stream(key, iv, cipher_text))

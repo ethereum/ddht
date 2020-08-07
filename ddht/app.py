@@ -7,11 +7,18 @@ from eth_utils import encode_hex
 import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
+from ddht.base_message import IncomingMessage, OutgoingMessage
 from ddht.boot_info import BootInfo
 from ddht.constants import (
     DEFAULT_LISTEN,
     IP_V4_ADDRESS_ENR_KEY,
     NUM_ROUTING_TABLE_BUCKETS,
+)
+from ddht.datagram import (
+    DatagramReceiver,
+    DatagramSender,
+    IncomingDatagram,
+    OutgoingDatagram,
 )
 from ddht.enr_manager import ENRManager
 from ddht.exceptions import OldSequenceNumber
@@ -21,13 +28,7 @@ from ddht.node_db import NodeDB
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
 from ddht.v5.channel_services import (
-    DatagramReceiver,
-    DatagramSender,
-    IncomingDatagram,
-    IncomingMessage,
     IncomingPacket,
-    OutgoingDatagram,
-    OutgoingMessage,
     OutgoingPacket,
     PacketDecoder,
     PacketEncoder,

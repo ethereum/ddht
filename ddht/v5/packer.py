@@ -7,17 +7,13 @@ import trio
 from trio.abc import ReceiveChannel, SendChannel
 
 from ddht.abc import NodeDBAPI
+from ddht.base_message import IncomingMessage, OutgoingMessage
+from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.typing import NodeID, Nonce, SessionKeys
 from ddht.v5.abc import HandshakeParticipantAPI
-from ddht.v5.channel_services import (
-    Endpoint,
-    IncomingMessage,
-    IncomingPacket,
-    OutgoingMessage,
-    OutgoingPacket,
-)
+from ddht.v5.channel_services import IncomingPacket, OutgoingPacket
 from ddht.v5.constants import HANDSHAKE_TIMEOUT
 from ddht.v5.handshake import HandshakeInitiator, HandshakeRecipient
 from ddht.v5.messages import BaseMessage, MessageTypeRegistry

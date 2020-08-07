@@ -8,10 +8,10 @@ from trio.abc import ReceiveChannel
 
 from ddht.abc import NodeDBAPI
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
+from ddht.endpoint import Endpoint
 from ddht.enr import UnsignedENR
 from ddht.identity_schemes import IdentitySchemeRegistry
 from ddht.typing import NodeID
-from ddht.v5.channel_services import Endpoint
 
 
 class EndpointVote(NamedTuple):
