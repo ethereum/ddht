@@ -1,26 +1,15 @@
 from rlp.sedes import Binary, CountableList, big_endian_int, binary, boolean
 
 from ddht.base_message import BaseMessage
-from ddht.constants import IP_V4_SIZE, IP_V6_SIZE
 from ddht.enr import ENR
 from ddht.message_registry import MessageTypeRegistry
+from ddht.sedes import ip_address_sedes
 from ddht.v5.constants import TOPIC_HASH_SIZE
 
 #
 # Custom sedes objects
 #
 topic_sedes = Binary.fixed_length(TOPIC_HASH_SIZE)
-
-
-class IPAddressSedes(Binary):  # type: ignore
-    def __init__(self) -> None:
-        super().__init__()
-
-    def is_valid_length(self, length: int) -> bool:
-        return length in (IP_V4_SIZE, IP_V6_SIZE)
-
-
-ip_address_sedes = IPAddressSedes()
 
 
 v5_registry = MessageTypeRegistry()
