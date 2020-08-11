@@ -1,10 +1,12 @@
 import secrets
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import factory
+import trio
 
-from ddht.base_message import BaseMessage
+from ddht.base_message import AnyInboundMessage, BaseMessage
 from ddht.typing import AES128Key, NodeID, Nonce
+from ddht.v5_1.envelope import OutboundEnvelope
 from ddht.v5_1.packets import (
     PROTOCOL_ID,
     HandshakeHeader,
@@ -15,7 +17,16 @@ from ddht.v5_1.packets import (
     TAuthData,
     WhoAreYouPacket,
 )
-from ddht.v5_1.session import EmptyMessage, RandomMessage
+from ddht.v5_1.session import (
+    EmptyMessage,
+    RandomMessage,
+    SessionInitiator,
+    SessionRecipient,
+)
+
+from .endpoint import EndpointFactory
+from .node_db import NodeDBFactory
+from .node_id import NodeIDFactory
 
 
 class MessagePacketFactory(factory.Factory):  # type: ignore
@@ -175,3 +186,48 @@ class PacketFactory:
             dest_node_id=dest_node_id,
             protocol_id=protocol_id,
         )
+
+
+class SessionChannels(NamedTuple):
+    inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage]
+    inbound_message_receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage]
+    outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope]
+    outbound_envelope_receive_channel: trio.abc.ReceiveChannel[OutboundEnvelope]
+
+    @classmethod
+    def init(cls) -> "SessionChannels":
+        (
+            inbound_message_send_channel,
+            inbound_message_receive_channel,
+        ) = trio.open_memory_channel[AnyInboundMessage](256)
+        (
+            outbound_envelope_send_channel,
+            outbound_envelope_receive_channel,
+        ) = trio.open_memory_channel[OutboundEnvelope](256)
+        return cls(
+            inbound_message_send_channel,
+            inbound_message_receive_channel,
+            outbound_envelope_send_channel,
+            outbound_envelope_receive_channel,
+        )
+
+
+class SessionInitiatorFactory(factory.Factory):  # type: ignore
+    class Meta:
+        model = SessionInitiator
+
+    local_private_key = factory.LazyFunction(lambda: secrets.token_bytes(32))
+    local_node_id = factory.SubFactory(NodeIDFactory)
+    remote_endpoint = factory.SubFactory(EndpointFactory)
+    remote_node_id = factory.SubFactory(NodeIDFactory)
+    node_db = factory.SubFactory(NodeDBFactory)
+
+
+class SessionRecipientFactory(factory.Factory):  # type: ignore
+    class Meta:
+        model = SessionRecipient
+
+    local_private_key = factory.LazyFunction(lambda: secrets.token_bytes(32))
+    local_node_id = factory.LazyFunction(lambda: secrets.token_bytes(32))
+    remote_endpoint = factory.SubFactory(EndpointFactory)
+    node_db = factory.SubFactory(NodeDBFactory)

@@ -7,4 +7,4 @@ class Endpoint(NamedTuple):
     port: int
 
     def __str__(self) -> str:
-        return str((inet_ntoa(self.ip_address), self.port))
+        return f"{inet_ntoa(self.ip_address)}:{self.port}"

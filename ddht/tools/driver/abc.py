@@ -1,15 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import AsyncContextManager, NamedTuple, Optional
+from typing import AsyncContextManager, NamedTuple, Optional, Tuple
 
 from eth_keys import keys
-import trio
 
 from ddht.abc import NodeDBAPI
 from ddht.base_message import AnyInboundMessage, BaseMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
+from ddht.tools.factories.v5_1 import SessionChannels
 from ddht.typing import NodeID
-from ddht.v5_1.abc import SessionAPI
+from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.packets import AnyPacket
@@ -17,8 +17,15 @@ from ddht.v5_1.packets import AnyPacket
 
 class NodeAPI(ABC):
     enr: ENR
-    private_key: keys.PrivateKey
     node_db: NodeDBAPI
+    events: EventsAPI
+    pool: PoolAPI
+    channels: SessionChannels
+
+    @property
+    @abstractmethod
+    def private_key(self) -> keys.PrivateKey:
+        ...
 
     @property
     @abstractmethod
@@ -30,35 +37,20 @@ class NodeAPI(ABC):
     def node_id(self) -> NodeID:
         ...
 
-
-class SessionChannels(NamedTuple):
-    inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage]
-    inbound_message_receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage]
-    outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope]
-    outbound_envelope_receive_channel: trio.abc.ReceiveChannel[OutboundEnvelope]
-
-    @classmethod
-    def init(cls) -> "SessionChannels":
-        (
-            inbound_message_send_channel,
-            inbound_message_receive_channel,
-        ) = trio.open_memory_channel[AnyInboundMessage](256)
-        (
-            outbound_envelope_send_channel,
-            outbound_envelope_receive_channel,
-        ) = trio.open_memory_channel[OutboundEnvelope](256)
-        return cls(
-            inbound_message_send_channel,
-            inbound_message_receive_channel,
-            outbound_envelope_send_channel,
-            outbound_envelope_receive_channel,
-        )
+    @abstractmethod
+    def client(self) -> AsyncContextManager[ClientAPI]:
+        ...
 
 
 class SessionDriverAPI(ABC):
     session: SessionAPI
-    channels: SessionChannels
     node: NodeAPI
+    remote: NodeAPI
+
+    @property
+    @abstractmethod
+    def events(self) -> EventsAPI:
+        ...
 
     @abstractmethod
     async def send_message(self, message: BaseMessage) -> None:
@@ -110,4 +102,9 @@ class NetworkAPI(ABC):
 
     @abstractmethod
     def session_pair(self, initiator: NodeAPI, recipient: NodeAPI) -> SessionPairAPI:
+        ...
+
+    def dispatcher_pair(
+        self, node_a: NodeAPI, node_b: NodeAPI,
+    ) -> AsyncContextManager[Tuple[DispatcherAPI, DispatcherAPI]]:
         ...

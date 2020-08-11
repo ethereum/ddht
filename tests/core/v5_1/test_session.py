@@ -11,9 +11,6 @@ from ddht.tools.driver import Network
 from ddht.tools.factories.v5_1 import PacketFactory
 from ddht.v5_1.messages import PingMessage
 
-INITIATOR_PRIVATE_KEY = b"\x01" * 32
-RECIPIENT_PRIVATE_KEY = b"\x02" * 32
-
 
 @pytest.fixture
 async def driver():

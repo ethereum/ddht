@@ -3,7 +3,7 @@ import enum
 import itertools
 import logging
 import secrets
-from typing import Tuple, cast
+from typing import Optional, Tuple, cast
 import uuid
 
 from eth_keys import keys
@@ -59,7 +59,7 @@ class BaseSession(SessionAPI):
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
-        events: EventsAPI = None,
+        events: Optional[EventsAPI] = None,
     ) -> None:
         self.id = uuid.uuid4()
 
@@ -68,7 +68,7 @@ class BaseSession(SessionAPI):
         if events is None:
             events = Events()
 
-        self.events = events
+        self._events = events
         self._nonce_counter = itertools.count()
 
         self._local_private_key = local_private_key
@@ -220,6 +220,7 @@ class SessionInitiator(BaseSession):
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
+        events: EventsAPI = None,
     ) -> None:
         super().__init__(
             local_private_key=local_private_key,
@@ -229,6 +230,7 @@ class SessionInitiator(BaseSession):
             inbound_message_send_channel=inbound_message_send_channel,
             outbound_envelope_send_channel=outbound_envelope_send_channel,
             message_type_registry=message_type_registry,
+            events=events,
         )
         self._remote_node_id = remote_node_id
 
@@ -241,6 +243,8 @@ class SessionInitiator(BaseSession):
         return self._node_db.get_enr(self.remote_node_id)
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
+        self.logger.debug("%s: handling outbound message: %s", self, message)
+
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._outbound_envelope_send_channel.send(envelope)
@@ -267,6 +271,8 @@ class SessionInitiator(BaseSession):
             raise Exception("Invariant: All states handled")
 
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
+        self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+
         if self.is_after_handshake:
             if envelope.packet.is_message:
                 try:
@@ -277,7 +283,7 @@ class SessionInitiator(BaseSession):
                     self.logger.debug(
                         "%s: Discarding undecryptable packet: %s", self, envelope
                     )
-                    await self.events.packet_discarded.trigger((self, envelope))
+                    await self._events.packet_discarded.trigger((self, envelope))
                 else:
                     self._last_message_received_at = trio.current_time()
 
@@ -290,7 +296,7 @@ class SessionInitiator(BaseSession):
                     )
             else:
                 self.logger.debug("%s: Discarding MessagePacket: %s", self, envelope)
-                await self.events.packet_discarded.trigger((self, envelope))
+                await self._events.packet_discarded.trigger((self, envelope))
         elif self.is_during_handshake:
             if envelope.packet.is_who_are_you:
                 (
@@ -300,7 +306,7 @@ class SessionInitiator(BaseSession):
                     cast(Packet[WhoAreYouPacket], envelope.packet)
                 )
                 self._status = SessionStatus.AFTER
-                await self.events.session_handshake_complete.trigger(self)
+                await self._events.session_handshake_complete.trigger(self)
 
                 self._last_message_received_at = trio.current_time()
                 await self._send_handshake_completion(
@@ -313,10 +319,10 @@ class SessionInitiator(BaseSession):
                 self.logger.debug(
                     "%s: Discarding non WhoAreYouPacket: %s", self, envelope
                 )
-                await self.events.packet_discarded.trigger((self, envelope))
+                await self._events.packet_discarded.trigger((self, envelope))
         elif self.is_before_handshake:
             self.logger.debug("%s: Discarding: %s", self, envelope)
-            await self.events.packet_discarded.trigger((self, envelope))
+            await self._events.packet_discarded.trigger((self, envelope))
         else:
             raise Exception("Invariant: All states handled")
 
@@ -420,6 +426,7 @@ class SessionRecipient(BaseSession):
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
+        events: Optional[EventsAPI] = None,
     ) -> None:
         super().__init__(
             local_private_key=local_private_key,
@@ -429,6 +436,7 @@ class SessionRecipient(BaseSession):
             inbound_message_send_channel=inbound_message_send_channel,
             outbound_envelope_send_channel=outbound_envelope_send_channel,
             message_type_registry=message_type_registry,
+            events=events,
         )
         (
             self._inbound_envelope_buffer_send_channel,
@@ -442,6 +450,8 @@ class SessionRecipient(BaseSession):
         return self._remote_node_id
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
+        self.logger.debug("%s: handling outbound message: %s", self, message)
+
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._outbound_envelope_send_channel.send(envelope)
@@ -463,7 +473,8 @@ class SessionRecipient(BaseSession):
             raise Exception("Invariant: All states handled")
 
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
-        self.logger.info("HANDLING: %s", envelope)
+        self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+
         if self.is_after_handshake:
             if envelope.packet.is_message:
                 try:
@@ -474,7 +485,7 @@ class SessionRecipient(BaseSession):
                     self.logger.debug(
                         "%s: Discarding undecryptable packet: %s", self, envelope
                     )
-                    await self.events.packet_discarded.trigger((self, envelope))
+                    await self._events.packet_discarded.trigger((self, envelope))
                 else:
                     self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
@@ -488,7 +499,7 @@ class SessionRecipient(BaseSession):
                 self.logger.debug(
                     "%s: Discarding non Message packet: %s", self, envelope
                 )
-                await self.events.packet_discarded.trigger((self, envelope))
+                await self._events.packet_discarded.trigger((self, envelope))
         elif self.is_during_handshake:
             if envelope.packet.is_handshake:
                 self._keys = await self._receive_handshake_completion(
@@ -496,7 +507,7 @@ class SessionRecipient(BaseSession):
                 )
                 self._status = SessionStatus.AFTER
                 self._last_message_received_at = trio.current_time()
-                await self.events.session_handshake_complete.trigger(self)
+                await self._events.session_handshake_complete.trigger(self)
                 await self._process_message_buffers()
             elif envelope.packet.is_message:
                 self.logger.debug("%s: Buffering Message: %s", self, envelope)
@@ -505,7 +516,7 @@ class SessionRecipient(BaseSession):
                 self.logger.debug(
                     "%s: Discarding WhoAreYouPacket packet: %s", self, envelope
                 )
-                await self.events.packet_discarded.trigger((self, envelope))
+                await self._events.packet_discarded.trigger((self, envelope))
             else:
                 raise Exception(f"Unrecognized packet: {envelope}")
         elif self.is_before_handshake:
@@ -521,7 +532,7 @@ class SessionRecipient(BaseSession):
                 self.logger.debug(
                     "%s: Discarding non MessagePacket: %s", self, envelope
                 )
-                await self.events.packet_discarded.trigger((self, envelope))
+                await self._events.packet_discarded.trigger((self, envelope))
         else:
             raise Exception("Invariant: All states handled")
 
