@@ -38,7 +38,8 @@ from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_db import NodeDBFactory
 from ddht.tools.factories.v5_1 import SessionChannels
 from ddht.typing import NodeID
-from ddht.v5_1.abc import DispatcherAPI, EventsAPI, SessionAPI
+from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, SessionAPI
+from ddht.v5_1.client import Client
 from ddht.v5_1.dispatcher import Dispatcher
 from ddht.v5_1.envelope import InboundEnvelope
 from ddht.v5_1.events import Events
@@ -89,6 +90,18 @@ class Node(NodeAPI):
     @property
     def node_id(self) -> NodeID:
         return self.enr.node_id
+
+    @asynccontextmanager
+    async def client(self) -> AsyncIterator[ClientAPI]:
+        client = Client(
+            local_private_key=self.private_key,
+            listen_on=self.endpoint,
+            node_db=self.node_db,
+            events=self.events,
+        )
+        async with background_trio_service(client):
+            await client.wait_listening()
+            yield client
 
 
 HANG_TIMEOUT = 10

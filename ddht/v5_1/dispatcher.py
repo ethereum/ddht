@@ -333,6 +333,8 @@ class Dispatcher(Service, DispatcherAPI):
     # Message Sending
     #
     async def send_message(self, message: AnyOutboundMessage) -> None:
+        if message.receiver_node_id == self._pool.local_node_id:
+            raise Exception("Cannot send message to self")
         await self._outbound_message_send_channel.send(message)
 
     #
