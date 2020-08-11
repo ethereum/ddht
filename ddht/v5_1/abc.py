@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import logging
+from typing import Tuple
 import uuid
 
 from ddht.abc import EventAPI
@@ -52,3 +53,4 @@ class SessionAPI(ABC):
 class EventsAPI(ABC):
     session_created: EventAPI[SessionAPI]
     session_handshake_complete: EventAPI[SessionAPI]
+    packet_discarded: EventAPI[Tuple[SessionAPI, IncomingEnvelope]]

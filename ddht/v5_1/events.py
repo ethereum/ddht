@@ -1,6 +1,9 @@
+from typing import Tuple
+
 from ddht.abc import EventAPI
 from ddht.event import Event
 from ddht.v5_1.abc import EventsAPI, SessionAPI
+from ddht.v5_1.envelope import IncomingEnvelope
 
 
 class Events(EventsAPI):
@@ -8,4 +11,7 @@ class Events(EventsAPI):
         self.session_created: EventAPI[SessionAPI] = Event("session.created")
         self.session_handshake_complete: EventAPI[SessionAPI] = Event(
             "session.handshake.complete"
+        )
+        self.packet_discarded: EventAPI[Tuple[SessionAPI, IncomingEnvelope]] = Event(
+            "session.packet.discarded"
         )

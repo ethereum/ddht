@@ -19,7 +19,10 @@ class IncomingEnvelope(NamedTuple):
     sender_endpoint: Endpoint
 
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}[{self.packet.__class__.__name__}]"
+        return (
+            f"{self.__class__.__name__}"
+            f"(packet={self.packet}, sender={self.sender_endpoint})"
+        )
 
 
 class OutgoingEnvelope(NamedTuple):
@@ -27,7 +30,10 @@ class OutgoingEnvelope(NamedTuple):
     receiver_endpoint: Endpoint
 
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}[{self.packet.__class__.__name__}]"
+        return (
+            f"{self.__class__.__name__}"
+            f"(packet={self.packet}, receiver={self.receiver_endpoint})"
+        )
 
 
 #
