@@ -1,6 +1,8 @@
 import functools
-from typing import Any, Callable, TypeVar, cast
+import secrets
+from typing import Any, AsyncIterator, Callable, List, Optional, TypeVar, cast
 
+from async_generator import asynccontextmanager
 from eth_keys import keys
 import trio
 
@@ -20,8 +22,10 @@ from ddht.tools.factories.discovery import EndpointFactory, ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_db import NodeDBFactory
 from ddht.typing import NodeID
-from ddht.v5_1.abc import SessionAPI
+from ddht.v5_1.abc import EventsAPI, SessionAPI
 from ddht.v5_1.envelope import IncomingEnvelope
+from ddht.v5_1.messages import PingMessage, PongMessage
+from ddht.v5_1.packets import AnyPacket
 from ddht.v5_1.session import SessionInitiator, SessionRecipient
 
 
@@ -66,12 +70,20 @@ class SessionDriver(SessionDriverAPI):
     session: SessionAPI
     channels: SessionChannels
 
-    def __init__(self, session: SessionAPI, channels: SessionChannels) -> None:
+    def __init__(
+        self, node: NodeAPI, session: SessionAPI, channels: SessionChannels
+    ) -> None:
+        self.node = node
         self.session = session
         self.channels = channels
 
+    @property
+    def events(self) -> EventsAPI:
+        return self.session.events
+
     @no_hang
     async def send_message(self, message: BaseMessage) -> None:
+        self.session.logger.info("SENDING: %s", message)
         await self.session.handle_outgoing_message(
             OutgoingMessage(
                 message=message,
@@ -84,17 +96,40 @@ class SessionDriver(SessionDriverAPI):
     async def next_message(self) -> IncomingMessage:
         return await self.channels.incoming_message_receive_channel.receive()
 
+    @no_hang
+    async def send_ping(self, request_id: Optional[int] = None) -> PingMessage:
+        if request_id is None:
+            request_id = secrets.randbits(32)
+        message = PingMessage(request_id, self.node.enr.sequence_number)
+        await self.send_message(message)
+        return message
+
+    @no_hang
+    async def send_pong(self, request_id: Optional[int] = None) -> PongMessage:
+        if request_id is None:
+            request_id = secrets.randbits(32)
+        message = PongMessage(
+            request_id,
+            self.node.enr.sequence_number,
+            self.node.endpoint.ip_address,
+            self.node.endpoint.port,
+        )
+        await self.send_message(message)
+        return message
+
 
 class SessionPair(SessionPairAPI):
     def __init__(
         self,
-        initiator: SessionAPI,
+        initiator: NodeAPI,
+        initiator_session: SessionAPI,
         initiator_channels: SessionChannels,
-        recipient: SessionAPI,
+        recipient: NodeAPI,
+        recipient_session: SessionAPI,
         recipient_channels: SessionChannels,
     ) -> None:
-        self.initiator = SessionDriver(initiator, initiator_channels)
-        self.recipient = SessionDriver(recipient, recipient_channels)
+        self.initiator = SessionDriver(initiator, initiator_session, initiator_channels)
+        self.recipient = SessionDriver(recipient, recipient_session, recipient_channels)
 
     @no_hang
     async def transmit_one(self, source: SessionDriverAPI) -> EnvelopePair:
@@ -112,10 +147,65 @@ class SessionPair(SessionPairAPI):
             await source.channels.outgoing_envelope_receive_channel.receive()
         )
         incoming_envelope = IncomingEnvelope(
-            outgoing_envelope.packet, sender_endpoint=source.session.remote_endpoint,
+            outgoing_envelope.packet, sender_endpoint=source.node.endpoint,
         )
         await target.session.handle_incoming_envelope(incoming_envelope)
         return EnvelopePair(outgoing_envelope, incoming_envelope)
+
+    @no_hang
+    async def _transmit_all(self, source: SessionDriverAPI) -> None:
+        transmitted: List[EnvelopePair] = []
+
+        while True:
+            envelope_pair = await self.transmit_one(source)
+            transmitted.append(envelope_pair)
+
+        return tuple(transmitted)
+
+    @asynccontextmanager
+    async def transmit(self) -> AsyncIterator[None]:
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(self._transmit_all, self.initiator)
+            nursery.start_soon(self._transmit_all, self.recipient)
+
+            try:
+                yield
+            finally:
+                nursery.cancel_scope.cancel()
+
+    @no_hang
+    async def send_packet(self, packet: AnyPacket) -> None:
+        if packet.header.source_node_id == self.initiator.node.node_id:
+            await self.recipient.session.handle_incoming_envelope(
+                IncomingEnvelope(
+                    packet=packet, sender_endpoint=self.initiator.node.endpoint,
+                )
+            )
+        elif packet.header.source_node_id == self.recipient.node.node_id:
+            await self.initiator.session.handle_incoming_envelope(
+                IncomingEnvelope(
+                    packet=packet, sender_endpoint=self.recipient.node.endpoint,
+                )
+            )
+        else:
+            raise Exception(
+                f"No matching node-id: {packet.header.source_node_id.hex()}"
+            )
+
+    @no_hang
+    async def handshake(self) -> None:
+        if (
+            not self.initiator.session.is_before_handshake
+            or not self.recipient.session.is_before_handshake
+        ):  # noqa: E501
+            raise Exception("Invalid state.")
+
+        async with self.transmit():
+            async with self.initiator.session.events.session_handshake_complete.subscribe_and_wait():  # noqa: E501
+                async with self.recipient.session.events.session_handshake_complete.subscribe_and_wait():  # noqa: E501
+                    await self.initiator.send_ping()
+            # consume the ping message sent during handshake
+            await self.recipient.next_message()
 
 
 class Network(NetworkAPI):
@@ -150,8 +240,10 @@ class Network(NetworkAPI):
             outgoing_envelope_send_channel=recipient_channels.outgoing_envelope_send_channel,
         )
         return SessionPair(
-            initiator=initiator_session,
+            initiator=initiator,
+            initiator_session=initiator_session,
             initiator_channels=initiator_channels,
-            recipient=recipient_session,
+            recipient=recipient,
+            recipient_session=recipient_session,
             recipient_channels=recipient_channels,
         )

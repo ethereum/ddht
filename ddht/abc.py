@@ -100,6 +100,10 @@ class EventAPI(Generic[TEventPayload]):
     def subscribe(self) -> AsyncContextManager[trio.abc.ReceiveChannel[TEventPayload]]:
         ...
 
+    @abstractmethod
+    def subscribe_and_wait(self) -> AsyncContextManager[None]:
+        ...
+
 
 class NodeDBAPI(ABC):
     @abstractmethod

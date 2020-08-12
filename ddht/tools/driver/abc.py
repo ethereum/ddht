@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import NamedTuple
+from typing import AsyncContextManager, NamedTuple, Optional
 
 from eth_keys import keys
 import trio
@@ -11,6 +11,7 @@ from ddht.enr import ENR
 from ddht.typing import NodeID
 from ddht.v5_1.abc import SessionAPI
 from ddht.v5_1.envelope import IncomingEnvelope, OutgoingEnvelope
+from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.packets import AnyPacket
 
 
@@ -57,6 +58,7 @@ class SessionChannels(NamedTuple):
 class SessionDriverAPI(ABC):
     session: SessionAPI
     channels: SessionChannels
+    node: NodeAPI
 
     @abstractmethod
     async def send_message(self, message: BaseMessage) -> None:
@@ -64,6 +66,14 @@ class SessionDriverAPI(ABC):
 
     @abstractmethod
     async def next_message(self) -> IncomingMessage:
+        ...
+
+    @abstractmethod
+    async def send_ping(self, request_id: Optional[int] = None) -> PingMessage:
+        ...
+
+    @abstractmethod
+    async def send_pong(self, request_id: Optional[int] = None) -> PongMessage:
         ...
 
 
@@ -82,6 +92,14 @@ class SessionPairAPI(ABC):
 
     @abstractmethod
     async def transmit_one(self, source: SessionDriverAPI) -> EnvelopePair:
+        ...
+
+    @abstractmethod
+    def transmit(self) -> AsyncContextManager[None]:
+        ...
+
+    @abstractmethod
+    async def handshake(self) -> None:
         ...
 
 
