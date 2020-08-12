@@ -165,6 +165,13 @@ class Packet(Generic[TAuthData]):
     message_cipher_text: bytes
     dest_node_id: NodeID
 
+    def __str__(self) -> str:
+        return (
+            f"Packet[{self.auth_data.__class__.__name__}]"
+            f"(header={self.header}, auth_data={self.auth_data}, "
+            f"message_cipher_text={self.message_cipher_text!r})"
+        )
+
     @property
     def is_message(self) -> bool:
         return type(self.auth_data) is MessagePacket
