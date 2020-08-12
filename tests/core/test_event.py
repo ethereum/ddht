@@ -75,3 +75,13 @@ async def test_event_wait_without_explicit_subscription():
 
         with trio.fail_after(1):
             await got_it.wait()
+
+
+@pytest.mark.trio
+async def test_event_subscribe_and_wait():
+    event = Event("test")
+
+    with trio.fail_after(1):
+        async with trio.open_nursery() as nursery:
+            async with event.subscribe_and_wait():
+                nursery.start_soon(event.trigger, 1234)
