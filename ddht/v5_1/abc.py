@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import logging
 import uuid
 
 from ddht.abc import EventAPI
@@ -11,6 +12,8 @@ from ddht.v5_1.envelope import IncomingEnvelope
 class SessionAPI(ABC):
     id: uuid.UUID
     remote_endpoint: Endpoint
+    events: "EventsAPI"
+    logger: logging.Logger
 
     @property
     @abstractmethod
@@ -20,6 +23,21 @@ class SessionAPI(ABC):
     @property
     @abstractmethod
     def keys(self) -> SessionKeys:
+        ...
+
+    @property
+    @abstractmethod
+    def is_before_handshake(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def is_during_handshake(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def is_after_handshake(self) -> bool:
         ...
 
     @abstractmethod
@@ -33,3 +51,4 @@ class SessionAPI(ABC):
 
 class EventsAPI(ABC):
     session_created: EventAPI[SessionAPI]
+    session_handshake_complete: EventAPI[SessionAPI]
