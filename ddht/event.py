@@ -43,6 +43,12 @@ class Event(EventAPI[TEventPayload]):
             async with self._lock:
                 self._channels.remove(send_channel)
 
+    @asynccontextmanager
+    async def subscribe_and_wait(self) -> AsyncIterator[None]:
+        async with self.subscribe() as subscription:
+            yield
+            await subscription.receive()
+
     async def wait(self) -> TEventPayload:
         async with self.subscribe() as subscription:
             result = await subscription.receive()
