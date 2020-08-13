@@ -16,7 +16,7 @@ RECIPIENT_PRIVATE_KEY = b"\x02" * 32
 
 
 @pytest.fixture
-def driver():
+async def driver():
     network = Network()
     initiator = network.node()
     recipient = network.node()
@@ -342,3 +342,113 @@ async def test_session_invalid_rlp(driver):
                 dest_node_id=driver.recipient.node.node_id,
             )
         )
+
+
+@pytest.mark.trio
+async def test_session_last_message_received_at(driver, autojump_clock):
+    initiator = driver.initiator.session
+    recipient = driver.recipient.session
+
+    with pytest.raises(AttributeError):
+        initiator.last_message_received_at
+    with pytest.raises(AttributeError):
+        recipient.last_message_received_at
+
+    anchor = trio.current_time()
+
+    await driver.handshake()
+
+    async with driver.transmit():
+        assert initiator.last_message_received_at >= anchor
+        assert recipient.last_message_received_at >= anchor
+
+        # let the clock advance a little
+        await trio.sleep(1)
+        anchor = trio.current_time()
+
+        await driver.initiator.send_ping()
+        # need a moment to allow message to process
+        await trio.sleep(0.01)
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at >= anchor
+
+        # let the clock advance a little
+        await trio.sleep(1)
+        anchor = trio.current_time()
+
+        await driver.recipient.send_ping()
+        # need a moment to allow message to process
+        await trio.sleep(0.01)
+
+        assert initiator.last_message_received_at >= anchor
+        assert recipient.last_message_received_at < anchor
+
+        # let the clock advance a little
+        await trio.sleep(1)
+        anchor = trio.current_time()
+
+        # ensure that bad packets do not update the timestamp
+        initiator_node_id = driver.initiator.node.node_id
+        recipient_node_id = driver.recipient.node.node_id
+
+        await driver.send_packet(
+            PacketFactory.who_are_you(
+                source_node_id=initiator_node_id, dest_node_id=recipient_node_id,
+            )
+        )
+        await trio.sleep(0.01)  # let the packet process
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at < anchor
+
+        await driver.send_packet(
+            PacketFactory.who_are_you(
+                source_node_id=recipient_node_id, dest_node_id=initiator_node_id,
+            )
+        )
+        await trio.sleep(0.01)  # let the packet process
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at < anchor
+
+        await driver.send_packet(
+            PacketFactory.handshake(
+                source_node_id=initiator_node_id, dest_node_id=recipient_node_id,
+            )
+        )
+        await trio.sleep(0.01)  # let the packet process
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at < anchor
+
+        await driver.send_packet(
+            PacketFactory.handshake(
+                source_node_id=recipient_node_id, dest_node_id=initiator_node_id,
+            )
+        )
+        await trio.sleep(0.01)  # let the packet process
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at < anchor
+
+        # ensure that undecryptable packets do not update the timestamp
+        await driver.send_packet(
+            PacketFactory.message(
+                source_node_id=initiator_node_id, dest_node_id=recipient_node_id,
+            )
+        )
+        await trio.sleep(0.01)  # let the packet process
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at < anchor
+
+        await driver.send_packet(
+            PacketFactory.message(
+                source_node_id=recipient_node_id, dest_node_id=initiator_node_id,
+            )
+        )
+        await trio.sleep(0.01)  # let the packet process
+
+        assert initiator.last_message_received_at < anchor
+        assert recipient.last_message_received_at < anchor

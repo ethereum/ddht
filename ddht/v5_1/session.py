@@ -48,6 +48,8 @@ class BaseSession(SessionAPI):
 
     logger = logging.getLogger("ddht.session.Session")
 
+    _last_message_received_at: float
+
     def __init__(
         self,
         local_private_key: bytes,
@@ -60,6 +62,8 @@ class BaseSession(SessionAPI):
         events: EventsAPI = None,
     ) -> None:
         self.id = uuid.uuid4()
+
+        self.created_at = trio.current_time()
 
         if events is None:
             events = Events()
@@ -116,6 +120,12 @@ class BaseSession(SessionAPI):
     @property
     def is_after_handshake(self) -> bool:
         return self._status is SessionStatus.AFTER
+
+    @property
+    def last_message_received_at(self) -> float:
+        if not self.is_after_handshake:
+            raise AttributeError("Last message received at not accessible")
+        return self._last_message_received_at
 
     @property
     def keys(self) -> SessionKeys:
@@ -259,16 +269,25 @@ class SessionInitiator(BaseSession):
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
         if self.is_after_handshake:
             if envelope.packet.is_message:
-                message = self.decode_message(
-                    cast(Packet[MessagePacket], envelope.packet)
-                )
-                await self._inbound_message_send_channel.send(
-                    InboundMessage(
-                        message=message,
-                        sender_endpoint=self.remote_endpoint,
-                        sender_node_id=self.remote_node_id,
+                try:
+                    message = self.decode_message(
+                        cast(Packet[MessagePacket], envelope.packet)
                     )
-                )
+                except DecryptionError:
+                    self.logger.debug(
+                        "%s: Discarding undecryptable packet: %s", self, envelope
+                    )
+                    await self.events.packet_discarded.trigger((self, envelope))
+                else:
+                    self._last_message_received_at = trio.current_time()
+
+                    await self._inbound_message_send_channel.send(
+                        InboundMessage(
+                            message=message,
+                            sender_endpoint=self.remote_endpoint,
+                            sender_node_id=self.remote_node_id,
+                        )
+                    )
             else:
                 self.logger.debug("%s: Discarding MessagePacket: %s", self, envelope)
                 await self.events.packet_discarded.trigger((self, envelope))
@@ -283,6 +302,7 @@ class SessionInitiator(BaseSession):
                 self._status = SessionStatus.AFTER
                 await self.events.session_handshake_complete.trigger(self)
 
+                self._last_message_received_at = trio.current_time()
                 await self._send_handshake_completion(
                     self._keys,
                     ephemeral_public_key,
@@ -456,6 +476,7 @@ class SessionRecipient(BaseSession):
                     )
                     await self.events.packet_discarded.trigger((self, envelope))
                 else:
+                    self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
                         InboundMessage(
                             message=message,
@@ -474,6 +495,7 @@ class SessionRecipient(BaseSession):
                     cast(Packet[HandshakePacket], envelope.packet),
                 )
                 self._status = SessionStatus.AFTER
+                self._last_message_received_at = trio.current_time()
                 await self.events.session_handshake_complete.trigger(self)
                 await self._process_message_buffers()
             elif envelope.packet.is_message:
@@ -548,6 +570,15 @@ class SessionRecipient(BaseSession):
             self._node_db.set_enr(remote_enr)
         else:
             remote_enr = self._node_db.get_enr(self.remote_node_id)
+
+        # Verify the id_nonce_signature which ensures that the remote node has
+        # not lied about their node_id
+        remote_enr.identity_scheme.validate_id_nonce_signature(
+            id_nonce=self.handshake_response_packet.auth_data.id_nonce,
+            ephemeral_public_key=packet.auth_data.ephemeral_public_key,
+            signature=packet.auth_data.id_signature,
+            public_key=remote_enr.public_key,
+        )
 
         session_keys = remote_enr.identity_scheme.compute_session_keys(
             local_private_key=self._local_private_key,

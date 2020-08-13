@@ -17,6 +17,8 @@ class SessionAPI(ABC):
     logger: logging.Logger
     is_initiator: bool
 
+    created_at: float
+
     @property
     @abstractmethod
     def remote_node_id(self) -> NodeID:
@@ -25,6 +27,11 @@ class SessionAPI(ABC):
     @property
     @abstractmethod
     def keys(self) -> SessionKeys:
+        ...
+
+    @property
+    @abstractmethod
+    def last_message_received_at(self) -> float:
         ...
 
     @property
