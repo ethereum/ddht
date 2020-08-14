@@ -7,13 +7,13 @@ import trio
 from trio.abc import ReceiveChannel, SendChannel
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import IncomingMessage, OutgoingMessage
+from ddht.base_message import InboundMessage, OutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.typing import NodeID, Nonce, SessionKeys
 from ddht.v5.abc import HandshakeParticipantAPI
-from ddht.v5.channel_services import IncomingPacket, OutgoingPacket
+from ddht.v5.channel_services import InboundPacket, OutboundPacket
 from ddht.v5.constants import HANDSHAKE_TIMEOUT
 from ddht.v5.handshake import HandshakeInitiator, HandshakeRecipient
 from ddht.v5.messages import BaseMessage, MessageTypeRegistry
@@ -34,10 +34,10 @@ class PeerPacker(Service):
         remote_node_id: NodeID,
         node_db: NodeDBAPI,
         message_type_registry: MessageTypeRegistry,
-        incoming_packet_receive_channel: ReceiveChannel[IncomingPacket],
-        incoming_message_send_channel: SendChannel[IncomingMessage],
-        outgoing_message_receive_channel: ReceiveChannel[OutgoingMessage],
-        outgoing_packet_send_channel: SendChannel[OutgoingPacket],
+        inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
+        inbound_message_send_channel: SendChannel[InboundMessage],
+        outbound_message_receive_channel: ReceiveChannel[OutboundMessage],
+        outbound_packet_send_channel: SendChannel[OutboundPacket],
     ) -> None:
         self.local_private_key = local_private_key
         self.local_node_id = local_node_id
@@ -45,18 +45,18 @@ class PeerPacker(Service):
         self.node_db = node_db
         self.message_type_registry = message_type_registry
 
-        self.incoming_packet_receive_channel = incoming_packet_receive_channel
-        self.incoming_message_send_channel = incoming_message_send_channel
-        self.outgoing_message_receive_channel = outgoing_message_receive_channel
-        self.outgoing_packet_send_channel = outgoing_packet_send_channel
+        self.inbound_packet_receive_channel = inbound_packet_receive_channel
+        self.inbound_message_send_channel = inbound_message_send_channel
+        self.outbound_message_receive_channel = outbound_message_receive_channel
+        self.outbound_packet_send_channel = outbound_packet_send_channel
 
         self.logger = logging.getLogger(
             f"ddht.v5.packer.PeerPacker[{encode_hex(remote_node_id)[2:10]}]"
         )
 
-        self.outgoing_message_backlog: List[OutgoingMessage] = []
+        self.outbound_message_backlog: List[OutboundMessage] = []
 
-        # This lock ensures that at all times, at most one incoming packet or outgoing message is
+        # This lock ensures that at all times, at most one inbound packet or outbound message is
         # being processed.
         self.handling_lock = trio.Lock()
 
@@ -64,51 +64,51 @@ class PeerPacker(Service):
         return f"{self.__class__.__name__}[{encode_hex(self.remote_node_id)[2:10]}]"
 
     async def run(self) -> None:
-        async with self.incoming_packet_receive_channel, self.incoming_message_send_channel, self.outgoing_message_receive_channel, self.outgoing_packet_send_channel:  # noqa: E501
-            self.manager.run_daemon_task(self.handle_incoming_packets)
-            self.manager.run_daemon_task(self.handle_outgoing_messages)
+        async with self.inbound_packet_receive_channel, self.inbound_message_send_channel, self.outbound_message_receive_channel, self.outbound_packet_send_channel:  # noqa: E501
+            self.manager.run_daemon_task(self.handle_inbound_packets)
+            self.manager.run_daemon_task(self.handle_outbound_messages)
             await self.manager.wait_finished()
 
-    async def handle_incoming_packets(self) -> None:
-        async for incoming_packet in self.incoming_packet_receive_channel:
+    async def handle_inbound_packets(self) -> None:
+        async for inbound_packet in self.inbound_packet_receive_channel:
             async with self.handling_lock:
-                await self.handle_incoming_packet(incoming_packet)
+                await self.handle_inbound_packet(inbound_packet)
 
-    async def handle_incoming_packet(self, incoming_packet: IncomingPacket) -> None:
+    async def handle_inbound_packet(self, inbound_packet: InboundPacket) -> None:
         if self.is_pre_handshake:
-            await self.handle_incoming_packet_pre_handshake(incoming_packet)
+            await self.handle_inbound_packet_pre_handshake(inbound_packet)
         elif self.is_during_handshake:
-            await self.handle_incoming_packet_during_handshake(incoming_packet)
+            await self.handle_inbound_packet_during_handshake(inbound_packet)
         elif self.is_post_handshake:
-            await self.handle_incoming_packet_post_handshake(incoming_packet)
+            await self.handle_inbound_packet_post_handshake(inbound_packet)
         else:
             raise Exception("Invariant: All states handled")
 
-    async def handle_outgoing_messages(self) -> None:
-        async for outgoing_message in self.outgoing_message_receive_channel:
+    async def handle_outbound_messages(self) -> None:
+        async for outbound_message in self.outbound_message_receive_channel:
             async with self.handling_lock:
-                await self.handle_outgoing_message(outgoing_message)
+                await self.handle_outbound_message(outbound_message)
 
-    async def handle_outgoing_message(self, outgoing_message: OutgoingMessage) -> None:
+    async def handle_outbound_message(self, outbound_message: OutboundMessage) -> None:
         if self.is_pre_handshake:
-            await self.handle_outgoing_message_pre_handshake(outgoing_message)
+            await self.handle_outbound_message_pre_handshake(outbound_message)
         elif self.is_during_handshake:
-            await self.handle_outgoing_message_during_handshake(outgoing_message)
+            await self.handle_outbound_message_during_handshake(outbound_message)
         elif self.is_post_handshake:
-            await self.handle_outgoing_message_post_handshake(outgoing_message)
+            await self.handle_outbound_message_post_handshake(outbound_message)
         else:
             raise Exception("Invariant: All states handled")
 
     #
-    # Incoming packet handlers
+    # Inbound packet handlers
     #
-    async def handle_incoming_packet_pre_handshake(
-        self, incoming_packet: IncomingPacket
+    async def handle_inbound_packet_pre_handshake(
+        self, inbound_packet: InboundPacket
     ) -> None:
         if not self.is_pre_handshake:
             raise ValueError("Can only handle packets pre handshake")
 
-        if isinstance(incoming_packet.packet, AuthTagPacket):
+        if isinstance(inbound_packet.packet, AuthTagPacket):
             remote_enr: Optional[ENR]
 
             try:
@@ -122,21 +122,21 @@ class PeerPacker(Service):
                     f"Unable to find local ENR in DB by node id {encode_hex(self.local_node_id)}"
                 )
 
-            self.logger.debug("Received %s as handshake initiation", incoming_packet)
+            self.logger.debug("Received %s as handshake initiation", inbound_packet)
             self.start_handshake_as_recipient(
-                auth_tag=incoming_packet.packet.auth_tag,
+                auth_tag=inbound_packet.packet.auth_tag,
                 local_enr=local_enr,
                 remote_enr=remote_enr,
             )
             self.logger.debug("Responding with WhoAreYou packet")
-            await self.send_first_handshake_packet(incoming_packet.sender_endpoint)
+            await self.send_first_handshake_packet(inbound_packet.sender_endpoint)
         else:
             self.logger.debug(
-                "Dropping %s as handshake has not been started yet", incoming_packet
+                "Dropping %s as handshake has not been started yet", inbound_packet
             )
 
-    async def handle_incoming_packet_during_handshake(
-        self, incoming_packet: IncomingPacket
+    async def handle_inbound_packet_during_handshake(
+        self, inbound_packet: InboundPacket
     ) -> None:
         if not self.is_during_handshake:
             raise ValueError("Can only handle packets during handshake")
@@ -145,7 +145,7 @@ class PeerPacker(Service):
                 "handshake_participant is None even though handshake is in progress"
             )
 
-        packet = incoming_packet.packet
+        packet = inbound_packet.packet
 
         if self.handshake_participant.is_response_packet(packet):
             self.logger.debug(
@@ -153,7 +153,7 @@ class PeerPacker(Service):
             )
         else:
             self.logger.debug(
-                "Dropping %s unexpectedly received during handshake", incoming_packet
+                "Dropping %s unexpectedly received during handshake", inbound_packet
             )
             return
 
@@ -173,7 +173,7 @@ class PeerPacker(Service):
             self.handshake_successful_event.set()
 
             # copy message backlog before we reset it
-            outgoing_message_backlog = tuple(self.outgoing_message_backlog)
+            outbound_message_backlog = tuple(self.outbound_message_backlog)
             self.reset_handshake_state()
             self.session_keys = handshake_result.session_keys
             if not self.is_post_handshake:
@@ -186,31 +186,31 @@ class PeerPacker(Service):
                 self.node_db.set_enr(handshake_result.enr)
 
             if handshake_result.auth_header_packet is not None:
-                outgoing_packet = OutgoingPacket(
-                    handshake_result.auth_header_packet, incoming_packet.sender_endpoint
+                outbound_packet = OutboundPacket(
+                    handshake_result.auth_header_packet, inbound_packet.sender_endpoint
                 )
                 self.logger.debug(
-                    "Sending %s packet to let peer complete handshake", outgoing_packet
+                    "Sending %s packet to let peer complete handshake", outbound_packet
                 )
-                await self.outgoing_packet_send_channel.send(outgoing_packet)
+                await self.outbound_packet_send_channel.send(outbound_packet)
 
             if handshake_result.message:
-                incoming_message = IncomingMessage(
+                inbound_message = InboundMessage(
                     handshake_result.message,
-                    incoming_packet.sender_endpoint,
+                    inbound_packet.sender_endpoint,
                     self.remote_node_id,
                 )
-                self.logger.debug("Received %s during handshake", incoming_message)
-                await self.incoming_message_send_channel.send(incoming_message)
+                self.logger.debug("Received %s during handshake", inbound_message)
+                await self.inbound_message_send_channel.send(inbound_message)
 
             self.logger.debug(
-                "Sending %d messages from backlog", len(outgoing_message_backlog)
+                "Sending %d messages from backlog", len(outbound_message_backlog)
             )
-            for outgoing_message in outgoing_message_backlog:
-                await self.handle_outgoing_message(outgoing_message)
+            for outbound_message in outbound_message_backlog:
+                await self.handle_outbound_message(outbound_message)
 
-    async def handle_incoming_packet_post_handshake(
-        self, incoming_packet: IncomingPacket
+    async def handle_inbound_packet_post_handshake(
+        self, inbound_packet: InboundPacket
     ) -> None:
         if not self.is_post_handshake:
             raise ValueError("Can only handle packets post handshake")
@@ -219,9 +219,9 @@ class PeerPacker(Service):
                 "session_keys are None even though handshake has been completed"
             )
 
-        if isinstance(incoming_packet.packet, AuthTagPacket):
+        if isinstance(inbound_packet.packet, AuthTagPacket):
             try:
-                message = incoming_packet.packet.decrypt_message(
+                message = inbound_packet.packet.decrypt_message(
                     self.session_keys.decryption_key, self.message_type_registry
                 )
             except DecryptionError:
@@ -229,27 +229,27 @@ class PeerPacker(Service):
                     "Failed to decrypt message from peer, starting another handshake as recipient"
                 )
                 self.reset_handshake_state()
-                await self.handle_incoming_packet_pre_handshake(incoming_packet)
+                await self.handle_inbound_packet_pre_handshake(inbound_packet)
             except ValidationError as validation_error:
                 self.logger.debug("Received invalid packet: %s", validation_error)
                 self.manager.cancel()
                 return
             else:
-                incoming_message = IncomingMessage(
-                    message, incoming_packet.sender_endpoint, self.remote_node_id
+                inbound_message = InboundMessage(
+                    message, inbound_packet.sender_endpoint, self.remote_node_id
                 )
-                self.logger.debug("Received %s", incoming_message)
-                await self.incoming_message_send_channel.send(incoming_message)
+                self.logger.debug("Received %s", inbound_message)
+                await self.inbound_message_send_channel.send(inbound_message)
         else:
             self.logger.debug(
-                "Dropping %s as handshake has already been completed", incoming_packet
+                "Dropping %s as handshake has already been completed", inbound_packet
             )
 
     #
-    # Outgoing message handlers
+    # Outbound message handlers
     #
-    async def handle_outgoing_message_pre_handshake(
-        self, outgoing_message: OutgoingMessage
+    async def handle_outbound_message_pre_handshake(
+        self, outbound_message: OutboundMessage
     ) -> None:
         if not self.is_pre_handshake:
             raise ValueError("Can only handle message pre handshake")
@@ -269,28 +269,28 @@ class PeerPacker(Service):
             )
             raise HandshakeFailure()
 
-        self.logger.info("Initiating handshake to send %s", outgoing_message)
+        self.logger.info("Initiating handshake to send %s", outbound_message)
         self.start_handshake_as_initiator(
-            local_enr=local_enr, remote_enr=remote_enr, message=outgoing_message.message
+            local_enr=local_enr, remote_enr=remote_enr, message=outbound_message.message
         )
         self.logger.debug("Sending initiating packet")
-        await self.send_first_handshake_packet(outgoing_message.receiver_endpoint)
+        await self.send_first_handshake_packet(outbound_message.receiver_endpoint)
 
-    async def handle_outgoing_message_during_handshake(
-        self, outgoing_message: OutgoingMessage
+    async def handle_outbound_message_during_handshake(
+        self, outbound_message: OutboundMessage
     ) -> None:
         if not self.is_during_handshake:
             raise ValueError("Can only handle message during handshake")
 
         self.logger.debug(
             "Putting %s on message backlog as handshake is in progress already",
-            outgoing_message,
+            outbound_message,
         )
-        self.outgoing_message_backlog.append(outgoing_message)
+        self.outbound_message_backlog.append(outbound_message)
         await trio.sleep(0)
 
-    async def handle_outgoing_message_post_handshake(
-        self, outgoing_message: OutgoingMessage
+    async def handle_outbound_message_post_handshake(
+        self, outbound_message: OutboundMessage
     ) -> None:
         if not self.is_post_handshake:
             raise ValueError("Can only handle message post handshake")
@@ -302,12 +302,12 @@ class PeerPacker(Service):
         packet = AuthTagPacket.prepare(
             tag=compute_tag(self.local_node_id, self.remote_node_id),
             auth_tag=get_random_auth_tag(),
-            message=outgoing_message.message,
+            message=outbound_message.message,
             key=self.session_keys.encryption_key,
         )
-        outgoing_packet = OutgoingPacket(packet, outgoing_message.receiver_endpoint)
-        self.logger.debug("Sending %s", outgoing_message)
-        await self.outgoing_packet_send_channel.send(outgoing_packet)
+        outbound_packet = OutboundPacket(packet, outbound_message.receiver_endpoint)
+        self.logger.debug("Sending %s", outbound_message)
+        await self.outbound_packet_send_channel.send(outbound_packet)
 
     #
     # Start Handshake Methods
@@ -400,36 +400,36 @@ class PeerPacker(Service):
             raise ValueError("Handshake is already in pre state")
         self.handshake_participant = None
         self.session_keys = None
-        self.outgoing_message_backlog.clear()
+        self.outbound_message_backlog.clear()
         self.handshake_finished_event = None
 
-    def is_expecting_handshake_packet(self, incoming_packet: IncomingPacket) -> bool:
+    def is_expecting_handshake_packet(self, inbound_packet: InboundPacket) -> bool:
         """
         Check if the peer packer is waiting for the given packet to complete a handshake.
 
-        This should be called before putting the packet in question on the peer's incoming packet
+        This should be called before putting the packet in question on the peer's inbound packet
         channel.
         """
         return (
             self.is_during_handshake
             and self.handshake_participant is not None
-            and self.handshake_participant.is_response_packet(incoming_packet.packet)
+            and self.handshake_participant.is_response_packet(inbound_packet.packet)
         )
 
     async def send_first_handshake_packet(self, receiver_endpoint: Endpoint) -> None:
         if self.handshake_participant is None:
             raise Exception("Invariant: this code path should not occur")
-        outgoing_packet = OutgoingPacket(
+        outbound_packet = OutboundPacket(
             self.handshake_participant.first_packet_to_send, receiver_endpoint
         )
-        await self.outgoing_packet_send_channel.send(outgoing_packet)
+        await self.outbound_packet_send_channel.send(outbound_packet)
 
 
 class ManagedPeerPacker(NamedTuple):
     peer_packer: PeerPacker
     manager: TrioManager
-    incoming_packet_send_channel: SendChannel[IncomingPacket]
-    outgoing_message_send_channel: SendChannel[OutgoingMessage]
+    inbound_packet_send_channel: SendChannel[InboundPacket]
+    outbound_message_send_channel: SendChannel[OutboundMessage]
 
 
 class Packer(Service):
@@ -439,43 +439,43 @@ class Packer(Service):
         local_node_id: NodeID,
         node_db: NodeDBAPI,
         message_type_registry: MessageTypeRegistry,
-        incoming_packet_receive_channel: ReceiveChannel[IncomingPacket],
-        incoming_message_send_channel: SendChannel[IncomingMessage],
-        outgoing_message_receive_channel: ReceiveChannel[OutgoingMessage],
-        outgoing_packet_send_channel: SendChannel[OutgoingPacket],
+        inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
+        inbound_message_send_channel: SendChannel[InboundMessage],
+        outbound_message_receive_channel: ReceiveChannel[OutboundMessage],
+        outbound_packet_send_channel: SendChannel[OutboundPacket],
     ) -> None:
         self.local_private_key = local_private_key
         self.local_node_id = local_node_id
         self.node_db = node_db
         self.message_type_registry = message_type_registry
 
-        self.incoming_packet_receive_channel = incoming_packet_receive_channel
-        self.incoming_message_send_channel = incoming_message_send_channel
-        self.outgoing_message_receive_channel = outgoing_message_receive_channel
-        self.outgoing_packet_send_channel = outgoing_packet_send_channel
+        self.inbound_packet_receive_channel = inbound_packet_receive_channel
+        self.inbound_message_send_channel = inbound_message_send_channel
+        self.outbound_message_receive_channel = outbound_message_receive_channel
+        self.outbound_packet_send_channel = outbound_packet_send_channel
 
         self.logger = logging.getLogger("ddht.v5.packer.Packer")
 
         self.managed_peer_packers: Dict[NodeID, ManagedPeerPacker] = {}
 
     async def run(self) -> None:
-        self.manager.run_daemon_task(self.handle_incoming_packets)
-        self.manager.run_daemon_task(self.handle_outgoing_messages)
+        self.manager.run_daemon_task(self.handle_inbound_packets)
+        self.manager.run_daemon_task(self.handle_outbound_messages)
         await self.manager.wait_finished()
 
-    async def handle_incoming_packets(self) -> None:
-        async for incoming_packet in self.incoming_packet_receive_channel:
+    async def handle_inbound_packets(self) -> None:
+        async for inbound_packet in self.inbound_packet_receive_channel:
             expecting_managed_peer_packers = tuple(
                 managed_peer_packer
                 for managed_peer_packer in self.managed_peer_packers.values()
                 if managed_peer_packer.peer_packer.is_expecting_handshake_packet(
-                    incoming_packet
+                    inbound_packet
                 )
             )
             if len(expecting_managed_peer_packers) >= 2:
                 self.logger.warning(
                     "Multiple peer packers are expecting %s: %s",
-                    incoming_packet,
+                    inbound_packet,
                     ", ".join(
                         encode_hex(managed_peer_packer.peer_packer.local_node_id)
                         for managed_peer_packer in expecting_managed_peer_packers
@@ -486,12 +486,12 @@ class Packer(Service):
                 for managed_peer_packer in expecting_managed_peer_packers:
                     self.logger.debug(
                         "Passing %s to %s for handshake",
-                        incoming_packet,
+                        inbound_packet,
                         managed_peer_packer.peer_packer,
                     )
                     try:
-                        await managed_peer_packer.incoming_packet_send_channel.send(
-                            incoming_packet
+                        await managed_peer_packer.inbound_packet_send_channel.send(
+                            inbound_packet
                         )
                     except trio.BrokenResourceError:
                         self.logger.warning(
@@ -499,15 +499,15 @@ class Packer(Service):
                             % managed_peer_packer.peer_packer
                         )
 
-            elif isinstance(incoming_packet.packet, AuthTagPacket):
-                tag = incoming_packet.packet.tag
+            elif isinstance(inbound_packet.packet, AuthTagPacket):
+                tag = inbound_packet.packet.tag
                 remote_node_id = recover_source_id_from_tag(tag, self.local_node_id)
 
                 if not self.is_peer_packer_registered(remote_node_id):
                     self.logger.info(
                         "Launching peer packer for %s to handle %s",
                         encode_hex(remote_node_id),
-                        incoming_packet,
+                        inbound_packet,
                     )
                     self.register_peer_packer(remote_node_id)
                     self.manager.run_task(self.run_peer_packer, remote_node_id)
@@ -515,12 +515,12 @@ class Packer(Service):
                 managed_peer_packer = self.managed_peer_packers[remote_node_id]
                 self.logger.debug(
                     "Passing %s from %s to responsible peer packer",
-                    incoming_packet,
+                    inbound_packet,
                     encode_hex(remote_node_id),
                 )
                 try:
-                    await managed_peer_packer.incoming_packet_send_channel.send(
-                        incoming_packet
+                    await managed_peer_packer.inbound_packet_send_channel.send(
+                        inbound_packet
                     )
                 except trio.BrokenResourceError:
                     self.logger.warning(
@@ -530,30 +530,30 @@ class Packer(Service):
 
             else:
                 self.logger.warning(
-                    "Dropping unprompted handshake packet %s", incoming_packet
+                    "Dropping unprompted handshake packet %s", inbound_packet
                 )
 
-    async def handle_outgoing_messages(self) -> None:
-        async for outgoing_message in self.outgoing_message_receive_channel:
-            remote_node_id = outgoing_message.receiver_node_id
+    async def handle_outbound_messages(self) -> None:
+        async for outbound_message in self.outbound_message_receive_channel:
+            remote_node_id = outbound_message.receiver_node_id
             if not self.is_peer_packer_registered(remote_node_id):
                 self.logger.info(
                     "Launching peer packer for %s to handle %s",
                     encode_hex(remote_node_id),
-                    outgoing_message,
+                    outbound_message,
                 )
                 self.register_peer_packer(remote_node_id)
                 self.manager.run_task(self.run_peer_packer, remote_node_id)
 
             self.logger.debug(
                 "Passing %s from %s to responsible peer packer",
-                outgoing_message,
+                outbound_message,
                 encode_hex(remote_node_id),
             )
             managed_peer_packer = self.managed_peer_packers[remote_node_id]
             try:
-                await managed_peer_packer.outgoing_message_send_channel.send(
-                    outgoing_message
+                await managed_peer_packer.outbound_message_send_channel.send(
+                    outbound_message
                 )
             except trio.BrokenResourceError:
                 if not managed_peer_packer.manager.is_cancelled:
@@ -571,11 +571,11 @@ class Packer(Service):
                 f"Peer packer for {encode_hex(remote_node_id)} is already registered"
             )
 
-        incoming_packet_channels: Tuple[
-            SendChannel[IncomingPacket], ReceiveChannel[IncomingPacket]
+        inbound_packet_channels: Tuple[
+            SendChannel[InboundPacket], ReceiveChannel[InboundPacket]
         ] = trio.open_memory_channel(0)
-        outgoing_message_channels: Tuple[
-            SendChannel[OutgoingMessage], ReceiveChannel[OutgoingMessage]
+        outbound_message_channels: Tuple[
+            SendChannel[OutboundMessage], ReceiveChannel[OutboundMessage]
         ] = trio.open_memory_channel(0)
 
         peer_packer = PeerPacker(
@@ -584,16 +584,16 @@ class Packer(Service):
             remote_node_id=remote_node_id,
             node_db=self.node_db,
             message_type_registry=self.message_type_registry,
-            incoming_packet_receive_channel=incoming_packet_channels[1],
+            inbound_packet_receive_channel=inbound_packet_channels[1],
             # These channels are the standard `trio.abc.XXXChannel` interfaces.
             # The `clone` method is only available on `MemoryXXXChannel` types
             # which trio currently doesn't expose in a way that allows us to
             # type these channels as those types.  Thus, we need to tell mypy
             # to ignore this since it doesn't recognize the standard
             # `trio.abc.XXXChannel` interfaces as having a `clone()` method.
-            incoming_message_send_channel=self.incoming_message_send_channel.clone(),  # type: ignore  # noqa: E501
-            outgoing_message_receive_channel=outgoing_message_channels[1],
-            outgoing_packet_send_channel=self.outgoing_packet_send_channel.clone(),  # type: ignore
+            inbound_message_send_channel=self.inbound_message_send_channel.clone(),  # type: ignore  # noqa: E501
+            outbound_message_receive_channel=outbound_message_channels[1],
+            outbound_packet_send_channel=self.outbound_packet_send_channel.clone(),  # type: ignore
         )
 
         manager = TrioManager(peer_packer)
@@ -601,8 +601,8 @@ class Packer(Service):
         self.managed_peer_packers[remote_node_id] = ManagedPeerPacker(
             peer_packer=peer_packer,
             manager=manager,
-            incoming_packet_send_channel=incoming_packet_channels[0],
-            outgoing_message_send_channel=outgoing_message_channels[0],
+            inbound_packet_send_channel=inbound_packet_channels[0],
+            outbound_message_send_channel=outbound_message_channels[0],
         )
 
     def deregister_peer_packer(self, remote_node_id: NodeID) -> None:

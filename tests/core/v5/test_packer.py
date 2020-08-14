@@ -4,7 +4,7 @@ import pytest
 import pytest_trio
 import trio
 
-from ddht.base_message import OutgoingMessage
+from ddht.base_message import OutboundMessage
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import (
@@ -15,7 +15,7 @@ from ddht.tools.factories.discovery import (
     PingMessageFactory,
 )
 from ddht.tools.factories.keys import PrivateKeyFactory
-from ddht.v5.channel_services import IncomingPacket
+from ddht.v5.channel_services import InboundPacket
 from ddht.v5.messages import v5_registry
 from ddht.v5.packer import Packer, PeerPacker
 from ddht.v5.packets import AuthHeaderPacket, AuthTagPacket, WhoAreYouPacket
@@ -61,42 +61,42 @@ async def node_db(enr, remote_enr):
 
 
 @pytest.fixture
-def incoming_packet_channels():
+def inbound_packet_channels():
     return trio.open_memory_channel(0)
 
 
 @pytest.fixture
-def incoming_message_channels():
+def inbound_message_channels():
     return trio.open_memory_channel(1)
 
 
 @pytest.fixture
-def outgoing_packet_channels():
+def outbound_packet_channels():
     return trio.open_memory_channel(1)
 
 
 @pytest.fixture
-def outgoing_message_channels():
+def outbound_message_channels():
     return trio.open_memory_channel(1)
 
 
 @pytest.fixture
-def remote_incoming_packet_channels():
+def remote_inbound_packet_channels():
     return trio.open_memory_channel(1)
 
 
 @pytest.fixture
-def remote_incoming_message_channels():
+def remote_inbound_message_channels():
     return trio.open_memory_channel(1)
 
 
 @pytest.fixture
-def remote_outgoing_packet_channels():
+def remote_outbound_packet_channels():
     return trio.open_memory_channel(1)
 
 
 @pytest.fixture
-def remote_outgoing_message_channels():
+def remote_outbound_message_channels():
     return trio.open_memory_channel(1)
 
 
@@ -105,31 +105,27 @@ async def bridged_channels(
     nursery,
     endpoint,
     remote_endpoint,
-    outgoing_packet_channels,
-    remote_outgoing_packet_channels,
-    incoming_packet_channels,
-    remote_incoming_packet_channels,
+    outbound_packet_channels,
+    remote_outbound_packet_channels,
+    inbound_packet_channels,
+    remote_inbound_packet_channels,
 ):
     async def bridge_channels(
-        outgoing_packet_receive_channel, incoming_packet_send_channel
+        outbound_packet_receive_channel, inbound_packet_send_channel
     ):
-        async for outgoing_packet in outgoing_packet_receive_channel:
-            receiver = outgoing_packet.receiver_endpoint
+        async for outbound_packet in outbound_packet_receive_channel:
+            receiver = outbound_packet.receiver_endpoint
             sender = endpoint if receiver == remote_endpoint else remote_endpoint
-            incoming_packet = IncomingPacket(
-                packet=outgoing_packet.packet, sender_endpoint=sender,
+            inbound_packet = InboundPacket(
+                packet=outbound_packet.packet, sender_endpoint=sender,
             )
-            await incoming_packet_send_channel.send(incoming_packet)
+            await inbound_packet_send_channel.send(inbound_packet)
 
     nursery.start_soon(
-        bridge_channels,
-        outgoing_packet_channels[1],
-        remote_incoming_packet_channels[0],
+        bridge_channels, outbound_packet_channels[1], remote_inbound_packet_channels[0],
     )
     nursery.start_soon(
-        bridge_channels,
-        remote_outgoing_packet_channels[1],
-        incoming_packet_channels[0],
+        bridge_channels, remote_outbound_packet_channels[1], inbound_packet_channels[0],
     )
 
 
@@ -139,10 +135,10 @@ async def peer_packer(
     private_key,
     enr,
     remote_enr,
-    incoming_packet_channels,
-    incoming_message_channels,
-    outgoing_message_channels,
-    outgoing_packet_channels,
+    inbound_packet_channels,
+    inbound_message_channels,
+    outbound_message_channels,
+    outbound_packet_channels,
 ):
     peer_packer = PeerPacker(
         local_private_key=private_key,
@@ -150,10 +146,10 @@ async def peer_packer(
         remote_node_id=remote_enr.node_id,
         node_db=node_db,
         message_type_registry=v5_registry,
-        incoming_packet_receive_channel=incoming_packet_channels[1],
-        incoming_message_send_channel=incoming_message_channels[0],
-        outgoing_message_receive_channel=outgoing_message_channels[1],
-        outgoing_packet_send_channel=outgoing_packet_channels[0],
+        inbound_packet_receive_channel=inbound_packet_channels[1],
+        inbound_message_send_channel=inbound_message_channels[0],
+        outbound_message_receive_channel=outbound_message_channels[1],
+        outbound_packet_send_channel=outbound_packet_channels[0],
     )
     async with background_trio_service(peer_packer):
         yield peer_packer
@@ -165,10 +161,10 @@ async def remote_peer_packer(
     remote_private_key,
     enr,
     remote_enr,
-    remote_incoming_packet_channels,
-    remote_incoming_message_channels,
-    remote_outgoing_message_channels,
-    remote_outgoing_packet_channels,
+    remote_inbound_packet_channels,
+    remote_inbound_message_channels,
+    remote_outbound_message_channels,
+    remote_outbound_packet_channels,
 ):
     peer_packer = PeerPacker(
         local_private_key=remote_private_key,
@@ -176,10 +172,10 @@ async def remote_peer_packer(
         remote_node_id=enr.node_id,
         node_db=node_db,
         message_type_registry=v5_registry,
-        incoming_packet_receive_channel=remote_incoming_packet_channels[1],
-        incoming_message_send_channel=remote_incoming_message_channels[0],
-        outgoing_message_receive_channel=remote_outgoing_message_channels[1],
-        outgoing_packet_send_channel=remote_outgoing_packet_channels[0],
+        inbound_packet_receive_channel=remote_inbound_packet_channels[1],
+        inbound_message_send_channel=remote_inbound_message_channels[0],
+        outbound_message_receive_channel=remote_outbound_message_channels[1],
+        outbound_packet_send_channel=remote_outbound_packet_channels[0],
     )
     async with background_trio_service(peer_packer):
         yield peer_packer
@@ -190,20 +186,20 @@ async def packer(
     node_db,
     private_key,
     enr,
-    incoming_packet_channels,
-    incoming_message_channels,
-    outgoing_message_channels,
-    outgoing_packet_channels,
+    inbound_packet_channels,
+    inbound_message_channels,
+    outbound_message_channels,
+    outbound_packet_channels,
 ):
     packer = Packer(
         local_private_key=private_key,
         local_node_id=enr.node_id,
         node_db=node_db,
         message_type_registry=v5_registry,
-        incoming_packet_receive_channel=incoming_packet_channels[1],
-        incoming_message_send_channel=incoming_message_channels[0],
-        outgoing_message_receive_channel=outgoing_message_channels[1],
-        outgoing_packet_send_channel=outgoing_packet_channels[0],
+        inbound_packet_receive_channel=inbound_packet_channels[1],
+        inbound_message_send_channel=inbound_message_channels[0],
+        outbound_message_receive_channel=outbound_message_channels[1],
+        outbound_packet_send_channel=outbound_packet_channels[0],
     )
     async with background_trio_service(packer):
         yield packer
@@ -214,10 +210,10 @@ async def remote_packer(
     node_db,
     remote_private_key,
     remote_enr,
-    remote_incoming_packet_channels,
-    remote_incoming_message_channels,
-    remote_outgoing_message_channels,
-    remote_outgoing_packet_channels,
+    remote_inbound_packet_channels,
+    remote_inbound_message_channels,
+    remote_outbound_message_channels,
+    remote_outbound_packet_channels,
     bridged_channels,
 ):
     remote_packer = Packer(
@@ -225,10 +221,10 @@ async def remote_packer(
         local_node_id=remote_enr.node_id,
         node_db=node_db,
         message_type_registry=v5_registry,
-        incoming_packet_receive_channel=remote_incoming_packet_channels[1],
-        incoming_message_send_channel=remote_incoming_message_channels[0],
-        outgoing_message_receive_channel=remote_outgoing_message_channels[1],
-        outgoing_packet_send_channel=remote_outgoing_packet_channels[0],
+        inbound_packet_receive_channel=remote_inbound_packet_channels[1],
+        inbound_message_send_channel=remote_inbound_message_channels[0],
+        outbound_message_receive_channel=remote_outbound_message_channels[1],
+        outbound_packet_send_channel=remote_outbound_packet_channels[0],
     )
     async with background_trio_service(remote_packer):
         yield packer
@@ -239,35 +235,35 @@ async def remote_packer(
 #
 @pytest.mark.trio
 async def test_peer_packer_initiates_handshake(
-    peer_packer, outgoing_message_channels, outgoing_packet_channels, nursery
+    peer_packer, outbound_message_channels, outbound_packet_channels, nursery
 ):
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         PingMessageFactory(), EndpointFactory(), peer_packer.remote_node_id,
     )
 
-    outgoing_message_channels[0].send_nowait(outgoing_message)
+    outbound_message_channels[0].send_nowait(outbound_message)
     with trio.fail_after(0.5):
-        outgoing_packet = await outgoing_packet_channels[1].receive()
+        outbound_packet = await outbound_packet_channels[1].receive()
 
     assert peer_packer.is_during_handshake
-    assert outgoing_packet.receiver_endpoint == outgoing_message.receiver_endpoint
-    assert isinstance(outgoing_packet.packet, AuthTagPacket)
+    assert outbound_packet.receiver_endpoint == outbound_message.receiver_endpoint
+    assert isinstance(outbound_packet.packet, AuthTagPacket)
 
 
 @pytest.mark.trio
 async def test_peer_packer_sends_who_are_you(
-    peer_packer, incoming_packet_channels, outgoing_packet_channels, nursery
+    peer_packer, inbound_packet_channels, outbound_packet_channels, nursery
 ):
-    incoming_packet = IncomingPacket(AuthTagPacketFactory(), EndpointFactory(),)
+    inbound_packet = InboundPacket(AuthTagPacketFactory(), EndpointFactory(),)
 
-    incoming_packet_channels[0].send_nowait(incoming_packet)
+    inbound_packet_channels[0].send_nowait(inbound_packet)
     with trio.fail_after(0.5):
-        outgoing_packet = await outgoing_packet_channels[1].receive()
+        outbound_packet = await outbound_packet_channels[1].receive()
 
     assert peer_packer.is_during_handshake
-    assert outgoing_packet.receiver_endpoint == incoming_packet.sender_endpoint
-    assert isinstance(outgoing_packet.packet, WhoAreYouPacket)
-    assert outgoing_packet.packet.token == incoming_packet.packet.auth_tag
+    assert outbound_packet.receiver_endpoint == inbound_packet.sender_endpoint
+    assert isinstance(outbound_packet.packet, WhoAreYouPacket)
+    assert outbound_packet.packet.token == inbound_packet.packet.auth_tag
 
 
 @pytest.mark.trio
@@ -277,17 +273,17 @@ async def test_peer_packer_sends_auth_header(
     remote_private_key,
     remote_enr,
     remote_endpoint,
-    incoming_packet_channels,
-    outgoing_packet_channels,
-    outgoing_message_channels,
+    inbound_packet_channels,
+    outbound_packet_channels,
+    outbound_message_channels,
     nursery,
 ):
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         PingMessageFactory(), remote_endpoint, peer_packer.remote_node_id,
     )
-    outgoing_message_channels[0].send_nowait(outgoing_message)
+    outbound_message_channels[0].send_nowait(outbound_message)
     with trio.fail_after(0.5):
-        outgoing_auth_tag_packet = await outgoing_packet_channels[1].receive()
+        outbound_auth_tag_packet = await outbound_packet_channels[1].receive()
 
     handshake_recipient = HandshakeRecipientFactory(
         local_private_key=remote_private_key,
@@ -295,21 +291,21 @@ async def test_peer_packer_sends_auth_header(
         remote_private_key=peer_packer.local_private_key,
         remote_enr=enr,
         remote_node_id=peer_packer.local_node_id,
-        initiating_packet_auth_tag=outgoing_auth_tag_packet.packet.auth_tag,
+        initiating_packet_auth_tag=outbound_auth_tag_packet.packet.auth_tag,
     )
-    incoming_packet = IncomingPacket(
+    inbound_packet = InboundPacket(
         handshake_recipient.first_packet_to_send, sender_endpoint=remote_endpoint,
     )
-    incoming_packet_channels[0].send_nowait(incoming_packet)
+    inbound_packet_channels[0].send_nowait(inbound_packet)
     with trio.fail_after(0.5):
-        outgoing_auth_header_packet = await outgoing_packet_channels[1].receive()
+        outbound_auth_header_packet = await outbound_packet_channels[1].receive()
 
     assert peer_packer.is_post_handshake
-    assert isinstance(outgoing_auth_header_packet.packet, AuthHeaderPacket)
-    assert outgoing_auth_header_packet.receiver_endpoint == remote_endpoint
+    assert isinstance(outbound_auth_header_packet.packet, AuthHeaderPacket)
+    assert outbound_auth_header_packet.receiver_endpoint == remote_endpoint
 
     handshake_result = handshake_recipient.complete_handshake(
-        outgoing_auth_header_packet.packet,
+        outbound_auth_header_packet.packet,
     )
     initiator_keys = peer_packer.session_keys
     recipient_keys = handshake_result.session_keys
@@ -326,42 +322,42 @@ async def test_full_peer_packer_handshake(
     remote_endpoint,
     enr,
     remote_enr,
-    outgoing_message_channels,
-    remote_outgoing_message_channels,
-    incoming_message_channels,
-    remote_incoming_message_channels,
+    outbound_message_channels,
+    remote_outbound_message_channels,
+    inbound_message_channels,
+    remote_inbound_message_channels,
     bridged_channels,
     nursery,
 ):
     # to remote
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         message=PingMessageFactory(),
         receiver_endpoint=remote_endpoint,
         receiver_node_id=remote_enr.node_id,
     )
-    outgoing_message_channels[0].send_nowait(outgoing_message)
+    outbound_message_channels[0].send_nowait(outbound_message)
 
     with trio.fail_after(0.5):
-        incoming_message = await remote_incoming_message_channels[1].receive()
+        inbound_message = await remote_inbound_message_channels[1].receive()
 
-    assert incoming_message.message == outgoing_message.message
-    assert incoming_message.sender_endpoint == endpoint
-    assert incoming_message.sender_node_id == enr.node_id
+    assert inbound_message.message == outbound_message.message
+    assert inbound_message.sender_endpoint == endpoint
+    assert inbound_message.sender_node_id == enr.node_id
 
     # from remote
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         message=PingMessageFactory(),
         receiver_endpoint=endpoint,
         receiver_node_id=enr.node_id,
     )
-    remote_outgoing_message_channels[0].send_nowait(outgoing_message)
+    remote_outbound_message_channels[0].send_nowait(outbound_message)
 
     with trio.fail_after(0.5):
-        incoming_message = await incoming_message_channels[1].receive()
+        inbound_message = await inbound_message_channels[1].receive()
 
-    assert incoming_message.message == outgoing_message.message
-    assert incoming_message.sender_endpoint == remote_endpoint
-    assert incoming_message.sender_node_id == remote_enr.node_id
+    assert inbound_message.message == outbound_message.message
+    assert inbound_message.sender_endpoint == remote_endpoint
+    assert inbound_message.sender_node_id == remote_enr.node_id
 
 
 #
@@ -373,31 +369,31 @@ async def test_packer_sends_packets(
     packer,
     remote_enr,
     remote_endpoint,
-    outgoing_message_channels,
-    outgoing_packet_channels,
+    outbound_message_channels,
+    outbound_packet_channels,
 ):
     assert not packer.is_peer_packer_registered(remote_enr.node_id)
 
     # send message
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         message=PingMessageFactory(),
         receiver_endpoint=remote_endpoint,
         receiver_node_id=remote_enr.node_id,
     )
-    outgoing_message_channels[0].send_nowait(outgoing_message)
+    outbound_message_channels[0].send_nowait(outbound_message)
 
     with trio.fail_after(0.5):
-        outgoing_packet = await outgoing_packet_channels[1].receive()
+        outbound_packet = await outbound_packet_channels[1].receive()
 
     assert packer.is_peer_packer_registered(remote_enr.node_id)
 
-    assert isinstance(outgoing_packet.packet, AuthTagPacket)
-    assert outgoing_packet.receiver_endpoint == remote_endpoint
+    assert isinstance(outbound_packet.packet, AuthTagPacket)
+    assert outbound_packet.receiver_endpoint == remote_endpoint
 
 
 @pytest.mark.trio
 async def test_packer_processes_handshake_initiation(
-    nursery, packer, enr, remote_enr, remote_endpoint, incoming_packet_channels
+    nursery, packer, enr, remote_enr, remote_endpoint, inbound_packet_channels
 ):
     assert not packer.is_peer_packer_registered(remote_enr.node_id)
 
@@ -405,10 +401,10 @@ async def test_packer_processes_handshake_initiation(
     tag = compute_tag(
         source_node_id=remote_enr.node_id, destination_node_id=enr.node_id
     )
-    incoming_packet = IncomingPacket(
+    inbound_packet = InboundPacket(
         packet=AuthTagPacketFactory(tag=tag), sender_endpoint=remote_endpoint,
     )
-    await incoming_packet_channels[0].send(incoming_packet)
+    await inbound_packet_channels[0].send(inbound_packet)
     await trio.sleep(0)
     assert packer.is_peer_packer_registered(remote_enr.node_id)
 
@@ -422,37 +418,37 @@ async def test_packer_full_handshake(
     remote_enr,
     endpoint,
     remote_endpoint,
-    outgoing_message_channels,
-    remote_outgoing_message_channels,
-    incoming_message_channels,
-    remote_incoming_message_channels,
+    outbound_message_channels,
+    remote_outbound_message_channels,
+    inbound_message_channels,
+    remote_inbound_message_channels,
 ):
     # to remote
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         message=PingMessageFactory(),
         receiver_endpoint=remote_endpoint,
         receiver_node_id=remote_enr.node_id,
     )
-    outgoing_message_channels[0].send_nowait(outgoing_message)
+    outbound_message_channels[0].send_nowait(outbound_message)
 
     with trio.fail_after(0.5):
-        incoming_message = await remote_incoming_message_channels[1].receive()
+        inbound_message = await remote_inbound_message_channels[1].receive()
 
-    assert incoming_message.message == outgoing_message.message
-    assert incoming_message.sender_endpoint == endpoint
-    assert incoming_message.sender_node_id == enr.node_id
+    assert inbound_message.message == outbound_message.message
+    assert inbound_message.sender_endpoint == endpoint
+    assert inbound_message.sender_node_id == enr.node_id
 
     # from remote
-    outgoing_message = OutgoingMessage(
+    outbound_message = OutboundMessage(
         message=PingMessageFactory(),
         receiver_endpoint=endpoint,
         receiver_node_id=enr.node_id,
     )
-    remote_outgoing_message_channels[0].send_nowait(outgoing_message)
+    remote_outbound_message_channels[0].send_nowait(outbound_message)
 
     with trio.fail_after(0.5):
-        incoming_message = await incoming_message_channels[1].receive()
+        inbound_message = await inbound_message_channels[1].receive()
 
-    assert incoming_message.message == outgoing_message.message
-    assert incoming_message.sender_endpoint == remote_endpoint
-    assert incoming_message.sender_node_id == remote_enr.node_id
+    assert inbound_message.message == outbound_message.message
+    assert inbound_message.sender_endpoint == remote_endpoint
+    assert inbound_message.sender_node_id == remote_enr.node_id

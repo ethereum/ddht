@@ -8,7 +8,7 @@ import pytest_trio
 import trio
 from trio.testing import wait_all_tasks_blocked
 
-from ddht.base_message import IncomingMessage
+from ddht.base_message import InboundMessage
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
 from ddht.node_db import NodeDB
@@ -16,7 +16,7 @@ from ddht.tools.factories.discovery import (
     EndpointFactory,
     ENRFactory,
     FindNodeMessageFactory,
-    IncomingMessageFactory,
+    InboundMessageFactory,
     NodeIDFactory,
     PingMessageFactory,
 )
@@ -33,12 +33,12 @@ from ddht.v5.routing_table_manager import (
 
 
 @pytest.fixture
-def incoming_message_channels():
+def inbound_message_channels():
     return trio.open_memory_channel(0)
 
 
 @pytest.fixture
-def outgoing_message_channels():
+def outbound_message_channels():
     return trio.open_memory_channel(0)
 
 
@@ -99,12 +99,12 @@ async def node_db(local_enr, remote_enr):
 
 @pytest_trio.trio_fixture
 async def message_dispatcher(
-    node_db, incoming_message_channels, outgoing_message_channels
+    node_db, inbound_message_channels, outbound_message_channels
 ):
     message_dispatcher = MessageDispatcher(
         node_db=node_db,
-        incoming_message_receive_channel=incoming_message_channels[1],
-        outgoing_message_send_channel=outgoing_message_channels[0],
+        inbound_message_receive_channel=inbound_message_channels[1],
+        outbound_message_send_channel=outbound_message_channels[0],
     )
     async with background_trio_service(message_dispatcher):
         yield message_dispatcher
@@ -116,15 +116,15 @@ async def ping_handler_service(
     routing_table,
     message_dispatcher,
     node_db,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
 ):
     ping_handler_service = PingHandlerService(
         local_node_id=local_enr.node_id,
         routing_table=routing_table,
         message_dispatcher=message_dispatcher,
         node_db=node_db,
-        outgoing_message_send_channel=outgoing_message_channels[0],
+        outbound_message_send_channel=outbound_message_channels[0],
     )
     async with background_trio_service(ping_handler_service):
         yield ping_handler_service
@@ -136,8 +136,8 @@ async def find_node_handler_service(
     routing_table,
     message_dispatcher,
     node_db,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     endpoint_vote_channels,
 ):
     find_node_handler_service = FindNodeHandlerService(
@@ -145,7 +145,7 @@ async def find_node_handler_service(
         routing_table=routing_table,
         message_dispatcher=message_dispatcher,
         node_db=node_db,
-        outgoing_message_send_channel=outgoing_message_channels[0],
+        outbound_message_send_channel=outbound_message_channels[0],
     )
     async with background_trio_service(find_node_handler_service):
         yield find_node_handler_service
@@ -157,7 +157,7 @@ async def ping_sender_service(
     routing_table,
     message_dispatcher,
     node_db,
-    incoming_message_channels,
+    inbound_message_channels,
     endpoint_vote_channels,
 ):
     ping_sender_service = PingSenderService(
@@ -174,28 +174,28 @@ async def ping_sender_service(
 @pytest.mark.trio
 async def test_ping_handler_sends_pong(
     ping_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     local_enr,
 ):
     ping = PingMessageFactory()
-    incoming_message = IncomingMessageFactory(message=ping)
-    await incoming_message_channels[0].send(incoming_message)
+    inbound_message = InboundMessageFactory(message=ping)
+    await inbound_message_channels[0].send(inbound_message)
     await wait_all_tasks_blocked()
 
-    outgoing_message = outgoing_message_channels[1].receive_nowait()
-    assert isinstance(outgoing_message.message, PongMessage)
-    assert outgoing_message.message.request_id == ping.request_id
-    assert outgoing_message.message.enr_seq == local_enr.sequence_number
-    assert outgoing_message.receiver_endpoint == incoming_message.sender_endpoint
-    assert outgoing_message.receiver_node_id == incoming_message.sender_node_id
+    outbound_message = outbound_message_channels[1].receive_nowait()
+    assert isinstance(outbound_message.message, PongMessage)
+    assert outbound_message.message.request_id == ping.request_id
+    assert outbound_message.message.enr_seq == local_enr.sequence_number
+    assert outbound_message.receiver_endpoint == inbound_message.sender_endpoint
+    assert outbound_message.receiver_node_id == inbound_message.sender_node_id
 
 
 @pytest.mark.trio
 async def test_ping_handler_updates_routing_table(
     ping_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     local_enr,
     remote_enr,
     routing_table,
@@ -209,10 +209,10 @@ async def test_ping_handler_updates_routing_table(
     )
 
     ping = PingMessageFactory()
-    incoming_message = IncomingMessageFactory(
+    inbound_message = InboundMessageFactory(
         message=ping, sender_node_id=remote_enr.node_id,
     )
-    await incoming_message_channels[0].send(incoming_message)
+    await inbound_message_channels[0].send(inbound_message)
     await wait_all_tasks_blocked()
 
     assert routing_table.get_nodes_at_log_distance(distance) == (
@@ -224,82 +224,82 @@ async def test_ping_handler_updates_routing_table(
 @pytest.mark.trio
 async def test_ping_handler_requests_updated_enr(
     ping_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     local_enr,
     remote_enr,
     routing_table,
 ):
     ping = PingMessageFactory(enr_seq=remote_enr.sequence_number + 1)
-    incoming_message = IncomingMessageFactory(message=ping)
-    await incoming_message_channels[0].send(incoming_message)
+    inbound_message = InboundMessageFactory(message=ping)
+    await inbound_message_channels[0].send(inbound_message)
 
     await wait_all_tasks_blocked()
-    first_outgoing_message = outgoing_message_channels[1].receive_nowait()
+    first_outbound_message = outbound_message_channels[1].receive_nowait()
     await wait_all_tasks_blocked()
-    second_outgoing_message = outgoing_message_channels[1].receive_nowait()
+    second_outbound_message = outbound_message_channels[1].receive_nowait()
 
     assert {
-        first_outgoing_message.message.__class__,
-        second_outgoing_message.message.__class__,
+        first_outbound_message.message.__class__,
+        second_outbound_message.message.__class__,
     } == {PongMessage, FindNodeMessage}
 
-    outgoing_find_node = (
-        first_outgoing_message
-        if isinstance(first_outgoing_message.message, FindNodeMessage)
-        else second_outgoing_message
+    outbound_find_node = (
+        first_outbound_message
+        if isinstance(first_outbound_message.message, FindNodeMessage)
+        else second_outbound_message
     )
 
-    assert outgoing_find_node.message.distance == 0
-    assert outgoing_find_node.receiver_endpoint == incoming_message.sender_endpoint
-    assert outgoing_find_node.receiver_node_id == incoming_message.sender_node_id
+    assert outbound_find_node.message.distance == 0
+    assert outbound_find_node.receiver_endpoint == inbound_message.sender_endpoint
+    assert outbound_find_node.receiver_node_id == inbound_message.sender_node_id
 
 
 @pytest.mark.trio
 async def test_find_node_handler_sends_nodes(
     find_node_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     local_enr,
 ):
     find_node = FindNodeMessageFactory(distance=0)
-    incoming_message = IncomingMessageFactory(message=find_node)
-    await incoming_message_channels[0].send(incoming_message)
+    inbound_message = InboundMessageFactory(message=find_node)
+    await inbound_message_channels[0].send(inbound_message)
     await wait_all_tasks_blocked()
 
-    outgoing_message = outgoing_message_channels[1].receive_nowait()
-    assert isinstance(outgoing_message.message, NodesMessage)
-    assert outgoing_message.message.request_id == find_node.request_id
-    assert outgoing_message.message.total == 1
-    assert outgoing_message.message.enrs == (local_enr,)
+    outbound_message = outbound_message_channels[1].receive_nowait()
+    assert isinstance(outbound_message.message, NodesMessage)
+    assert outbound_message.message.request_id == find_node.request_id
+    assert outbound_message.message.total == 1
+    assert outbound_message.message.enrs == (local_enr,)
 
 
 @pytest.mark.trio
 async def test_find_node_handler_sends_remote_enrs(
     find_node_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     local_enr,
     remote_enr,
 ):
     distance = compute_log_distance(local_enr.node_id, remote_enr.node_id)
     find_node = FindNodeMessageFactory(distance=distance)
-    incoming_message = IncomingMessageFactory(message=find_node)
-    await incoming_message_channels[0].send(incoming_message)
+    inbound_message = InboundMessageFactory(message=find_node)
+    await inbound_message_channels[0].send(inbound_message)
     await wait_all_tasks_blocked()
 
-    outgoing_message = outgoing_message_channels[1].receive_nowait()
-    assert isinstance(outgoing_message.message, NodesMessage)
-    assert outgoing_message.message.request_id == find_node.request_id
-    assert outgoing_message.message.total == 1
-    assert outgoing_message.message.enrs == (remote_enr,)
+    outbound_message = outbound_message_channels[1].receive_nowait()
+    assert isinstance(outbound_message.message, NodesMessage)
+    assert outbound_message.message.request_id == find_node.request_id
+    assert outbound_message.message.total == 1
+    assert outbound_message.message.enrs == (remote_enr,)
 
 
 @pytest.mark.trio
 async def test_find_node_handler_sends_many_remote_enrs(
     find_node_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     filled_routing_table,
     node_db,
 ):
@@ -309,26 +309,26 @@ async def test_find_node_handler_sends_many_remote_enrs(
     enrs = [node_db.get_enr(node_id) for node_id in node_ids]
 
     find_node = FindNodeMessageFactory(distance=distance)
-    incoming_message = IncomingMessageFactory(message=find_node)
-    await incoming_message_channels[0].send(incoming_message)
+    inbound_message = InboundMessageFactory(message=find_node)
+    await inbound_message_channels[0].send(inbound_message)
 
-    outgoing_messages = []
+    outbound_messages = []
     while True:
         await wait_all_tasks_blocked()
         try:
-            outgoing_messages.append(outgoing_message_channels[1].receive_nowait())
+            outbound_messages.append(outbound_message_channels[1].receive_nowait())
         except trio.WouldBlock:
             break
 
-    for outgoing_message in outgoing_messages:
-        assert isinstance(outgoing_message.message, NodesMessage)
-        assert outgoing_message.message.request_id == find_node.request_id
-        assert outgoing_message.message.total == len(outgoing_messages)
-        assert outgoing_message.message.enrs
+    for outbound_message in outbound_messages:
+        assert isinstance(outbound_message.message, NodesMessage)
+        assert outbound_message.message.request_id == find_node.request_id
+        assert outbound_message.message.total == len(outbound_messages)
+        assert outbound_message.message.enrs
     sent_enrs = [
         enr
-        for outgoing_message in outgoing_messages
-        for enr in outgoing_message.message.enrs
+        for outbound_message in outbound_messages
+        for enr in outbound_message.message.enrs
     ]
     assert sent_enrs == enrs
 
@@ -336,8 +336,8 @@ async def test_find_node_handler_sends_many_remote_enrs(
 @pytest.mark.trio
 async def test_find_node_handler_sends_empty(
     find_node_handler_service,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     routing_table,
     node_db,
 ):
@@ -345,42 +345,42 @@ async def test_find_node_handler_sends_empty(
     assert len(routing_table.get_nodes_at_log_distance(distance)) == 0
 
     find_node = FindNodeMessageFactory(distance=distance)
-    incoming_message = IncomingMessageFactory(message=find_node)
-    await incoming_message_channels[0].send(incoming_message)
+    inbound_message = InboundMessageFactory(message=find_node)
+    await inbound_message_channels[0].send(inbound_message)
 
     await wait_all_tasks_blocked()
-    outgoing_message = outgoing_message_channels[1].receive_nowait()
+    outbound_message = outbound_message_channels[1].receive_nowait()
 
-    assert isinstance(outgoing_message.message, NodesMessage)
-    assert outgoing_message.message.request_id == find_node.request_id
-    assert outgoing_message.message.total == 1
-    assert not outgoing_message.message.enrs
+    assert isinstance(outbound_message.message, NodesMessage)
+    assert outbound_message.message.request_id == find_node.request_id
+    assert outbound_message.message.total == 1
+    assert not outbound_message.message.enrs
 
 
 @pytest.mark.trio
 async def test_send_ping(
     ping_sender_service,
     routing_table,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     local_enr,
     remote_enr,
     remote_endpoint,
 ):
     with trio.fail_after(ROUTING_TABLE_PING_INTERVAL):
-        outgoing_message = await outgoing_message_channels[1].receive()
+        outbound_message = await outbound_message_channels[1].receive()
 
-    assert isinstance(outgoing_message.message, PingMessage)
-    assert outgoing_message.receiver_endpoint == remote_endpoint
-    assert outgoing_message.receiver_node_id == remote_enr.node_id
+    assert isinstance(outbound_message.message, PingMessage)
+    assert outbound_message.receiver_endpoint == remote_endpoint
+    assert outbound_message.receiver_node_id == remote_enr.node_id
 
 
 @pytest.mark.trio
 async def test_send_endpoint_vote(
     ping_sender_service,
     routing_table,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     endpoint_vote_channels,
     local_enr,
     remote_enr,
@@ -388,8 +388,8 @@ async def test_send_endpoint_vote(
 ):
     # wait for ping
     with trio.fail_after(ROUTING_TABLE_PING_INTERVAL):
-        outgoing_message = await outgoing_message_channels[1].receive()
-    ping = outgoing_message.message
+        outbound_message = await outbound_message_channels[1].receive()
+    ping = outbound_message.message
 
     # respond with pong
     fake_local_endpoint = EndpointFactory()
@@ -399,18 +399,18 @@ async def test_send_endpoint_vote(
         packet_ip=fake_local_endpoint.ip_address,
         packet_port=fake_local_endpoint.port,
     )
-    incoming_message = IncomingMessage(
+    inbound_message = InboundMessage(
         message=pong,
-        sender_endpoint=outgoing_message.receiver_endpoint,
-        sender_node_id=outgoing_message.receiver_node_id,
+        sender_endpoint=outbound_message.receiver_endpoint,
+        sender_node_id=outbound_message.receiver_node_id,
     )
-    await incoming_message_channels[0].send(incoming_message)
+    await inbound_message_channels[0].send(inbound_message)
     await wait_all_tasks_blocked()
 
     # receive endpoint vote
     endpoint_vote = endpoint_vote_channels[1].receive_nowait()
     assert endpoint_vote.endpoint == fake_local_endpoint
-    assert endpoint_vote.node_id == incoming_message.sender_node_id
+    assert endpoint_vote.node_id == inbound_message.sender_node_id
 
 
 @given(
