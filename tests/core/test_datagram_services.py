@@ -4,7 +4,7 @@ from async_service import background_trio_service
 import pytest
 import trio
 
-from ddht.datagram import DatagramReceiver, DatagramSender, OutgoingDatagram
+from ddht.datagram import DatagramReceiver, DatagramSender, OutboundDatagram
 from ddht.endpoint import Endpoint
 
 
@@ -39,13 +39,13 @@ async def test_datagram_sender(socket_pair):
 
     send_channel, receive_channel = trio.open_memory_channel(1)
     async with background_trio_service(DatagramSender(receive_channel, sending_socket)):
-        outgoing_datagram = OutgoingDatagram(
+        outbound_datagram = OutboundDatagram(
             b"some packet",
             Endpoint(inet_aton(receiver_endpoint[0]), receiver_endpoint[1]),
         )
-        await send_channel.send(outgoing_datagram)
+        await send_channel.send(outbound_datagram)
 
         with trio.fail_after(0.5):
             data, sender = await receiving_socket.recvfrom(1024)
-        assert data == outgoing_datagram.datagram
+        assert data == outbound_datagram.datagram
         assert sender == sender_endpoint

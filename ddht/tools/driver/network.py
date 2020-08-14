@@ -7,7 +7,7 @@ from eth_keys import keys
 import trio
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import BaseMessage, IncomingMessage, OutgoingMessage
+from ddht.base_message import BaseMessage, InboundMessage, OutboundMessage
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from ddht.endpoint import Endpoint
 from ddht.tools.driver.abc import (
@@ -23,7 +23,7 @@ from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_db import NodeDBFactory
 from ddht.typing import NodeID
 from ddht.v5_1.abc import EventsAPI, SessionAPI
-from ddht.v5_1.envelope import IncomingEnvelope
+from ddht.v5_1.envelope import InboundEnvelope
 from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.packets import AnyPacket
 from ddht.v5_1.session import SessionInitiator, SessionRecipient
@@ -84,8 +84,8 @@ class SessionDriver(SessionDriverAPI):
     @no_hang
     async def send_message(self, message: BaseMessage) -> None:
         self.session.logger.info("SENDING: %s", message)
-        await self.session.handle_outgoing_message(
-            OutgoingMessage(
+        await self.session.handle_outbound_message(
+            OutboundMessage(
                 message=message,
                 receiver_endpoint=self.session.remote_endpoint,
                 receiver_node_id=self.session.remote_node_id,
@@ -93,8 +93,8 @@ class SessionDriver(SessionDriverAPI):
         )
 
     @no_hang
-    async def next_message(self) -> IncomingMessage:
-        return await self.channels.incoming_message_receive_channel.receive()
+    async def next_message(self) -> InboundMessage:
+        return await self.channels.inbound_message_receive_channel.receive()
 
     @no_hang
     async def send_ping(self, request_id: Optional[int] = None) -> PingMessage:
@@ -143,14 +143,14 @@ class SessionPair(SessionPairAPI):
                 f"{self.initiator} or {self.recipient}"
             )
 
-        outgoing_envelope = (
-            await source.channels.outgoing_envelope_receive_channel.receive()
+        outbound_envelope = (
+            await source.channels.outbound_envelope_receive_channel.receive()
         )
-        incoming_envelope = IncomingEnvelope(
-            outgoing_envelope.packet, sender_endpoint=source.node.endpoint,
+        inbound_envelope = InboundEnvelope(
+            outbound_envelope.packet, sender_endpoint=source.node.endpoint,
         )
-        await target.session.handle_incoming_envelope(incoming_envelope)
-        return EnvelopePair(outgoing_envelope, incoming_envelope)
+        await target.session.handle_inbound_envelope(inbound_envelope)
+        return EnvelopePair(outbound_envelope, inbound_envelope)
 
     @no_hang
     async def _transmit_all(self, source: SessionDriverAPI) -> None:
@@ -176,14 +176,14 @@ class SessionPair(SessionPairAPI):
     @no_hang
     async def send_packet(self, packet: AnyPacket) -> None:
         if packet.header.source_node_id == self.initiator.node.node_id:
-            await self.recipient.session.handle_incoming_envelope(
-                IncomingEnvelope(
+            await self.recipient.session.handle_inbound_envelope(
+                InboundEnvelope(
                     packet=packet, sender_endpoint=self.initiator.node.endpoint,
                 )
             )
         elif packet.header.source_node_id == self.recipient.node.node_id:
-            await self.initiator.session.handle_incoming_envelope(
-                IncomingEnvelope(
+            await self.initiator.session.handle_inbound_envelope(
+                InboundEnvelope(
                     packet=packet, sender_endpoint=self.recipient.node.endpoint,
                 )
             )
@@ -224,8 +224,8 @@ class Network(NetworkAPI):
             remote_endpoint=recipient.endpoint,
             remote_node_id=recipient.node_id,
             node_db=initiator.node_db,
-            incoming_message_send_channel=initiator_channels.incoming_message_send_channel,
-            outgoing_envelope_send_channel=initiator_channels.outgoing_envelope_send_channel,
+            inbound_message_send_channel=initiator_channels.inbound_message_send_channel,
+            outbound_envelope_send_channel=initiator_channels.outbound_envelope_send_channel,
         )
         # the initiator always needs to have the remote enr present in their database
         initiator.node_db.set_enr(recipient.enr)
@@ -236,8 +236,8 @@ class Network(NetworkAPI):
             local_node_id=recipient.node_id,
             remote_endpoint=initiator.endpoint,
             node_db=recipient.node_db,
-            incoming_message_send_channel=recipient_channels.incoming_message_send_channel,
-            outgoing_envelope_send_channel=recipient_channels.outgoing_envelope_send_channel,
+            inbound_message_send_channel=recipient_channels.inbound_message_send_channel,
+            outbound_envelope_send_channel=recipient_channels.outbound_envelope_send_channel,
         )
         return SessionPair(
             initiator=initiator,

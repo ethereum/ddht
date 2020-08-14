@@ -5,7 +5,7 @@ from async_service import ManagerAPI, as_service
 from eth_utils import ValidationError
 from trio.abc import ReceiveChannel, SendChannel
 
-from ddht.datagram import IncomingDatagram, OutgoingDatagram
+from ddht.datagram import InboundDatagram, OutboundDatagram
 from ddht.endpoint import Endpoint
 from ddht.typing import NodeID
 from ddht.v5_1.packets import AnyPacket, decode_packet
@@ -14,7 +14,7 @@ from ddht.v5_1.packets import AnyPacket, decode_packet
 #
 # Data structures
 #
-class IncomingEnvelope(NamedTuple):
+class InboundEnvelope(NamedTuple):
     packet: AnyPacket
     sender_endpoint: Endpoint
 
@@ -25,7 +25,7 @@ class IncomingEnvelope(NamedTuple):
         )
 
 
-class OutgoingEnvelope(NamedTuple):
+class OutboundEnvelope(NamedTuple):
     packet: AnyPacket
     receiver_endpoint: Endpoint
 
@@ -42,16 +42,16 @@ class OutgoingEnvelope(NamedTuple):
 @as_service
 async def PacketDecoder(
     manager: ManagerAPI,
-    incoming_datagram_receive_channel: ReceiveChannel[IncomingDatagram],
-    incoming_packet_send_channel: SendChannel[IncomingEnvelope],
+    inbound_datagram_receive_channel: ReceiveChannel[InboundDatagram],
+    inbound_packet_send_channel: SendChannel[InboundEnvelope],
     local_node_id: NodeID,
 ) -> None:
-    """Decodes incoming datagrams to packet objects."""
+    """Decodes inbound datagrams to packet objects."""
     logger = logging.getLogger("ddht.v5.channel_services.PacketDecoder")
 
-    async with incoming_datagram_receive_channel, incoming_packet_send_channel:
+    async with inbound_datagram_receive_channel, inbound_packet_send_channel:
         packet: AnyPacket
-        async for datagram, endpoint in incoming_datagram_receive_channel:
+        async for datagram, endpoint in inbound_datagram_receive_channel:
             try:
                 packet = decode_packet(datagram, local_node_id)
                 logger.debug(
@@ -62,22 +62,22 @@ async def PacketDecoder(
                     f"Failed to decode a packet from {endpoint}", exc_info=True
                 )
             else:
-                await incoming_packet_send_channel.send(
-                    IncomingEnvelope(packet, endpoint)
+                await inbound_packet_send_channel.send(
+                    InboundEnvelope(packet, endpoint)
                 )
 
 
 @as_service
 async def PacketEncoder(
     manager: ManagerAPI,
-    outgoing_packet_receive_channel: ReceiveChannel[OutgoingEnvelope],
-    outgoing_datagram_send_channel: SendChannel[OutgoingDatagram],
+    outbound_packet_receive_channel: ReceiveChannel[OutboundEnvelope],
+    outbound_datagram_send_channel: SendChannel[OutboundDatagram],
 ) -> None:
-    """Encodes outgoing packets to datagrams."""
+    """Encodes outbound packets to datagrams."""
     logger = logging.getLogger("ddht.v5.channel_services.PacketEncoder")
 
-    async with outgoing_packet_receive_channel, outgoing_datagram_send_channel:
-        async for packet, endpoint in outgoing_packet_receive_channel:
-            outgoing_datagram = OutgoingDatagram(packet.to_wire_bytes(), endpoint)
+    async with outbound_packet_receive_channel, outbound_datagram_send_channel:
+        async for packet, endpoint in outbound_packet_receive_channel:
+            outbound_datagram = OutboundDatagram(packet.to_wire_bytes(), endpoint)
             logger.debug(f"Encoded {packet.__class__.__name__} for {endpoint}")
-            await outgoing_datagram_send_channel.send(outgoing_datagram)
+            await outbound_datagram_send_channel.send(outbound_datagram)

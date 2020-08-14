@@ -20,7 +20,7 @@ from trio.abc import ReceiveChannel, SendChannel
 from trio.hazmat import checkpoint
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import IncomingMessage, OutgoingMessage
+from ddht.base_message import InboundMessage, OutboundMessage
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from ddht.endpoint import Endpoint
 from ddht.exceptions import UnexpectedMessage
@@ -83,7 +83,7 @@ class ChannelHandlerSubscription(ChannelHandlerSubscriptionAPI[ChannelContentTyp
             raise StopAsyncIteration
 
 
-IncomingMessageSubscription = ChannelHandlerSubscription[IncomingMessage]
+InboundMessageSubscription = ChannelHandlerSubscription[InboundMessage]
 
 
 class MessageDispatcher(Service, MessageDispatcherAPI):
@@ -92,28 +92,28 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
     def __init__(
         self,
         node_db: NodeDBAPI,
-        incoming_message_receive_channel: ReceiveChannel[IncomingMessage],
-        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+        inbound_message_receive_channel: ReceiveChannel[InboundMessage],
+        outbound_message_send_channel: SendChannel[OutboundMessage],
     ) -> None:
         self.node_db = node_db
 
-        self.incoming_message_receive_channel = incoming_message_receive_channel
-        self.outgoing_message_send_channel = outgoing_message_send_channel
+        self.inbound_message_receive_channel = inbound_message_receive_channel
+        self.outbound_message_send_channel = outbound_message_send_channel
 
-        self.request_handler_send_channels: Dict[int, SendChannel[IncomingMessage]] = {}
+        self.request_handler_send_channels: Dict[int, SendChannel[InboundMessage]] = {}
         self.response_handler_send_channels: Dict[
-            Tuple[NodeID, int], SendChannel[IncomingMessage]
+            Tuple[NodeID, int], SendChannel[InboundMessage]
         ] = {}
 
     async def run(self) -> None:
-        async with self.incoming_message_receive_channel, self.outgoing_message_send_channel:
-            async for incoming_message in self.incoming_message_receive_channel:
-                await self.handle_incoming_message(incoming_message)
+        async with self.inbound_message_receive_channel, self.outbound_message_send_channel:
+            async for inbound_message in self.inbound_message_receive_channel:
+                await self.handle_inbound_message(inbound_message)
 
-    async def handle_incoming_message(self, incoming_message: IncomingMessage) -> None:
-        sender_node_id = incoming_message.sender_node_id
-        message_type = incoming_message.message.message_type
-        request_id = incoming_message.message.request_id
+    async def handle_inbound_message(self, inbound_message: InboundMessage) -> None:
+        sender_node_id = inbound_message.sender_node_id
+        message_type = inbound_message.message.message_type
+        request_id = inbound_message.message.request_id
 
         is_request = message_type in self.request_handler_send_channels
         is_response = (
@@ -125,7 +125,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             self.logger.warning(
                 "%s from %s is both a response to an earlier request (id %d) and a request a "
                 "handler is present for (message type %d). Message will be handled twice.",
-                incoming_message,
+                inbound_message,
                 encode_hex(sender_node_id),
                 request_id,
                 message_type,
@@ -134,7 +134,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             self.logger.warning(
                 "Dropping %s from %s (request id %d, message type %d) as neither a request nor a "
                 "response handler is present",
-                incoming_message,
+                inbound_message,
                 encode_hex(sender_node_id),
                 request_id,
                 message_type,
@@ -144,24 +144,24 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         if is_request:
             self.logger.debug(
                 "Received request %s with id %d from %s",
-                incoming_message,
+                inbound_message,
                 request_id,
                 encode_hex(sender_node_id),
             )
             send_channel = self.request_handler_send_channels[message_type]
-            await send_channel.send(incoming_message)
+            await send_channel.send(inbound_message)
 
         if is_response:
             self.logger.debug(
                 "Received response %s for request with id %d from %s",
-                incoming_message,
+                inbound_message,
                 request_id,
                 encode_hex(sender_node_id),
             )
             send_channel = self.response_handler_send_channels[
                 sender_node_id, request_id
             ]
-            await send_channel.send(incoming_message)
+            await send_channel.send(inbound_message)
 
     def get_free_request_id(self, node_id: NodeID) -> int:
         for _ in range(MAX_REQUEST_ID_ATTEMPTS):
@@ -177,7 +177,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
 
     def add_request_handler(
         self, message_class: Type[BaseMessage]
-    ) -> IncomingMessageSubscription:
+    ) -> InboundMessageSubscription:
         message_type = message_class.message_type
         if message_type in self.request_handler_send_channels:
             raise ValueError(
@@ -185,7 +185,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             )
 
         request_channels: Tuple[
-            SendChannel[IncomingMessage], ReceiveChannel[IncomingMessage]
+            SendChannel[InboundMessage], ReceiveChannel[InboundMessage]
         ] = trio.open_memory_channel(0)
         self.request_handler_send_channels[message_type] = request_channels[0]
 
@@ -211,7 +211,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
 
     def add_response_handler(
         self, remote_node_id: NodeID, request_id: int
-    ) -> IncomingMessageSubscription:
+    ) -> InboundMessageSubscription:
         if (remote_node_id, request_id) in self.response_handler_send_channels:
             raise ValueError(
                 f"Response handler for node id {encode_hex(remote_node_id)} and request id "
@@ -225,7 +225,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         )
 
         response_channels: Tuple[
-            SendChannel[IncomingMessage], ReceiveChannel[IncomingMessage]
+            SendChannel[InboundMessage], ReceiveChannel[InboundMessage]
         ] = trio.open_memory_channel(0)
         self.response_handler_send_channels[
             (remote_node_id, request_id)
@@ -280,30 +280,30 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         receiver_node_id: NodeID,
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
-    ) -> AsyncGenerator[IncomingMessageSubscription, None]:
+    ) -> AsyncGenerator[InboundMessageSubscription, None]:
         if endpoint is None:
             endpoint = await self.get_endpoint_from_node_db(receiver_node_id)
 
         response_channels: Tuple[
-            SendChannel[IncomingMessage], ReceiveChannel[IncomingMessage]
+            SendChannel[InboundMessage], ReceiveChannel[InboundMessage]
         ] = trio.open_memory_channel(0)
         response_send_channel, response_receive_channel = response_channels
 
         async with self.add_response_handler(
             receiver_node_id, message.request_id
         ) as response_subscription:
-            outgoing_message = OutgoingMessage(
+            outbound_message = OutboundMessage(
                 message=message,
                 receiver_node_id=receiver_node_id,
                 receiver_endpoint=endpoint,
             )
             self.logger.debug(
                 "Sending %s to %s with request id %d",
-                outgoing_message,
+                outbound_message,
                 encode_hex(receiver_node_id),
                 message.request_id,
             )
-            await self.outgoing_message_send_channel.send(outgoing_message)
+            await self.outbound_message_send_channel.send(outbound_message)
             yield response_subscription
 
     async def request(
@@ -311,7 +311,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         receiver_node_id: NodeID,
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
-    ) -> IncomingMessage:
+    ) -> InboundMessage:
         async with self.request_response_subscription(
             receiver_node_id, message, endpoint
         ) as response_subscription:
@@ -329,7 +329,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         receiver_node_id: NodeID,
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
-    ) -> Tuple[IncomingMessage, ...]:
+    ) -> Tuple[InboundMessage, ...]:
         async with self.request_response_subscription(
             receiver_node_id, message, endpoint
         ) as response_subscription:

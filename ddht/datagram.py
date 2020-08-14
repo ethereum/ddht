@@ -13,12 +13,12 @@ from ddht.endpoint import Endpoint
 #
 # Data structures
 #
-class IncomingDatagram(NamedTuple):
+class InboundDatagram(NamedTuple):
     datagram: bytes
     sender_endpoint: Endpoint
 
 
-class OutgoingDatagram(NamedTuple):
+class OutboundDatagram(NamedTuple):
     datagram: bytes
     receiver_endpoint: Endpoint
 
@@ -30,33 +30,33 @@ class OutgoingDatagram(NamedTuple):
 async def DatagramReceiver(
     manager: ManagerAPI,
     socket: SocketType,
-    incoming_datagram_send_channel: SendChannel[IncomingDatagram],
+    inbound_datagram_send_channel: SendChannel[InboundDatagram],
 ) -> None:
     """Read datagrams from a socket and send them to a channel."""
     logger = logging.getLogger("ddht.v5.channel_services.DatagramReceiver")
 
-    async with incoming_datagram_send_channel:
+    async with inbound_datagram_send_channel:
         while manager.is_running:
             datagram, (ip_address, port) = await socket.recvfrom(
                 DISCOVERY_DATAGRAM_BUFFER_SIZE
             )
             endpoint = Endpoint(inet_aton(ip_address), port)
             logger.debug(f"Received {len(datagram)} bytes from {endpoint}")
-            incoming_datagram = IncomingDatagram(datagram, endpoint)
-            await incoming_datagram_send_channel.send(incoming_datagram)
+            inbound_datagram = InboundDatagram(datagram, endpoint)
+            await inbound_datagram_send_channel.send(inbound_datagram)
 
 
 @as_service
 async def DatagramSender(
     manager: ManagerAPI,
-    outgoing_datagram_receive_channel: ReceiveChannel[OutgoingDatagram],
+    outbound_datagram_receive_channel: ReceiveChannel[OutboundDatagram],
     socket: SocketType,
 ) -> None:
     """Take datagrams from a channel and send them via a socket to their designated receivers."""
     logger = logging.getLogger("ddht.v5.channel_services.DatagramSender")
 
-    async with outgoing_datagram_receive_channel:
-        async for datagram, endpoint in outgoing_datagram_receive_channel:
+    async with outbound_datagram_receive_channel:
+        async for datagram, endpoint in outbound_datagram_receive_channel:
             logger.debug(f"Sending {len(datagram)} bytes to {endpoint}")
             await socket.sendto(
                 datagram, (inet_ntoa(endpoint.ip_address), endpoint.port)

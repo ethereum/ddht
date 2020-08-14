@@ -7,7 +7,7 @@ from eth_utils import encode_hex
 import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
-from ddht.base_message import IncomingMessage, OutgoingMessage
+from ddht.base_message import InboundMessage, OutboundMessage
 from ddht.boot_info import BootInfo
 from ddht.constants import (
     DEFAULT_LISTEN,
@@ -17,8 +17,8 @@ from ddht.constants import (
 from ddht.datagram import (
     DatagramReceiver,
     DatagramSender,
-    IncomingDatagram,
-    OutgoingDatagram,
+    InboundDatagram,
+    OutboundDatagram,
 )
 from ddht.enr_manager import ENRManager
 from ddht.exceptions import OldSequenceNumber
@@ -28,8 +28,8 @@ from ddht.node_db import NodeDB
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
 from ddht.v5.channel_services import (
-    IncomingPacket,
-    OutgoingPacket,
+    InboundPacket,
+    OutboundPacket,
     PacketDecoder,
     PacketEncoder,
 )
@@ -123,27 +123,27 @@ class Application(Service):
         socket = trio.socket.socket(
             family=trio.socket.AF_INET, type=trio.socket.SOCK_DGRAM
         )
-        outgoing_datagram_channels = trio.open_memory_channel[OutgoingDatagram](0)
-        incoming_datagram_channels = trio.open_memory_channel[IncomingDatagram](0)
-        outgoing_packet_channels = trio.open_memory_channel[OutgoingPacket](0)
-        incoming_packet_channels = trio.open_memory_channel[IncomingPacket](0)
-        outgoing_message_channels = trio.open_memory_channel[OutgoingMessage](0)
-        incoming_message_channels = trio.open_memory_channel[IncomingMessage](0)
+        outbound_datagram_channels = trio.open_memory_channel[OutboundDatagram](0)
+        inbound_datagram_channels = trio.open_memory_channel[InboundDatagram](0)
+        outbound_packet_channels = trio.open_memory_channel[OutboundPacket](0)
+        inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
+        outbound_message_channels = trio.open_memory_channel[OutboundMessage](0)
+        inbound_message_channels = trio.open_memory_channel[InboundMessage](0)
         endpoint_vote_channels = trio.open_memory_channel[EndpointVote](0)
 
         # types ignored due to https://github.com/ethereum/async-service/issues/5
         datagram_sender = DatagramSender(  # type: ignore
-            outgoing_datagram_channels[1], socket
+            outbound_datagram_channels[1], socket
         )
         datagram_receiver = DatagramReceiver(  # type: ignore
-            socket, incoming_datagram_channels[0]
+            socket, inbound_datagram_channels[0]
         )
 
         packet_encoder = PacketEncoder(  # type: ignore
-            outgoing_packet_channels[1], outgoing_datagram_channels[0]
+            outbound_packet_channels[1], outbound_datagram_channels[0]
         )
         packet_decoder = PacketDecoder(  # type: ignore
-            incoming_datagram_channels[1], incoming_packet_channels[0]
+            inbound_datagram_channels[1], inbound_packet_channels[0]
         )
 
         packer = Packer(
@@ -151,16 +151,16 @@ class Application(Service):
             local_node_id=enr_manager.enr.node_id,
             node_db=node_db,
             message_type_registry=message_type_registry,
-            incoming_packet_receive_channel=incoming_packet_channels[1],
-            incoming_message_send_channel=incoming_message_channels[0],
-            outgoing_message_receive_channel=outgoing_message_channels[1],
-            outgoing_packet_send_channel=outgoing_packet_channels[0],
+            inbound_packet_receive_channel=inbound_packet_channels[1],
+            inbound_message_send_channel=inbound_message_channels[0],
+            outbound_message_receive_channel=outbound_message_channels[1],
+            outbound_packet_send_channel=outbound_packet_channels[0],
         )
 
         message_dispatcher = MessageDispatcher(
             node_db=node_db,
-            incoming_message_receive_channel=incoming_message_channels[1],
-            outgoing_message_send_channel=outgoing_message_channels[0],
+            inbound_message_receive_channel=inbound_message_channels[1],
+            outbound_message_send_channel=outbound_message_channels[0],
         )
 
         endpoint_tracker = EndpointTracker(
@@ -176,7 +176,7 @@ class Application(Service):
             routing_table=routing_table,
             message_dispatcher=message_dispatcher,
             node_db=node_db,
-            outgoing_message_send_channel=outgoing_message_channels[0],
+            outbound_message_send_channel=outbound_message_channels[0],
             endpoint_vote_send_channel=endpoint_vote_channels[0],
         )
 

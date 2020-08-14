@@ -15,7 +15,7 @@ from trio.abc import SendChannel
 
 from ddht._utils import every
 from ddht.abc import NodeDBAPI
-from ddht.base_message import IncomingMessage, OutgoingMessage
+from ddht.base_message import InboundMessage, OutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
@@ -116,31 +116,31 @@ class BaseRoutingTableManagerComponent(Service):
         else:
             return local_enr
 
-    async def maybe_request_remote_enr(self, incoming_message: IncomingMessage) -> None:
+    async def maybe_request_remote_enr(self, inbound_message: InboundMessage) -> None:
         """Request the peers ENR if there is a newer version according to a ping or pong."""
-        if not isinstance(incoming_message.message, (PingMessage, PongMessage)):
+        if not isinstance(inbound_message.message, (PingMessage, PongMessage)):
             raise TypeError(
                 f"Only ping and pong messages contain an ENR sequence number, got "
-                f"{incoming_message}"
+                f"{inbound_message}"
             )
 
         try:
-            remote_enr = self.node_db.get_enr(incoming_message.sender_node_id)
+            remote_enr = self.node_db.get_enr(inbound_message.sender_node_id)
         except KeyError:
             self.logger.warning(
                 "No ENR of %s present in the database even though it should post handshake. "
                 "Requesting it now.",
-                encode_hex(incoming_message.sender_node_id),
+                encode_hex(inbound_message.sender_node_id),
             )
             request_update = True
         else:
             current_sequence_number = remote_enr.sequence_number
-            advertized_sequence_number = incoming_message.message.enr_seq
+            advertized_sequence_number = inbound_message.message.enr_seq
 
             if current_sequence_number < advertized_sequence_number:
                 self.logger.debug(
                     "ENR advertized by %s is newer than ours (sequence number %d > %d)",
-                    encode_hex(incoming_message.sender_node_id),
+                    encode_hex(inbound_message.sender_node_id),
                     advertized_sequence_number,
                     current_sequence_number,
                 )
@@ -148,14 +148,14 @@ class BaseRoutingTableManagerComponent(Service):
             elif current_sequence_number == advertized_sequence_number:
                 self.logger.debug(
                     "ENR of %s is up to date (sequence number %d)",
-                    encode_hex(incoming_message.sender_node_id),
+                    encode_hex(inbound_message.sender_node_id),
                     advertized_sequence_number,
                 )
                 request_update = False
             elif current_sequence_number > advertized_sequence_number:
                 self.logger.warning(
                     "Peer %s advertizes apparently outdated ENR (sequence number %d < %d)",
-                    encode_hex(incoming_message.sender_node_id),
+                    encode_hex(inbound_message.sender_node_id),
                     advertized_sequence_number,
                     current_sequence_number,
                 )
@@ -164,31 +164,31 @@ class BaseRoutingTableManagerComponent(Service):
                 raise Exception("Invariant: Unreachable")
 
         if request_update:
-            await self.request_remote_enr(incoming_message)
+            await self.request_remote_enr(inbound_message)
 
-    async def request_remote_enr(self, incoming_message: IncomingMessage) -> None:
-        """Request the ENR of the sender of an incoming message and store it in the ENR db."""
+    async def request_remote_enr(self, inbound_message: InboundMessage) -> None:
+        """Request the ENR of the sender of an inbound message and store it in the ENR db."""
         self.logger.debug(
-            "Requesting ENR from %s", encode_hex(incoming_message.sender_node_id)
+            "Requesting ENR from %s", encode_hex(inbound_message.sender_node_id)
         )
 
         find_nodes_message = FindNodeMessage(
             request_id=self.message_dispatcher.get_free_request_id(
-                incoming_message.sender_node_id
+                inbound_message.sender_node_id
             ),
             distance=0,  # request enr of the peer directly
         )
         try:
             with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
                 response = await self.message_dispatcher.request(
-                    incoming_message.sender_node_id,
+                    inbound_message.sender_node_id,
                     find_nodes_message,
-                    endpoint=incoming_message.sender_endpoint,
+                    endpoint=inbound_message.sender_endpoint,
                 )
         except trio.TooSlowError:
             self.logger.warning(
                 "FindNode request to %s has timed out",
-                encode_hex(incoming_message.sender_node_id),
+                encode_hex(inbound_message.sender_node_id),
             )
             return
 
@@ -212,7 +212,7 @@ class BaseRoutingTableManagerComponent(Service):
         elif len(response.message.enrs) > 1:
             self.logger.warning(
                 "Peer %s responded to FindNode with more than one ENR",
-                encode_hex(incoming_message.sender_node_id),
+                encode_hex(inbound_message.sender_node_id),
             )
 
         for enr in response.message.enrs:
@@ -236,46 +236,46 @@ class PingHandlerService(BaseRoutingTableManagerComponent):
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
         node_db: NodeDBAPI,
-        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+        outbound_message_send_channel: SendChannel[OutboundMessage],
     ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
-        self.outgoing_message_send_channel = outgoing_message_send_channel
+        self.outbound_message_send_channel = outbound_message_send_channel
 
     async def run(self) -> None:
         channel_handler_subscription = self.message_dispatcher.add_request_handler(
             PingMessage
         )
         async with channel_handler_subscription:
-            async for incoming_message in channel_handler_subscription:
+            async for inbound_message in channel_handler_subscription:
                 self.logger.debug(
                     "Handling %s from %s",
-                    incoming_message,
-                    encode_hex(incoming_message.sender_node_id),
+                    inbound_message,
+                    encode_hex(inbound_message.sender_node_id),
                 )
-                self.update_routing_table(incoming_message.sender_node_id)
-                await self.respond_with_pong(incoming_message)
-                self.manager.run_task(self.maybe_request_remote_enr, incoming_message)
+                self.update_routing_table(inbound_message.sender_node_id)
+                await self.respond_with_pong(inbound_message)
+                self.manager.run_task(self.maybe_request_remote_enr, inbound_message)
 
-    async def respond_with_pong(self, incoming_message: IncomingMessage) -> None:
-        if not isinstance(incoming_message.message, PingMessage):
+    async def respond_with_pong(self, inbound_message: InboundMessage) -> None:
+        if not isinstance(inbound_message.message, PingMessage):
             raise TypeError(
                 f"Can only respond with Pong to Ping, not "
-                f"{incoming_message.message.__class__.__name__}"
+                f"{inbound_message.message.__class__.__name__}"
             )
 
         local_enr = self.get_local_enr()
 
         pong = PongMessage(
-            request_id=incoming_message.message.request_id,
+            request_id=inbound_message.message.request_id,
             enr_seq=local_enr.sequence_number,
-            packet_ip=incoming_message.sender_endpoint.ip_address,
-            packet_port=incoming_message.sender_endpoint.port,
+            packet_ip=inbound_message.sender_endpoint.ip_address,
+            packet_port=inbound_message.sender_endpoint.port,
         )
-        outgoing_message = incoming_message.to_response(pong)
+        outbound_message = inbound_message.to_response(pong)
         self.logger.debug(
-            "Responding with Pong to %s", encode_hex(outgoing_message.receiver_node_id)
+            "Responding with Pong to %s", encode_hex(outbound_message.receiver_node_id)
         )
-        await self.outgoing_message_send_channel.send(outgoing_message)
+        await self.outbound_message_send_channel.send(outbound_message)
 
 
 class FindNodeHandlerService(BaseRoutingTableManagerComponent):
@@ -289,48 +289,48 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
         node_db: NodeDBAPI,
-        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+        outbound_message_send_channel: SendChannel[OutboundMessage],
     ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
-        self.outgoing_message_send_channel = outgoing_message_send_channel
+        self.outbound_message_send_channel = outbound_message_send_channel
 
     async def run(self) -> None:
         handler_subscription = self.message_dispatcher.add_request_handler(
             FindNodeMessage
         )
         async with handler_subscription:
-            async for incoming_message in handler_subscription:
-                self.update_routing_table(incoming_message.sender_node_id)
+            async for inbound_message in handler_subscription:
+                self.update_routing_table(inbound_message.sender_node_id)
 
-                if not isinstance(incoming_message.message, FindNodeMessage):
+                if not isinstance(inbound_message.message, FindNodeMessage):
                     raise TypeError(
-                        f"Received {incoming_message.__class__.__name__} from message dispatcher "
+                        f"Received {inbound_message.__class__.__name__} from message dispatcher "
                         f"even though we subscribed to FindNode messages"
                     )
 
-                if incoming_message.message.distance == 0:
-                    await self.respond_with_local_enr(incoming_message)
+                if inbound_message.message.distance == 0:
+                    await self.respond_with_local_enr(inbound_message)
                 else:
-                    await self.respond_with_remote_enrs(incoming_message)
+                    await self.respond_with_remote_enrs(inbound_message)
 
-    async def respond_with_local_enr(self, incoming_message: IncomingMessage) -> None:
-        """Send a Nodes message containing the local ENR in response to an incoming message."""
+    async def respond_with_local_enr(self, inbound_message: InboundMessage) -> None:
+        """Send a Nodes message containing the local ENR in response to an inbound message."""
         local_enr = self.get_local_enr()
         nodes_message = NodesMessage(
-            request_id=incoming_message.message.request_id, total=1, enrs=(local_enr,)
+            request_id=inbound_message.message.request_id, total=1, enrs=(local_enr,)
         )
-        outgoing_message = incoming_message.to_response(nodes_message)
+        outbound_message = inbound_message.to_response(nodes_message)
 
         self.logger.debug(
             "Responding to %s with Nodes message containing local ENR",
-            incoming_message.sender_endpoint,
+            inbound_message.sender_endpoint,
         )
-        await self.outgoing_message_send_channel.send(outgoing_message)
+        await self.outbound_message_send_channel.send(outbound_message)
 
-    async def respond_with_remote_enrs(self, incoming_message: IncomingMessage) -> None:
+    async def respond_with_remote_enrs(self, inbound_message: InboundMessage) -> None:
         """Send a Nodes message containing ENRs of peers at a given node distance."""
         node_ids = self.routing_table.get_nodes_at_log_distance(
-            incoming_message.message.distance
+            inbound_message.message.distance
         )
 
         enrs = []
@@ -345,19 +345,19 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         enr_partitions = partition_enrs(enrs, NODES_MESSAGE_PAYLOAD_SIZE) or ((),)
         self.logger.debug(
             "Responding to %s with %d Nodes message containing %d ENRs at distance %d",
-            incoming_message.sender_endpoint,
+            inbound_message.sender_endpoint,
             len(enr_partitions),
             len(enrs),
-            incoming_message.message.distance,
+            inbound_message.message.distance,
         )
         for partition in enr_partitions:
             nodes_message = NodesMessage(
-                request_id=incoming_message.message.request_id,
+                request_id=inbound_message.message.request_id,
                 total=len(enr_partitions),
                 enrs=partition,
             )
-            outgoing_message = incoming_message.to_response(nodes_message)
-            await self.outgoing_message_send_channel.send(outgoing_message)
+            outbound_message = inbound_message.to_response(nodes_message)
+            await self.outbound_message_send_channel.send(outbound_message)
 
 
 class PingSenderService(BaseRoutingTableManagerComponent):
@@ -398,7 +398,7 @@ class PingSenderService(BaseRoutingTableManagerComponent):
 
         try:
             with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
-                incoming_message = await self.message_dispatcher.request(node_id, ping)
+                inbound_message = await self.message_dispatcher.request(node_id, ping)
         except ValueError as value_error:
             self.logger.warning(
                 "Failed to send ping to %s: %s", encode_hex(node_id), value_error
@@ -406,18 +406,18 @@ class PingSenderService(BaseRoutingTableManagerComponent):
         except trio.TooSlowError:
             self.logger.warning("Ping to %s timed out", encode_hex(node_id))
         else:
-            if not isinstance(incoming_message.message, PongMessage):
+            if not isinstance(inbound_message.message, PongMessage):
                 self.logger.warning(
                     "Peer %s responded to Ping with %s instead of Pong",
                     encode_hex(node_id),
-                    incoming_message.message.__class__.__name__,
+                    inbound_message.message.__class__.__name__,
                 )
             else:
                 self.logger.debug("Received Pong from %s", encode_hex(node_id))
 
                 self.update_routing_table(node_id)
 
-                pong = incoming_message.message
+                pong = inbound_message.message
                 local_endpoint = Endpoint(
                     ip_address=pong.packet_ip, port=pong.packet_port
                 )
@@ -426,7 +426,7 @@ class PingSenderService(BaseRoutingTableManagerComponent):
                 )
                 await self.endpoint_vote_send_channel.send(endpoint_vote)
 
-                await self.maybe_request_remote_enr(incoming_message)
+                await self.maybe_request_remote_enr(inbound_message)
 
 
 class LookupService(BaseRoutingTableManagerComponent):
@@ -542,7 +542,7 @@ class LookupService(BaseRoutingTableManagerComponent):
         )
         try:
             with trio.fail_after(FIND_NODE_RESPONSE_TIMEOUT):
-                incoming_messages = await self.message_dispatcher.request_nodes(
+                inbound_messages = await self.message_dispatcher.request_nodes(
                     peer, request
                 )
         except ValueError as value_error:
@@ -566,8 +566,8 @@ class LookupService(BaseRoutingTableManagerComponent):
             self.update_routing_table(peer)
             enrs = tuple(
                 enr
-                for incoming_message in incoming_messages
-                for enr in incoming_message.message.enrs
+                for inbound_message in inbound_messages
+                for enr in inbound_message.message.enrs
             )
             return enrs
 
@@ -581,7 +581,7 @@ class RoutingTableManager(Service):
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
         node_db: NodeDBAPI,
-        outgoing_message_send_channel: SendChannel[OutgoingMessage],
+        outbound_message_send_channel: SendChannel[OutboundMessage],
         endpoint_vote_send_channel: SendChannel[EndpointVote],
     ) -> None:
         SharedComponentKwargType = TypedDict(
@@ -603,11 +603,11 @@ class RoutingTableManager(Service):
         )
 
         self.ping_handler_service = PingHandlerService(
-            outgoing_message_send_channel=outgoing_message_send_channel,
+            outbound_message_send_channel=outbound_message_send_channel,
             **shared_component_kwargs,
         )
         self.find_node_handler_service = FindNodeHandlerService(
-            outgoing_message_send_channel=outgoing_message_send_channel,
+            outbound_message_send_channel=outbound_message_send_channel,
             **shared_component_kwargs,
         )
         self.ping_sender_service = PingSenderService(

@@ -19,7 +19,7 @@ DEFAULT_LISTEN: ipaddress.IPv4Address = ipaddress.ip_address("0.0.0.0")
 # Max size of discovery packets.
 DISCOVERY_MAX_PACKET_SIZE = 1280
 
-# Buffer size used for incoming discovery UDP datagrams (must be larger than
+# Buffer size used for inbound discovery UDP datagrams (must be larger than
 # DISCOVERY_MAX_PACKET_SIZE)
 DISCOVERY_DATAGRAM_BUFFER_SIZE = DISCOVERY_MAX_PACKET_SIZE * 2
 

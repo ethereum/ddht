@@ -17,7 +17,7 @@ TOPIC_HASH_SIZE = 32  # size of a topic hash
 
 WHO_ARE_YOU_MAGIC_SUFFIX = b"WHOAREYOU"
 
-MAX_REQUEST_ID = 2 ** 32 - 1  # highest request id used for outgoing requests
+MAX_REQUEST_ID = 2 ** 32 - 1  # highest request id used for outbound requests
 MAX_REQUEST_ID_ATTEMPTS = (
     100  # number of attempts we take to guess a available request id
 )
@@ -29,7 +29,7 @@ REQUEST_RESPONSE_TIMEOUT = (
 FIND_NODE_RESPONSE_TIMEOUT = 1.0
 HANDSHAKE_TIMEOUT = 1  # timeout for performing a handshake
 ROUTING_TABLE_PING_INTERVAL = (
-    30  # interval of outgoing pings sent to maintain the routing table
+    30  # interval of outbound pings sent to maintain the routing table
 )
 ROUTING_TABLE_LOOKUP_INTERVAL = 60  # intervals between lookups
 LOOKUP_RETRY_THRESHOLD = (

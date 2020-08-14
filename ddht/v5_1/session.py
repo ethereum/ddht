@@ -11,7 +11,7 @@ import rlp
 import trio
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import BaseMessage, IncomingMessage, OutgoingMessage
+from ddht.base_message import BaseMessage, InboundMessage, OutboundMessage
 from ddht.encryption import aesgcm_decrypt
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
@@ -19,7 +19,7 @@ from ddht.exceptions import DecryptionError
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import AES128Key, IDNonce, NodeID, Nonce, SessionKeys
 from ddht.v5_1.abc import EventsAPI, SessionAPI
-from ddht.v5_1.envelope import IncomingEnvelope, OutgoingEnvelope
+from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import v51_registry
 from ddht.v5_1.packets import (
@@ -53,8 +53,8 @@ class BaseSession(SessionAPI):
         local_node_id: NodeID,
         remote_endpoint: Endpoint,
         node_db: NodeDBAPI,
-        incoming_message_send_channel: trio.abc.SendChannel[IncomingMessage],
-        outgoing_envelope_send_channel: trio.abc.SendChannel[OutgoingEnvelope],
+        inbound_message_send_channel: trio.abc.SendChannel[InboundMessage],
+        outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
         events: EventsAPI = None,
     ) -> None:
@@ -76,12 +76,12 @@ class BaseSession(SessionAPI):
         self._status = SessionStatus.BEFORE
 
         (
-            self._outgoing_message_buffer_send_channel,
-            self._outgoing_message_buffer_receive_channel,
-        ) = trio.open_memory_channel[OutgoingMessage](256)
+            self._outbound_message_buffer_send_channel,
+            self._outbound_message_buffer_receive_channel,
+        ) = trio.open_memory_channel[OutboundMessage](256)
 
-        self._incoming_message_send_channel = incoming_message_send_channel
-        self._outgoing_envelope_send_channel = outgoing_envelope_send_channel
+        self._inbound_message_send_channel = inbound_message_send_channel
+        self._outbound_envelope_send_channel = outbound_envelope_send_channel
 
     @property
     def is_before_handshake(self) -> bool:
@@ -142,7 +142,7 @@ class BaseSession(SessionAPI):
             next(self._nonce_counter).to_bytes(4, "big") + secrets.token_bytes(8)
         )
 
-    def prepare_envelope(self, message: OutgoingMessage) -> OutgoingEnvelope:
+    def prepare_envelope(self, message: OutboundMessage) -> OutboundEnvelope:
         if not self.is_after_handshake:
             raise Exception("Invalid")
         nonce = self.get_encryption_nonce()
@@ -155,8 +155,8 @@ class BaseSession(SessionAPI):
             source_node_id=self._local_node_id,
             dest_node_id=self.remote_node_id,
         )
-        outgoing_envelope = OutgoingEnvelope(packet, self.remote_endpoint)
-        return outgoing_envelope
+        outbound_envelope = OutboundEnvelope(packet, self.remote_endpoint)
+        return outbound_envelope
 
 
 class RandomMessage(BaseMessage):
@@ -185,8 +185,8 @@ class SessionInitiator(BaseSession):
         remote_node_id: NodeID,
         remote_endpoint: Endpoint,
         node_db: NodeDBAPI,
-        incoming_message_send_channel: trio.abc.SendChannel[IncomingMessage],
-        outgoing_envelope_send_channel: trio.abc.SendChannel[OutgoingEnvelope],
+        inbound_message_send_channel: trio.abc.SendChannel[InboundMessage],
+        outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
         super().__init__(
@@ -194,8 +194,8 @@ class SessionInitiator(BaseSession):
             local_node_id=local_node_id,
             remote_endpoint=remote_endpoint,
             node_db=node_db,
-            incoming_message_send_channel=incoming_message_send_channel,
-            outgoing_envelope_send_channel=outgoing_envelope_send_channel,
+            inbound_message_send_channel=inbound_message_send_channel,
+            outbound_envelope_send_channel=outbound_envelope_send_channel,
             message_type_registry=message_type_registry,
         )
         self._remote_node_id = remote_node_id
@@ -208,23 +208,23 @@ class SessionInitiator(BaseSession):
     def remote_enr(self) -> ENR:
         return self._node_db.get_enr(self.remote_node_id)
 
-    async def handle_outgoing_message(self, message: OutgoingMessage) -> None:
+    async def handle_outbound_message(self, message: OutboundMessage) -> None:
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
-            await self._outgoing_envelope_send_channel.send(envelope)
+            await self._outbound_envelope_send_channel.send(envelope)
             self.logger.debug("%s: Sent message: %s", self, message)
         elif self.is_during_handshake:
             try:
-                self._outgoing_message_buffer_send_channel.send_nowait(message)
+                self._outbound_message_buffer_send_channel.send_nowait(message)
             except trio.WouldBlock:
                 self.logger.warning(
-                    "%s: Discarding message due to full outgoing message buffer: %s",
+                    "%s: Discarding message due to full outbound message buffer: %s",
                     self,
                     message,
                 )
         elif self.is_before_handshake:
             self.logger.debug(
-                "%s: outgoing message triggered handshake initiation: %s",
+                "%s: outbound message triggered handshake initiation: %s",
                 self,
                 message,
             )
@@ -234,14 +234,14 @@ class SessionInitiator(BaseSession):
         else:
             raise Exception("Invariant: All states handled")
 
-    async def handle_incoming_envelope(self, envelope: IncomingEnvelope) -> None:
+    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
         if self.is_after_handshake:
             if envelope.packet.is_message:
                 message = self.decode_message(
                     cast(Packet[MessagePacket], envelope.packet)
                 )
-                await self._incoming_message_send_channel.send(
-                    IncomingMessage(
+                await self._inbound_message_send_channel.send(
+                    InboundMessage(
                         message=message,
                         sender_endpoint=self.remote_endpoint,
                         sender_node_id=self.remote_node_id,
@@ -287,8 +287,8 @@ class SessionInitiator(BaseSession):
             source_node_id=self._local_node_id,
             dest_node_id=self.remote_node_id,
         )
-        await self._outgoing_envelope_send_channel.send(
-            OutgoingEnvelope(
+        await self._outbound_envelope_send_channel.send(
+            OutboundEnvelope(
                 packet=self._initiating_packet, receiver_endpoint=self.remote_endpoint,
             )
         )
@@ -349,8 +349,8 @@ class SessionInitiator(BaseSession):
             dest_node_id=self._remote_node_id,
         )
 
-        await self._outgoing_envelope_send_channel.send(
-            OutgoingEnvelope(
+        await self._outbound_envelope_send_channel.send(
+            OutboundEnvelope(
                 packet=handshake_packet, receiver_endpoint=self.remote_endpoint,
             )
         )
@@ -359,11 +359,11 @@ class SessionInitiator(BaseSession):
         if not self.is_after_handshake:
             raise Exception("Invalid")
 
-        await self._outgoing_message_buffer_send_channel.aclose()
-        async with self._outgoing_message_buffer_receive_channel:
-            async for message in self._outgoing_message_buffer_receive_channel:
+        await self._outbound_message_buffer_send_channel.aclose()
+        async with self._outbound_message_buffer_receive_channel:
+            async for message in self._outbound_message_buffer_receive_channel:
                 self.logger.debug("%s: processing buffered message: %s", self, message)
-                await self.handle_outgoing_message(message)
+                await self.handle_outbound_message(message)
 
 
 class SessionRecipient(BaseSession):
@@ -375,8 +375,8 @@ class SessionRecipient(BaseSession):
         local_node_id: NodeID,
         remote_endpoint: Endpoint,
         node_db: NodeDBAPI,
-        incoming_message_send_channel: trio.abc.SendChannel[IncomingMessage],
-        outgoing_envelope_send_channel: trio.abc.SendChannel[OutgoingEnvelope],
+        inbound_message_send_channel: trio.abc.SendChannel[InboundMessage],
+        outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
         super().__init__(
@@ -384,14 +384,14 @@ class SessionRecipient(BaseSession):
             local_node_id=local_node_id,
             remote_endpoint=remote_endpoint,
             node_db=node_db,
-            incoming_message_send_channel=incoming_message_send_channel,
-            outgoing_envelope_send_channel=outgoing_envelope_send_channel,
+            inbound_message_send_channel=inbound_message_send_channel,
+            outbound_envelope_send_channel=outbound_envelope_send_channel,
             message_type_registry=message_type_registry,
         )
         (
-            self._incoming_envelope_buffer_send_channel,
-            self._incoming_envelope_buffer_receive_channel,
-        ) = trio.open_memory_channel[IncomingEnvelope](256)
+            self._inbound_envelope_buffer_send_channel,
+            self._inbound_envelope_buffer_receive_channel,
+        ) = trio.open_memory_channel[InboundEnvelope](256)
 
     @property
     def remote_node_id(self) -> NodeID:
@@ -399,17 +399,17 @@ class SessionRecipient(BaseSession):
             raise AttributeError("NodeID for remote not yet known")
         return self._remote_node_id
 
-    async def handle_outgoing_message(self, message: OutgoingMessage) -> None:
+    async def handle_outbound_message(self, message: OutboundMessage) -> None:
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
-            await self._outgoing_envelope_send_channel.send(envelope)
+            await self._outbound_envelope_send_channel.send(envelope)
             self.logger.debug("%s: Sent message: %s", self, message)
         elif self.is_during_handshake:
             try:
-                self._outgoing_message_buffer_send_channel.send_nowait(message)
+                self._outbound_message_buffer_send_channel.send_nowait(message)
             except trio.WouldBlock:
                 self.logger.warning(
-                    "%s: Discarding message due to full outgoing message buffer: %s",
+                    "%s: Discarding message due to full outbound message buffer: %s",
                     self,
                     message,
                 )
@@ -420,7 +420,7 @@ class SessionRecipient(BaseSession):
         else:
             raise Exception("Invariant: All states handled")
 
-    async def handle_incoming_envelope(self, envelope: IncomingEnvelope) -> None:
+    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
         self.logger.info("HANDLING: %s", envelope)
         if self.is_after_handshake:
             if envelope.packet.is_message:
@@ -434,8 +434,8 @@ class SessionRecipient(BaseSession):
                     )
                     await self.events.packet_discarded.trigger((self, envelope))
                 else:
-                    await self._incoming_message_send_channel.send(
-                        IncomingMessage(
+                    await self._inbound_message_send_channel.send(
+                        InboundMessage(
                             message=message,
                             sender_endpoint=self.remote_endpoint,
                             sender_node_id=self.remote_node_id,
@@ -456,7 +456,7 @@ class SessionRecipient(BaseSession):
                 await self._process_message_buffers()
             elif envelope.packet.is_message:
                 self.logger.debug("%s: Buffering Message: %s", self, envelope)
-                self._incoming_envelope_buffer_send_channel.send_nowait(envelope)
+                self._inbound_envelope_buffer_send_channel.send_nowait(envelope)
             elif envelope.packet.is_who_are_you:
                 self.logger.debug(
                     "%s: Discarding WhoAreYouPacket packet: %s", self, envelope
@@ -506,8 +506,8 @@ class SessionRecipient(BaseSession):
             source_node_id=self._local_node_id,
             dest_node_id=packet.header.source_node_id,
         )
-        await self._outgoing_envelope_send_channel.send(
-            OutgoingEnvelope(
+        await self._outbound_envelope_send_channel.send(
+            OutboundEnvelope(
                 packet=self.handshake_response_packet,
                 receiver_endpoint=sender_endpoint,
             )
@@ -544,8 +544,8 @@ class SessionRecipient(BaseSession):
             packet.message_cipher_text,
         )
 
-        await self._incoming_message_send_channel.send(
-            IncomingMessage(
+        await self._inbound_message_send_channel.send(
+            InboundMessage(
                 message=message,
                 sender_endpoint=self.remote_endpoint,
                 sender_node_id=self.remote_node_id,
@@ -557,16 +557,16 @@ class SessionRecipient(BaseSession):
         if not self.is_after_handshake:
             raise Exception("Invalid")
 
-        await self._incoming_envelope_buffer_send_channel.aclose()
-        async with self._incoming_envelope_buffer_receive_channel:
-            async for envelope in self._incoming_envelope_buffer_receive_channel:
+        await self._inbound_envelope_buffer_send_channel.aclose()
+        async with self._inbound_envelope_buffer_receive_channel:
+            async for envelope in self._inbound_envelope_buffer_receive_channel:
                 self.logger.debug(
                     "%s: processing buffered envelope: %s", self, envelope
                 )
-                await self.handle_incoming_envelope(envelope)
+                await self.handle_inbound_envelope(envelope)
 
-        await self._outgoing_message_buffer_send_channel.aclose()
-        async with self._outgoing_message_buffer_receive_channel:
-            async for message in self._outgoing_message_buffer_receive_channel:
+        await self._outbound_message_buffer_send_channel.aclose()
+        async with self._outbound_message_buffer_receive_channel:
+            async for message in self._outbound_message_buffer_receive_channel:
                 self.logger.debug("%s: processing buffered message: %s", self, message)
-                await self.handle_outgoing_message(message)
+                await self.handle_outbound_message(message)

@@ -7,13 +7,13 @@ from eth_utils import big_endian_to_int, int_to_big_endian
 from eth_utils.toolz import merge, reduce
 import factory
 
-from ddht.base_message import IncomingMessage
+from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR, UnsignedENR
 from ddht.identity_schemes import V4IdentityScheme
 from ddht.kademlia import compute_log_distance
 from ddht.typing import NodeID
-from ddht.v5.channel_services import IncomingPacket
+from ddht.v5.channel_services import InboundPacket
 from ddht.v5.constants import (
     AUTH_SCHEME_NAME,
     ID_NONCE_SIZE,
@@ -88,9 +88,9 @@ class EndpointVoteFactory(factory.Factory):  # type: ignore
     timestamp = factory.Faker("unix_time")
 
 
-class IncomingPacketFactory(factory.Factory):  # type: ignore
+class InboundPacketFactory(factory.Factory):  # type: ignore
     class Meta:
-        model = IncomingPacket
+        model = InboundPacket
 
     packet = factory.SubFactory(AuthTagPacketFactory)
     sender_endpoint = factory.SubFactory(EndpointFactory)
@@ -201,9 +201,9 @@ class FindNodeMessageFactory(factory.Factory):  # type: ignore
     distance = factory.Faker("pyint", min_value=0, max_value=32)
 
 
-class IncomingMessageFactory(factory.Factory):  # type: ignore
+class InboundMessageFactory(factory.Factory):  # type: ignore
     class Meta:
-        model = IncomingMessage
+        model = InboundMessage
 
     message = factory.SubFactory(PingMessageFactory)
     sender_endpoint = factory.SubFactory(EndpointFactory)

@@ -4,7 +4,7 @@ import pytest
 import pytest_trio
 import trio
 
-from ddht.base_message import IncomingMessage
+from ddht.base_message import InboundMessage
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import (
@@ -65,23 +65,23 @@ async def node_db(enr, remote_enr):
 
 
 @pytest.fixture
-def incoming_message_channels():
+def inbound_message_channels():
     return trio.open_memory_channel(0)
 
 
 @pytest.fixture
-def outgoing_message_channels():
+def outbound_message_channels():
     return trio.open_memory_channel(0)
 
 
 @pytest_trio.trio_fixture
 async def message_dispatcher(
-    node_db, incoming_message_channels, outgoing_message_channels
+    node_db, inbound_message_channels, outbound_message_channels
 ):
     message_dispatcher = MessageDispatcher(
         node_db=node_db,
-        incoming_message_receive_channel=incoming_message_channels[1],
-        outgoing_message_send_channel=outgoing_message_channels[0],
+        inbound_message_receive_channel=inbound_message_channels[1],
+        outbound_message_send_channel=outbound_message_channels[0],
     )
     async with background_trio_service(message_dispatcher):
         yield message_dispatcher
@@ -89,7 +89,7 @@ async def message_dispatcher(
 
 @pytest.mark.trio
 async def test_request_handling(
-    message_dispatcher, incoming_message_channels, remote_enr, remote_endpoint
+    message_dispatcher, inbound_message_channels, remote_enr, remote_endpoint
 ):
     ping_send_channel, ping_receive_channel = trio.open_memory_channel(0)
 
@@ -97,37 +97,37 @@ async def test_request_handling(
         PingMessage
     ) as request_subscription:
 
-        incoming_message = IncomingMessage(
+        inbound_message = InboundMessage(
             message=PingMessageFactory(),
             sender_endpoint=remote_endpoint,
             sender_node_id=remote_enr.node_id,
         )
-        await incoming_message_channels[0].send(incoming_message)
+        await inbound_message_channels[0].send(inbound_message)
 
         with trio.fail_after(1):
-            handled_incoming_message = await request_subscription.receive()
-        assert handled_incoming_message == incoming_message
+            handled_inbound_message = await request_subscription.receive()
+        assert handled_inbound_message == inbound_message
 
 
 @pytest.mark.trio
 async def test_response_handling(
-    message_dispatcher, remote_enr, incoming_message_channels
+    message_dispatcher, remote_enr, inbound_message_channels
 ):
     request_id = message_dispatcher.get_free_request_id(remote_enr.node_id)
     async with message_dispatcher.add_response_handler(
         remote_enr.node_id, request_id,
     ) as response_subscription:
 
-        incoming_message = IncomingMessage(
+        inbound_message = InboundMessage(
             message=PingMessageFactory(request_id=request_id,),
             sender_endpoint=remote_endpoint,
             sender_node_id=remote_enr.node_id,
         )
-        await incoming_message_channels[0].send(incoming_message)
+        await inbound_message_channels[0].send(inbound_message)
 
         with trio.fail_after(1):
             handled_response = await response_subscription.receive()
-        assert handled_response == incoming_message
+        assert handled_response == inbound_message
 
 
 @pytest.mark.trio
@@ -135,8 +135,8 @@ async def test_request(
     message_dispatcher,
     remote_enr,
     remote_endpoint,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     nursery,
 ):
     request_id = message_dispatcher.get_free_request_id(remote_enr.node_id)
@@ -144,13 +144,13 @@ async def test_request(
     response = PingMessageFactory(request_id=request_id)
 
     async def handle_request_on_remote():
-        async for outgoing_message in outgoing_message_channels[1]:
-            assert outgoing_message.message == request
-            assert outgoing_message.receiver_endpoint == remote_endpoint
-            assert outgoing_message.receiver_node_id == remote_enr.node_id
+        async for outbound_message in outbound_message_channels[1]:
+            assert outbound_message.message == request
+            assert outbound_message.receiver_endpoint == remote_endpoint
+            assert outbound_message.receiver_node_id == remote_enr.node_id
 
-            await incoming_message_channels[0].send(
-                IncomingMessage(
+            await inbound_message_channels[0].send(
+                InboundMessage(
                     message=response,
                     sender_endpoint=remote_endpoint,
                     sender_node_id=remote_enr.node_id,
@@ -176,8 +176,8 @@ async def test_request_nodes(
     message_dispatcher,
     remote_enr,
     remote_endpoint,
-    incoming_message_channels,
-    outgoing_message_channels,
+    inbound_message_channels,
+    outbound_message_channels,
     nursery,
 ):
     request_id = message_dispatcher.get_free_request_id(remote_enr.node_id)
@@ -189,14 +189,14 @@ async def test_request_nodes(
     ]
 
     async def handle_request_on_remote():
-        async for outgoing_message in outgoing_message_channels[1]:
-            assert outgoing_message.message == request
-            assert outgoing_message.receiver_endpoint == remote_endpoint
-            assert outgoing_message.receiver_node_id == remote_enr.node_id
+        async for outbound_message in outbound_message_channels[1]:
+            assert outbound_message.message == request
+            assert outbound_message.receiver_endpoint == remote_endpoint
+            assert outbound_message.receiver_node_id == remote_enr.node_id
 
             for response in response_messages:
-                await incoming_message_channels[0].send(
-                    IncomingMessage(
+                await inbound_message_channels[0].send(
+                    InboundMessage(
                         message=response,
                         sender_endpoint=remote_endpoint,
                         sender_node_id=remote_enr.node_id,
