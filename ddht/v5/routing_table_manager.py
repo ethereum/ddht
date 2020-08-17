@@ -15,7 +15,12 @@ from trio.abc import SendChannel
 
 from ddht._utils import every
 from ddht.abc import NodeDBAPI
-from ddht.base_message import InboundMessage, OutboundMessage
+from ddht.base_message import (
+    AnyInboundMessage,
+    AnyOutboundMessage,
+    InboundMessage,
+    OutboundMessage,
+)
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
@@ -116,7 +121,9 @@ class BaseRoutingTableManagerComponent(Service):
         else:
             return local_enr
 
-    async def maybe_request_remote_enr(self, inbound_message: InboundMessage) -> None:
+    async def maybe_request_remote_enr(
+        self, inbound_message: AnyInboundMessage
+    ) -> None:
         """Request the peers ENR if there is a newer version according to a ping or pong."""
         if not isinstance(inbound_message.message, (PingMessage, PongMessage)):
             raise TypeError(
@@ -166,7 +173,7 @@ class BaseRoutingTableManagerComponent(Service):
         if request_update:
             await self.request_remote_enr(inbound_message)
 
-    async def request_remote_enr(self, inbound_message: InboundMessage) -> None:
+    async def request_remote_enr(self, inbound_message: AnyInboundMessage) -> None:
         """Request the ENR of the sender of an inbound message and store it in the ENR db."""
         self.logger.debug(
             "Requesting ENR from %s", encode_hex(inbound_message.sender_node_id)
@@ -236,7 +243,7 @@ class PingHandlerService(BaseRoutingTableManagerComponent):
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
         node_db: NodeDBAPI,
-        outbound_message_send_channel: SendChannel[OutboundMessage],
+        outbound_message_send_channel: SendChannel[OutboundMessage[PongMessage]],
     ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
         self.outbound_message_send_channel = outbound_message_send_channel
@@ -256,7 +263,9 @@ class PingHandlerService(BaseRoutingTableManagerComponent):
                 await self.respond_with_pong(inbound_message)
                 self.manager.run_task(self.maybe_request_remote_enr, inbound_message)
 
-    async def respond_with_pong(self, inbound_message: InboundMessage) -> None:
+    async def respond_with_pong(
+        self, inbound_message: InboundMessage[PingMessage]
+    ) -> None:
         if not isinstance(inbound_message.message, PingMessage):
             raise TypeError(
                 f"Can only respond with Pong to Ping, not "
@@ -289,7 +298,7 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
         node_db: NodeDBAPI,
-        outbound_message_send_channel: SendChannel[OutboundMessage],
+        outbound_message_send_channel: SendChannel[OutboundMessage[NodesMessage]],
     ) -> None:
         super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
         self.outbound_message_send_channel = outbound_message_send_channel
@@ -313,7 +322,9 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
                 else:
                     await self.respond_with_remote_enrs(inbound_message)
 
-    async def respond_with_local_enr(self, inbound_message: InboundMessage) -> None:
+    async def respond_with_local_enr(
+        self, inbound_message: InboundMessage[FindNodeMessage]
+    ) -> None:
         """Send a Nodes message containing the local ENR in response to an inbound message."""
         local_enr = self.get_local_enr()
         nodes_message = NodesMessage(
@@ -327,7 +338,9 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         )
         await self.outbound_message_send_channel.send(outbound_message)
 
-    async def respond_with_remote_enrs(self, inbound_message: InboundMessage) -> None:
+    async def respond_with_remote_enrs(
+        self, inbound_message: InboundMessage[FindNodeMessage]
+    ) -> None:
         """Send a Nodes message containing ENRs of peers at a given node distance."""
         node_ids = self.routing_table.get_nodes_at_log_distance(
             inbound_message.message.distance
@@ -581,7 +594,7 @@ class RoutingTableManager(Service):
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
         node_db: NodeDBAPI,
-        outbound_message_send_channel: SendChannel[OutboundMessage],
+        outbound_message_send_channel: SendChannel[AnyOutboundMessage],
         endpoint_vote_send_channel: SendChannel[EndpointVote],
     ) -> None:
         SharedComponentKwargType = TypedDict(
@@ -603,11 +616,11 @@ class RoutingTableManager(Service):
         )
 
         self.ping_handler_service = PingHandlerService(
-            outbound_message_send_channel=outbound_message_send_channel,
+            outbound_message_send_channel=outbound_message_send_channel,  # type: ignore
             **shared_component_kwargs,
         )
         self.find_node_handler_service = FindNodeHandlerService(
-            outbound_message_send_channel=outbound_message_send_channel,
+            outbound_message_send_channel=outbound_message_send_channel,  # type: ignore
             **shared_component_kwargs,
         )
         self.ping_sender_service = PingSenderService(

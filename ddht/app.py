@@ -7,7 +7,7 @@ from eth_utils import encode_hex
 import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
-from ddht.base_message import InboundMessage, OutboundMessage
+from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.boot_info import BootInfo
 from ddht.constants import (
     DEFAULT_LISTEN,
@@ -126,8 +126,8 @@ class Application(Service):
         inbound_datagram_channels = trio.open_memory_channel[InboundDatagram](0)
         outbound_packet_channels = trio.open_memory_channel[OutboundPacket](0)
         inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
-        outbound_message_channels = trio.open_memory_channel[OutboundMessage](0)
-        inbound_message_channels = trio.open_memory_channel[InboundMessage](0)
+        outbound_message_channels = trio.open_memory_channel[AnyOutboundMessage](0)
+        inbound_message_channels = trio.open_memory_channel[AnyInboundMessage](0)
         endpoint_vote_channels = trio.open_memory_channel[EndpointVote](0)
 
         # types ignored due to https://github.com/ethereum/async-service/issues/5

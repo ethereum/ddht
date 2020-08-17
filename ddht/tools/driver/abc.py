@@ -5,7 +5,7 @@ from eth_keys import keys
 import trio
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import BaseMessage, InboundMessage
+from ddht.base_message import AnyInboundMessage, BaseMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.typing import NodeID
@@ -32,8 +32,8 @@ class NodeAPI(ABC):
 
 
 class SessionChannels(NamedTuple):
-    inbound_message_send_channel: trio.abc.SendChannel[InboundMessage]
-    inbound_message_receive_channel: trio.abc.ReceiveChannel[InboundMessage]
+    inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage]
+    inbound_message_receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage]
     outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope]
     outbound_envelope_receive_channel: trio.abc.ReceiveChannel[OutboundEnvelope]
 
@@ -42,7 +42,7 @@ class SessionChannels(NamedTuple):
         (
             inbound_message_send_channel,
             inbound_message_receive_channel,
-        ) = trio.open_memory_channel[InboundMessage](256)
+        ) = trio.open_memory_channel[AnyInboundMessage](256)
         (
             outbound_envelope_send_channel,
             outbound_envelope_receive_channel,
@@ -65,7 +65,7 @@ class SessionDriverAPI(ABC):
         ...
 
     @abstractmethod
-    async def next_message(self) -> InboundMessage:
+    async def next_message(self) -> AnyInboundMessage:
         ...
 
     @abstractmethod

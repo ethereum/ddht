@@ -9,7 +9,7 @@ from typing import (
     TypeVar,
 )
 
-from ddht.base_message import BaseMessage, InboundMessage
+from ddht.base_message import AnyInboundMessage, BaseMessage, InboundMessage, TMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentityScheme
@@ -120,7 +120,7 @@ class MessageDispatcherAPI(ABC):
         receiver_node_id: NodeID,
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
-    ) -> InboundMessage:
+    ) -> AnyInboundMessage:
         """
         Send a request to the given peer and return the response.
 
@@ -141,7 +141,7 @@ class MessageDispatcherAPI(ABC):
         receiver_node_id: NodeID,
         message: BaseMessage,
         endpoint: Optional[Endpoint] = None,
-    ) -> Tuple[InboundMessage, ...]:
+    ) -> Tuple[AnyInboundMessage, ...]:
         """
         Send a request to the given peer and return the collection of Nodes responses.
 
@@ -153,8 +153,8 @@ class MessageDispatcherAPI(ABC):
 
     @abstractmethod
     def add_request_handler(
-        self, message_class: Type[BaseMessage]
-    ) -> ChannelHandlerSubscriptionAPI[InboundMessage]:
+        self, message_class: Type[TMessage]
+    ) -> ChannelHandlerSubscriptionAPI[InboundMessage[TMessage]]:
         """
         Add a request handler for messages of a given type.
 
@@ -165,7 +165,7 @@ class MessageDispatcherAPI(ABC):
     @abstractmethod
     def add_response_handler(
         self, remote_node_id: NodeID, request_id: int
-    ) -> ChannelHandlerSubscriptionAPI[InboundMessage]:
+    ) -> ChannelHandlerSubscriptionAPI[AnyInboundMessage]:
         """
         Add a response handler.
 

@@ -12,7 +12,7 @@ import trio
 
 from ddht._utils import humanize_node_id
 from ddht.abc import NodeDBAPI
-from ddht.base_message import BaseMessage, InboundMessage, OutboundMessage
+from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
 from ddht.encryption import aesgcm_decrypt
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
@@ -56,7 +56,7 @@ class BaseSession(SessionAPI):
         local_node_id: NodeID,
         remote_endpoint: Endpoint,
         node_db: NodeDBAPI,
-        inbound_message_send_channel: trio.abc.SendChannel[InboundMessage],
+        inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
         events: EventsAPI = None,
@@ -83,7 +83,7 @@ class BaseSession(SessionAPI):
         (
             self._outbound_message_buffer_send_channel,
             self._outbound_message_buffer_receive_channel,
-        ) = trio.open_memory_channel[OutboundMessage](256)
+        ) = trio.open_memory_channel[AnyOutboundMessage](256)
 
         self._inbound_message_send_channel = inbound_message_send_channel
         self._outbound_envelope_send_channel = outbound_envelope_send_channel
@@ -174,7 +174,7 @@ class BaseSession(SessionAPI):
             next(self._nonce_counter).to_bytes(4, "big") + secrets.token_bytes(8)
         )
 
-    def prepare_envelope(self, message: OutboundMessage) -> OutboundEnvelope:
+    def prepare_envelope(self, message: AnyOutboundMessage) -> OutboundEnvelope:
         if not self.is_after_handshake:
             raise Exception("Invalid")
         nonce = self.get_encryption_nonce()
@@ -217,7 +217,7 @@ class SessionInitiator(BaseSession):
         remote_node_id: NodeID,
         remote_endpoint: Endpoint,
         node_db: NodeDBAPI,
-        inbound_message_send_channel: trio.abc.SendChannel[InboundMessage],
+        inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
@@ -240,7 +240,7 @@ class SessionInitiator(BaseSession):
     def remote_enr(self) -> ENR:
         return self._node_db.get_enr(self.remote_node_id)
 
-    async def handle_outbound_message(self, message: OutboundMessage) -> None:
+    async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._outbound_envelope_send_channel.send(envelope)
@@ -282,7 +282,7 @@ class SessionInitiator(BaseSession):
                     self._last_message_received_at = trio.current_time()
 
                     await self._inbound_message_send_channel.send(
-                        InboundMessage(
+                        AnyInboundMessage(
                             message=message,
                             sender_endpoint=self.remote_endpoint,
                             sender_node_id=self.remote_node_id,
@@ -417,7 +417,7 @@ class SessionRecipient(BaseSession):
         local_node_id: NodeID,
         remote_endpoint: Endpoint,
         node_db: NodeDBAPI,
-        inbound_message_send_channel: trio.abc.SendChannel[InboundMessage],
+        inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
@@ -441,7 +441,7 @@ class SessionRecipient(BaseSession):
             raise AttributeError("NodeID for remote not yet known")
         return self._remote_node_id
 
-    async def handle_outbound_message(self, message: OutboundMessage) -> None:
+    async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._outbound_envelope_send_channel.send(envelope)
@@ -478,7 +478,7 @@ class SessionRecipient(BaseSession):
                 else:
                     self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
-                        InboundMessage(
+                        AnyInboundMessage(
                             message=message,
                             sender_endpoint=self.remote_endpoint,
                             sender_node_id=self.remote_node_id,
@@ -598,7 +598,7 @@ class SessionRecipient(BaseSession):
         )
 
         await self._inbound_message_send_channel.send(
-            InboundMessage(
+            AnyInboundMessage(
                 message=message,
                 sender_endpoint=self.remote_endpoint,
                 sender_node_id=self.remote_node_id,

@@ -7,7 +7,7 @@ from eth_keys import keys
 import trio
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import BaseMessage, InboundMessage, OutboundMessage
+from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from ddht.endpoint import Endpoint
 from ddht.tools.driver.abc import (
@@ -86,7 +86,7 @@ class SessionDriver(SessionDriverAPI):
     async def send_message(self, message: BaseMessage) -> None:
         self.session.logger.info("SENDING: %s", message)
         await self.session.handle_outbound_message(
-            OutboundMessage(
+            AnyOutboundMessage(
                 message=message,
                 receiver_endpoint=self.session.remote_endpoint,
                 receiver_node_id=self.session.remote_node_id,
@@ -94,7 +94,7 @@ class SessionDriver(SessionDriverAPI):
         )
 
     @no_hang
-    async def next_message(self) -> InboundMessage:
+    async def next_message(self) -> AnyInboundMessage:
         return await self.channels.inbound_message_receive_channel.receive()
 
     @no_hang
