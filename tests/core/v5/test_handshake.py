@@ -2,12 +2,12 @@ from eth_utils import keccak
 
 from ddht.tools.factories.discovery import (
     AuthTagPacketFactory,
-    ENRFactory,
     HandshakeInitiatorFactory,
     HandshakeRecipientFactory,
     PingMessageFactory,
     WhoAreYouPacketFactory,
 )
+from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 
 

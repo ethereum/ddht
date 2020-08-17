@@ -1,6 +1,7 @@
 import pytest
 
-from ddht.tools.factories.discovery import ENRFactory, TopicFactory
+from ddht.tools.factories.discovery import TopicFactory
+from ddht.tools.factories.enr import ENRFactory
 from ddht.v5.topic_table import TopicTable
 
 

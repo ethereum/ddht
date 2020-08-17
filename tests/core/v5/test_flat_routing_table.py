@@ -1,6 +1,6 @@
 import pytest
 
-from ddht.tools.factories.discovery import NodeIDFactory
+from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.v5.routing_table import FlatRoutingTable
 
 

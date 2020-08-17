@@ -2,7 +2,8 @@ from async_service import background_trio_service
 import pytest
 import trio
 
-from ddht.tools.factories.discovery import AuthTagPacketFactory, EndpointFactory
+from ddht.tools.factories.discovery import AuthTagPacketFactory
+from ddht.tools.factories.endpoint import EndpointFactory
 from ddht.v5.channel_services import (
     InboundDatagram,
     OutboundPacket,

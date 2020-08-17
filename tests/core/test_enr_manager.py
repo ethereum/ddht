@@ -6,7 +6,7 @@ import trio
 from ddht.enr_manager import ENRManager
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.node_db import NodeDB
-from ddht.tools.factories.discovery import ENRFactory
+from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 
 
