@@ -13,7 +13,7 @@ import trio
 
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentitySchemeRegistry
-from ddht.typing import NodeID
+from ddht.typing import ENR_KV, NodeID
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
 
@@ -134,4 +134,15 @@ class NodeDBAPI(ABC):
 
     @abstractmethod
     def delete_last_pong_time(self, node_id: NodeID) -> None:
+        ...
+
+
+class ENRManagerAPI(ABC):
+    @property
+    @abstractmethod
+    def enr(self) -> ENR:
+        ...
+
+    @abstractmethod
+    def update(self, *kv_pairs: ENR_KV) -> ENR:
         ...

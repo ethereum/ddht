@@ -1,7 +1,5 @@
-from async_service import background_trio_service
 from eth.db.backends.memory import MemoryDB
 import pytest
-import trio
 
 from ddht.enr_manager import ENRManager
 from ddht.identity_schemes import default_identity_scheme_registry
@@ -65,18 +63,3 @@ def test_enr_manager_update_api(node_db):
     assert enr_b.sequence_number == enr_a.sequence_number + 1
 
     assert enr_manager.enr[b"unicorns"] == b"cupcakes"
-
-
-@pytest.mark.trio
-async def test_enr_manager_update_via_queue(node_db):
-    enr_manager = ENRManager(node_db, PrivateKeyFactory())
-    async with background_trio_service(enr_manager):
-        assert b"unicorns" not in enr_manager.enr
-        await enr_manager.async_update((b"unicorns", b"rainbows"))
-
-    for _ in range(10):
-        await trio.hazmat.checkpoint()
-        if enr_manager.enr[b"unicorns"] == b"rainbows":
-            break
-    else:
-        assert enr_manager.enr[b"unicorns"] == b"rainbows"

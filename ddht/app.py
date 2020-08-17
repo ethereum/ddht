@@ -70,11 +70,11 @@ class Application(Service):
 
         with trio.move_on_after(10):
             _, external_ip = await upnp_service.get_ip_addresses()
-            await enr_manager.async_update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
+            enr_manager.update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
 
         while self.manager.is_running:
             _, external_ip = await upnp_service.wait_ip_changed()
-            await enr_manager.async_update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
+            enr_manager.update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
 
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
@@ -87,7 +87,6 @@ class Application(Service):
         local_private_key = get_local_private_key(self._boot_info)
 
         enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
-        self.manager.run_daemon_child_service(enr_manager)
 
         port = self._boot_info.port
 

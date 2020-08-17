@@ -1,12 +1,11 @@
 import logging
 from typing import Mapping, Optional
 
-from async_service import Service, external_trio_api
 from eth_keys import keys
 from eth_utils.toolz import merge
 import trio
 
-from ddht.abc import NodeDBAPI
+from ddht.abc import ENRManagerAPI, NodeDBAPI
 from ddht.enr import ENR, UnsignedENR
 from ddht.identity_schemes import (
     IdentitySchemeRegistry,
@@ -15,16 +14,13 @@ from ddht.identity_schemes import (
 from ddht.typing import ENR_KV, NodeID
 
 
-class ENRManager(Service):
+class ENRManager(ENRManagerAPI):
     _node_db: NodeDBAPI
     _enr: ENR
     _node_id: NodeID
     _identity_scheme_registry: IdentitySchemeRegistry
 
     logger = logging.getLogger("ddht.ENRManager")
-
-    _send_channel: trio.abc.SendChannel[ENR_KV]
-    _receive_channel: trio.abc.ReceiveChannel[ENR_KV]
 
     def __init__(
         self,
@@ -82,13 +78,3 @@ class ENRManager(Service):
             self._node_db.set_enr(self._enr)
             self.logger.info("Local ENR Updated: %r", self.enr)
         return self._enr
-
-    @external_trio_api
-    async def async_update(self, *kv_pairs: ENR_KV) -> None:
-        for kv_pair in kv_pairs:
-            await self._send_channel.send(kv_pair)
-
-    async def run(self) -> None:
-        async with self._receive_channel:
-            async for key, value in self._receive_channel:
-                self.update((key, value))
