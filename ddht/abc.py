@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+from collections import UserDict
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncContextManager,
     Generic,
@@ -11,6 +13,7 @@ from typing import (
 
 import trio
 
+from ddht.base_message import BaseMessage
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentitySchemeRegistry
 from ddht.typing import ENR_KV, NodeID
@@ -153,4 +156,21 @@ class ENRManagerAPI(ABC):
 
     @abstractmethod
     def update(self, *kv_pairs: ENR_KV) -> ENR:
+        ...
+
+
+# https://github.com/python/mypy/issues/5264#issuecomment-399407428
+if TYPE_CHECKING:
+    MessageTypeRegistryBaseType = UserDict[int, Type[BaseMessage]]
+else:
+    MessageTypeRegistryBaseType = UserDict
+
+
+class MessageTypeRegistryAPI(MessageTypeRegistryBaseType):
+    @abstractmethod
+    def register(self, message_data_class: Type[BaseMessage]) -> Type[BaseMessage]:
+        ...
+
+    @abstractmethod
+    def get_message_id(self, message_data_class: Type[BaseMessage]) -> int:
         ...

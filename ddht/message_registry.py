@@ -1,16 +1,10 @@
-from collections import UserDict
-from typing import TYPE_CHECKING, Type
+from typing import Type
 
+from ddht.abc import MessageTypeRegistryAPI
 from ddht.base_message import BaseMessage
 
-# https://github.com/python/mypy/issues/5264#issuecomment-399407428
-if TYPE_CHECKING:
-    MessageTypeRegistryBaseType = UserDict[int, Type[BaseMessage]]
-else:
-    MessageTypeRegistryBaseType = UserDict
 
-
-class MessageTypeRegistry(MessageTypeRegistryBaseType):
+class MessageTypeRegistry(MessageTypeRegistryAPI):
     def register(self, message_data_class: Type[BaseMessage]) -> Type[BaseMessage]:
         """Class Decorator to register BaseMessage classes."""
         message_type = message_data_class.message_type
@@ -33,3 +27,10 @@ class MessageTypeRegistry(MessageTypeRegistryBaseType):
         self[message_type] = message_data_class
 
         return message_data_class
+
+    def get_message_id(self, message_data_class: Type[BaseMessage]) -> int:
+        for message_id, message_type in self.items():
+            if message_data_class is message_type:
+                return message_id
+        else:
+            raise KeyError(message_data_class)

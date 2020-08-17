@@ -6,7 +6,7 @@ from eth_utils import ValidationError, encode_hex
 import trio
 from trio.abc import ReceiveChannel, SendChannel
 
-from ddht.abc import NodeDBAPI
+from ddht.abc import MessageTypeRegistryAPI, NodeDBAPI
 from ddht.base_message import InboundMessage, OutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
@@ -16,7 +16,7 @@ from ddht.v5.abc import HandshakeParticipantAPI
 from ddht.v5.channel_services import InboundPacket, OutboundPacket
 from ddht.v5.constants import HANDSHAKE_TIMEOUT
 from ddht.v5.handshake import HandshakeInitiator, HandshakeRecipient
-from ddht.v5.messages import BaseMessage, MessageTypeRegistry
+from ddht.v5.messages import BaseMessage
 from ddht.v5.packets import AuthTagPacket, get_random_auth_tag
 from ddht.v5.tags import compute_tag, recover_source_id_from_tag
 
@@ -33,7 +33,7 @@ class PeerPacker(Service):
         local_node_id: NodeID,
         remote_node_id: NodeID,
         node_db: NodeDBAPI,
-        message_type_registry: MessageTypeRegistry,
+        message_type_registry: MessageTypeRegistryAPI,
         inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
         inbound_message_send_channel: SendChannel[InboundMessage],
         outbound_message_receive_channel: ReceiveChannel[OutboundMessage],
@@ -438,7 +438,7 @@ class Packer(Service):
         local_private_key: bytes,
         local_node_id: NodeID,
         node_db: NodeDBAPI,
-        message_type_registry: MessageTypeRegistry,
+        message_type_registry: MessageTypeRegistryAPI,
         inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
         inbound_message_send_channel: SendChannel[InboundMessage],
         outbound_message_receive_channel: ReceiveChannel[OutboundMessage],
