@@ -1,10 +1,12 @@
 import secrets
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import factory
+import trio
 
-from ddht.base_message import BaseMessage
+from ddht.base_message import AnyInboundMessage, BaseMessage
 from ddht.typing import AES128Key, NodeID, Nonce
+from ddht.v5_1.envelope import OutboundEnvelope
 from ddht.v5_1.packets import (
     PROTOCOL_ID,
     HandshakeHeader,
@@ -174,4 +176,28 @@ class PacketFactory:
             source_node_id=source_node_id,
             dest_node_id=dest_node_id,
             protocol_id=protocol_id,
+        )
+
+
+class SessionChannels(NamedTuple):
+    inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage]
+    inbound_message_receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage]
+    outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope]
+    outbound_envelope_receive_channel: trio.abc.ReceiveChannel[OutboundEnvelope]
+
+    @classmethod
+    def init(cls) -> "SessionChannels":
+        (
+            inbound_message_send_channel,
+            inbound_message_receive_channel,
+        ) = trio.open_memory_channel[AnyInboundMessage](256)
+        (
+            outbound_envelope_send_channel,
+            outbound_envelope_receive_channel,
+        ) = trio.open_memory_channel[OutboundEnvelope](256)
+        return cls(
+            inbound_message_send_channel,
+            inbound_message_receive_channel,
+            outbound_envelope_send_channel,
+            outbound_envelope_receive_channel,
         )
