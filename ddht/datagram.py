@@ -29,7 +29,7 @@ class OutboundDatagram(NamedTuple):
 @as_service
 async def DatagramReceiver(
     manager: ManagerAPI,
-    socket: SocketType,
+    sock: SocketType,
     inbound_datagram_send_channel: SendChannel[InboundDatagram],
 ) -> None:
     """Read datagrams from a socket and send them to a channel."""
@@ -37,7 +37,7 @@ async def DatagramReceiver(
 
     async with inbound_datagram_send_channel:
         while manager.is_running:
-            datagram, (ip_address, port) = await socket.recvfrom(
+            datagram, (ip_address, port) = await sock.recvfrom(
                 DISCOVERY_DATAGRAM_BUFFER_SIZE
             )
             endpoint = Endpoint(inet_aton(ip_address), port)
@@ -50,7 +50,7 @@ async def DatagramReceiver(
 async def DatagramSender(
     manager: ManagerAPI,
     outbound_datagram_receive_channel: ReceiveChannel[OutboundDatagram],
-    socket: SocketType,
+    sock: SocketType,
 ) -> None:
     """Take datagrams from a channel and send them via a socket to their designated receivers."""
     logger = logging.getLogger("ddht.v5.channel_services.DatagramSender")
@@ -58,6 +58,4 @@ async def DatagramSender(
     async with outbound_datagram_receive_channel:
         async for datagram, endpoint in outbound_datagram_receive_channel:
             logger.debug(f"Sending {len(datagram)} bytes to {endpoint}")
-            await socket.sendto(
-                datagram, (inet_ntoa(endpoint.ip_address), endpoint.port)
-            )
+            await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
