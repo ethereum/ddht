@@ -3,6 +3,7 @@ import itertools
 import pytest
 import trio
 
+from ddht.kademlia import KademliaRoutingTable
 from ddht.tools.factories.enr import ENRFactory
 
 
@@ -42,7 +43,7 @@ async def test_client_send_find_nodes(alice, bob, alice_client, bob_client):
         async with alice.events.find_nodes_sent.subscribe_and_wait():
             async with bob.events.find_nodes_received.subscribe_and_wait():
                 await alice_client.send_find_nodes(
-                    bob.endpoint, bob.node_id, distance=0
+                    bob.endpoint, bob.node_id, distances=[255]
                 )
 
 
@@ -160,3 +161,77 @@ async def test_client_send_topic_query(alice, bob, alice_client, bob_client):
                     topic=b"unicornsrainbowsunicornsrainbows",
                     request_id=1234,
                 )
+
+
+#
+# Request/Response
+#
+@pytest.mark.trio
+async def test_client_request_response_ping_pong(alice, bob, alice_client, bob_client):
+    async with trio.open_nursery() as nursery:
+        async with bob.events.ping_received.subscribe() as subscription:
+
+            async def _send_response():
+                ping = await subscription.receive()
+                await bob_client.send_pong(
+                    alice.endpoint, alice.node_id, request_id=ping.message.request_id,
+                )
+
+            nursery.start_soon(_send_response)
+
+            with trio.fail_after(2):
+                pong = await alice_client.ping(bob.endpoint, bob.node_id)
+                assert pong.message.enr_seq == bob.enr.sequence_number
+                assert pong.message.packet_ip == alice.endpoint.ip_address
+                assert pong.message.packet_port == alice.endpoint.port
+
+
+@pytest.mark.trio
+async def test_client_request_response_find_nodes_found_nodes(
+    alice, bob, alice_client, bob_client
+):
+    table = KademliaRoutingTable(bob.node_id, 256)
+    for i in range(1000):
+        enr = ENRFactory()
+        table.update(enr.node_id)
+        bob.node_db.set_enr(enr)
+
+    checked_bucket_indexes = []
+
+    for distance in range(255, 0, -1):
+        async with trio.open_nursery() as nursery:
+            async with bob.events.find_nodes_received.subscribe() as subscription:
+                bucket = table.buckets[distance]
+                if not len(bucket):
+                    break
+
+                bucket = table.buckets[distance]
+                expected_enrs = tuple(
+                    bob.node_db.get_enr(node_id) for node_id in bucket
+                )
+
+                async def _send_response():
+                    find_nodes = await subscription.receive()
+                    checked_bucket_indexes.append(distance)
+                    await bob_client.send_found_nodes(
+                        alice.endpoint,
+                        alice.node_id,
+                        enrs=expected_enrs,
+                        request_id=find_nodes.message.request_id,
+                    )
+
+                nursery.start_soon(_send_response)
+
+                with trio.fail_after(2):
+                    found_nodes_messages = await alice_client.find_nodes(
+                        bob.endpoint, bob.node_id, distances=[distance],
+                    )
+                    found_node_ids = {
+                        enr.node_id
+                        for message in found_nodes_messages
+                        for enr in message.message.enrs
+                    }
+                    expected_node_ids = {enr.node_id for enr in expected_enrs}
+                    assert found_node_ids == expected_node_ids
+
+    assert len(checked_bucket_indexes) > 4
