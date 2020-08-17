@@ -120,7 +120,7 @@ class Application(Service):
                 pass
             routing_table.update(enr.node_id)
 
-        socket = trio.socket.socket(
+        sock = trio.socket.socket(
             family=trio.socket.AF_INET, type=trio.socket.SOCK_DGRAM
         )
         outbound_datagram_channels = trio.open_memory_channel[OutboundDatagram](0)
@@ -133,10 +133,10 @@ class Application(Service):
 
         # types ignored due to https://github.com/ethereum/async-service/issues/5
         datagram_sender = DatagramSender(  # type: ignore
-            outbound_datagram_channels[1], socket
+            outbound_datagram_channels[1], sock
         )
         datagram_receiver = DatagramReceiver(  # type: ignore
-            socket, inbound_datagram_channels[0]
+            sock, inbound_datagram_channels[0]
         )
 
         packet_encoder = PacketEncoder(  # type: ignore
@@ -196,8 +196,8 @@ class Application(Service):
             endpoint_tracker,
             routing_table_manager,
         )
-        await socket.bind((str(listen_on), port))
-        with socket:
+        await sock.bind((str(listen_on), port))
+        with sock:
             async with trio.open_nursery() as nursery:
                 for service in services:
                     nursery.start_soon(run_trio_service, service)
