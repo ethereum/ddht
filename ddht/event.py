@@ -8,7 +8,7 @@ from ddht.abc import EventAPI, TEventPayload
 
 
 class Event(EventAPI[TEventPayload]):
-    logger = logging.getLogger("alexandria.events.Event")
+    logger = logging.getLogger("ddht.events.Event")
 
     _channels: Set[trio.abc.SendChannel[TEventPayload]]
 
@@ -19,13 +19,23 @@ class Event(EventAPI[TEventPayload]):
         self._channels = set()
 
     async def trigger(self, payload: TEventPayload) -> None:
-        self.logger.debug("Triggering event: %s(%s)", self.name, payload)
+        self.logger.debug("%s: triggered: %s", self.name, payload)
+        if not self._channels:
+            return
         async with self._lock:
             for send_channel in self._channels:
                 try:
                     await send_channel.send(payload)
                 except trio.BrokenResourceError:
                     pass
+
+    def trigger_nowait(self, payload: TEventPayload) -> None:
+        self.logger.debug("%s: triggered: %s", self.name, payload)
+        for send_channel in self._channels:
+            try:
+                send_channel.send_nowait(payload)  # type: ignore
+            except trio.BrokenResourceError:
+                pass
 
     @asynccontextmanager
     async def subscribe(self) -> AsyncIterator[trio.abc.ReceiveChannel[TEventPayload]]:
