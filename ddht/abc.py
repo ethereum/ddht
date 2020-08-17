@@ -97,11 +97,19 @@ class EventAPI(Generic[TEventPayload]):
         ...
 
     @abstractmethod
+    def trigger_nowait(self, payload: TEventPayload) -> None:
+        ...
+
+    @abstractmethod
     def subscribe(self) -> AsyncContextManager[trio.abc.ReceiveChannel[TEventPayload]]:
         ...
 
     @abstractmethod
     def subscribe_and_wait(self) -> AsyncContextManager[None]:
+        ...
+
+    @abstractmethod
+    async def wait(self) -> TEventPayload:
         ...
 
 
