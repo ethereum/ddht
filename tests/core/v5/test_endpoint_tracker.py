@@ -8,11 +8,9 @@ from trio.testing import wait_all_tasks_blocked
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.node_db import NodeDB
-from ddht.tools.factories.discovery import (
-    EndpointFactory,
-    EndpointVoteFactory,
-    ENRFactory,
-)
+from ddht.tools.factories.discovery import EndpointVoteFactory
+from ddht.tools.factories.endpoint import EndpointFactory
+from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.v5.endpoint_tracker import EndpointTracker
 

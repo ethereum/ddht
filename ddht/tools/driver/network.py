@@ -18,7 +18,8 @@ from ddht.tools.driver.abc import (
     SessionDriverAPI,
     SessionPairAPI,
 )
-from ddht.tools.factories.discovery import EndpointFactory, ENRFactory
+from ddht.tools.factories.endpoint import EndpointFactory
+from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_db import NodeDBFactory
 from ddht.typing import NodeID

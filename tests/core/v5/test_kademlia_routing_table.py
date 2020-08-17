@@ -3,7 +3,7 @@ import itertools
 import pytest
 
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
-from ddht.tools.factories.discovery import NodeIDFactory
+from ddht.tools.factories.node_id import NodeIDFactory
 
 
 @pytest.fixture

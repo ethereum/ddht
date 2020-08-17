@@ -9,11 +9,11 @@ from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import (
     AuthTagPacketFactory,
-    EndpointFactory,
-    ENRFactory,
     HandshakeRecipientFactory,
     PingMessageFactory,
 )
+from ddht.tools.factories.endpoint import EndpointFactory
+from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.v5.channel_services import InboundPacket
 from ddht.v5.messages import v5_registry
