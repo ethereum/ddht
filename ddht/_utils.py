@@ -16,7 +16,14 @@ from typing import (
 )
 
 from eth_keys import keys
+from eth_utils import humanize_hash
 import trio
+
+from ddht.typing import NodeID
+
+
+def humanize_node_id(node_id: NodeID) -> str:
+    return humanize_hash(node_id)  # type: ignore
 
 
 def sxor(s1: bytes, s2: bytes) -> bytes:
