@@ -15,6 +15,7 @@ class SessionAPI(ABC):
     remote_endpoint: Endpoint
     events: "EventsAPI"
     logger: logging.Logger
+    is_initiator: bool
 
     @property
     @abstractmethod
