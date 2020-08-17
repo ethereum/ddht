@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional
 
 from async_service import LifecycleError, Service, TrioManager
 from eth_utils import ValidationError, encode_hex
@@ -7,7 +7,7 @@ import trio
 from trio.abc import ReceiveChannel, SendChannel
 
 from ddht.abc import MessageTypeRegistryAPI, NodeDBAPI
-from ddht.base_message import InboundMessage, OutboundMessage
+from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
@@ -35,8 +35,8 @@ class PeerPacker(Service):
         node_db: NodeDBAPI,
         message_type_registry: MessageTypeRegistryAPI,
         inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
-        inbound_message_send_channel: SendChannel[InboundMessage],
-        outbound_message_receive_channel: ReceiveChannel[OutboundMessage],
+        inbound_message_send_channel: SendChannel[AnyInboundMessage],
+        outbound_message_receive_channel: ReceiveChannel[AnyOutboundMessage],
         outbound_packet_send_channel: SendChannel[OutboundPacket],
     ) -> None:
         self.local_private_key = local_private_key
@@ -54,7 +54,7 @@ class PeerPacker(Service):
             f"ddht.v5.packer.PeerPacker[{encode_hex(remote_node_id)[2:10]}]"
         )
 
-        self.outbound_message_backlog: List[OutboundMessage] = []
+        self.outbound_message_backlog: List[AnyOutboundMessage] = []
 
         # This lock ensures that at all times, at most one inbound packet or outbound message is
         # being processed.
@@ -89,7 +89,9 @@ class PeerPacker(Service):
             async with self.handling_lock:
                 await self.handle_outbound_message(outbound_message)
 
-    async def handle_outbound_message(self, outbound_message: OutboundMessage) -> None:
+    async def handle_outbound_message(
+        self, outbound_message: AnyOutboundMessage
+    ) -> None:
         if self.is_pre_handshake:
             await self.handle_outbound_message_pre_handshake(outbound_message)
         elif self.is_during_handshake:
@@ -195,7 +197,7 @@ class PeerPacker(Service):
                 await self.outbound_packet_send_channel.send(outbound_packet)
 
             if handshake_result.message:
-                inbound_message = InboundMessage(
+                inbound_message = AnyInboundMessage(
                     handshake_result.message,
                     inbound_packet.sender_endpoint,
                     self.remote_node_id,
@@ -235,7 +237,7 @@ class PeerPacker(Service):
                 self.manager.cancel()
                 return
             else:
-                inbound_message = InboundMessage(
+                inbound_message = AnyInboundMessage(
                     message, inbound_packet.sender_endpoint, self.remote_node_id
                 )
                 self.logger.debug("Received %s", inbound_message)
@@ -249,7 +251,7 @@ class PeerPacker(Service):
     # Outbound message handlers
     #
     async def handle_outbound_message_pre_handshake(
-        self, outbound_message: OutboundMessage
+        self, outbound_message: AnyOutboundMessage
     ) -> None:
         if not self.is_pre_handshake:
             raise ValueError("Can only handle message pre handshake")
@@ -277,7 +279,7 @@ class PeerPacker(Service):
         await self.send_first_handshake_packet(outbound_message.receiver_endpoint)
 
     async def handle_outbound_message_during_handshake(
-        self, outbound_message: OutboundMessage
+        self, outbound_message: AnyOutboundMessage
     ) -> None:
         if not self.is_during_handshake:
             raise ValueError("Can only handle message during handshake")
@@ -290,7 +292,7 @@ class PeerPacker(Service):
         await trio.sleep(0)
 
     async def handle_outbound_message_post_handshake(
-        self, outbound_message: OutboundMessage
+        self, outbound_message: AnyOutboundMessage
     ) -> None:
         if not self.is_post_handshake:
             raise ValueError("Can only handle message post handshake")
@@ -429,7 +431,7 @@ class ManagedPeerPacker(NamedTuple):
     peer_packer: PeerPacker
     manager: TrioManager
     inbound_packet_send_channel: SendChannel[InboundPacket]
-    outbound_message_send_channel: SendChannel[OutboundMessage]
+    outbound_message_send_channel: SendChannel[AnyOutboundMessage]
 
 
 class Packer(Service):
@@ -440,8 +442,8 @@ class Packer(Service):
         node_db: NodeDBAPI,
         message_type_registry: MessageTypeRegistryAPI,
         inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
-        inbound_message_send_channel: SendChannel[InboundMessage],
-        outbound_message_receive_channel: ReceiveChannel[OutboundMessage],
+        inbound_message_send_channel: SendChannel[AnyInboundMessage],
+        outbound_message_receive_channel: ReceiveChannel[AnyOutboundMessage],
         outbound_packet_send_channel: SendChannel[OutboundPacket],
     ) -> None:
         self.local_private_key = local_private_key
@@ -571,12 +573,8 @@ class Packer(Service):
                 f"Peer packer for {encode_hex(remote_node_id)} is already registered"
             )
 
-        inbound_packet_channels: Tuple[
-            SendChannel[InboundPacket], ReceiveChannel[InboundPacket]
-        ] = trio.open_memory_channel(0)
-        outbound_message_channels: Tuple[
-            SendChannel[OutboundMessage], ReceiveChannel[OutboundMessage]
-        ] = trio.open_memory_channel(0)
+        inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
+        outbound_message_channels = trio.open_memory_channel[AnyOutboundMessage](0)
 
         peer_packer = PeerPacker(
             local_private_key=self.local_private_key,

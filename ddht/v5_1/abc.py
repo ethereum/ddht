@@ -4,7 +4,7 @@ from typing import Tuple
 import uuid
 
 from ddht.abc import EventAPI
-from ddht.base_message import OutboundMessage
+from ddht.base_message import AnyOutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.typing import NodeID, SessionKeys
 from ddht.v5_1.envelope import InboundEnvelope
@@ -50,7 +50,7 @@ class SessionAPI(ABC):
         ...
 
     @abstractmethod
-    async def handle_outbound_message(self, message: OutboundMessage) -> None:
+    async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         ...
 
     @abstractmethod
