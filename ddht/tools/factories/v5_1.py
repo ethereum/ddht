@@ -11,20 +11,12 @@ from ddht.v5_1.packets import (
     PROTOCOL_ID,
     HandshakeHeader,
     HandshakePacket,
-    Header,
     MessagePacket,
     Packet,
     TAuthData,
     WhoAreYouPacket,
 )
 from ddht.v5_1.session import EmptyMessage, RandomMessage
-
-
-class MessagePacketFactory(factory.Factory):  # type: ignore
-    class Meta:
-        model = MessagePacket
-
-    aes_gcm_nonce = factory.LazyFunction(lambda: secrets.token_bytes(12))
 
 
 class WhoAreYouPacketFactory(factory.Factory):  # type: ignore
@@ -53,16 +45,6 @@ class HandshakePacketFactory(factory.Factory):  # type: ignore
     id_signature = factory.LazyFunction(lambda: secrets.token_bytes(64))
     ephemeral_public_key = factory.LazyFunction(lambda: secrets.token_bytes(33))
     record = None
-
-
-class HeaderFactory(factory.Factory):  # type: ignore
-    class Meta:
-        model = Header
-
-    protocol_id = PROTOCOL_ID
-    source_node_id = factory.LazyFunction(lambda: secrets.token_bytes(32))
-    flag = 0
-    auth_data_size = 12
 
 
 class PacketFactory:

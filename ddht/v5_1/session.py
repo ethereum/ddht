@@ -3,7 +3,7 @@ import enum
 import itertools
 import logging
 import secrets
-from typing import Tuple, cast
+from typing import Optional, Tuple, cast
 import uuid
 
 from eth_keys import keys
@@ -59,7 +59,7 @@ class BaseSession(SessionAPI):
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
-        events: EventsAPI = None,
+        events: Optional[EventsAPI] = None,
     ) -> None:
         self.id = uuid.uuid4()
 
@@ -220,7 +220,7 @@ class SessionInitiator(BaseSession):
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
-        events: EventsAPI = None,
+        events: Optional[EventsAPI] = None,
     ) -> None:
         super().__init__(
             local_private_key=local_private_key,
@@ -243,6 +243,8 @@ class SessionInitiator(BaseSession):
         return self._node_db.get_enr(self.remote_node_id)
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
+        self.logger.debug("%s: handling outbound message: %s", self, message)
+
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._outbound_envelope_send_channel.send(envelope)
@@ -269,6 +271,8 @@ class SessionInitiator(BaseSession):
             raise Exception("Invariant: All states handled")
 
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
+        self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+
         if self.is_after_handshake:
             if envelope.packet.is_message:
                 try:
@@ -422,7 +426,7 @@ class SessionRecipient(BaseSession):
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
-        events: EventsAPI = None,
+        events: Optional[EventsAPI] = None,
     ) -> None:
         super().__init__(
             local_private_key=local_private_key,
@@ -446,6 +450,8 @@ class SessionRecipient(BaseSession):
         return self._remote_node_id
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
+        self.logger.debug("%s: handling outbound message: %s", self, message)
+
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._outbound_envelope_send_channel.send(envelope)
@@ -467,7 +473,8 @@ class SessionRecipient(BaseSession):
             raise Exception("Invariant: All states handled")
 
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
-        self.logger.info("HANDLING: %s", envelope)
+        self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+
         if self.is_after_handshake:
             if envelope.packet.is_message:
                 try:
