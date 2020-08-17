@@ -1,15 +1,23 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import Tuple
+from typing import AsyncContextManager, ContextManager, Optional, Tuple, Type
 import uuid
 
+from async_service import ServiceAPI
 from eth_keys import keys
+import trio
 
 from ddht.abc import EventAPI
-from ddht.base_message import AnyOutboundMessage
+from ddht.base_message import (
+    AnyOutboundMessage,
+    InboundMessage,
+    OutboundMessage,
+    TMessage,
+)
 from ddht.endpoint import Endpoint
 from ddht.typing import NodeID, SessionKeys
 from ddht.v5_1.envelope import InboundEnvelope
+from ddht.v5_1.messages import PingMessage, PongMessage
 
 
 class SessionAPI(ABC):
@@ -72,6 +80,12 @@ class EventsAPI(ABC):
 
     external_endpoint_updated: EventAPI[Endpoint]
 
+    ping_sent: EventAPI[OutboundMessage[PingMessage]]
+    ping_received: EventAPI[InboundMessage[PingMessage]]
+
+    pong_sent: EventAPI[OutboundMessage[PongMessage]]
+    pong_received: EventAPI[InboundMessage[PongMessage]]
+
 
 class PoolAPI(ABC):
     local_private_key: keys.PrivateKey
@@ -99,4 +113,34 @@ class PoolAPI(ABC):
 
     @abstractmethod
     def receive_session(self, remote_endpoint: Endpoint) -> SessionAPI:
+        ...
+
+
+class DispatcherAPI(ServiceAPI):
+    @abstractmethod
+    async def send_message(self, message: AnyOutboundMessage) -> None:
+        ...
+
+    @abstractmethod
+    def get_free_request_id(self, node_id: NodeID) -> int:
+        ...
+
+    @abstractmethod
+    def reserve_request_id(self, node_id: NodeID) -> ContextManager[int]:
+        ...
+
+    @abstractmethod
+    def subscribe(
+        self,
+        payload_type: Type[TMessage],
+        endpoint: Optional[Endpoint],
+        node_id: Optional[NodeID],
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
+        ...
+
+    def subscribe_request(
+        self, request: AnyOutboundMessage, response_payload_type: Type[TMessage],
+    ) -> AsyncContextManager[
+        trio.abc.ReceiveChannel[InboundMessage[TMessage]]
+    ]:  # noqa: E501
         ...

@@ -7,22 +7,8 @@ from rlp.sedes import big_endian_int
 import trio
 
 from ddht.base_message import BaseMessage
-from ddht.tools.driver import Network
 from ddht.tools.factories.v5_1 import PacketFactory
 from ddht.v5_1.messages import PingMessage
-
-INITIATOR_PRIVATE_KEY = b"\x01" * 32
-RECIPIENT_PRIVATE_KEY = b"\x02" * 32
-
-
-@pytest.fixture
-async def driver():
-    network = Network()
-    initiator = network.node()
-    recipient = network.node()
-
-    driver = network.session_pair(initiator, recipient)
-    return driver
 
 
 @pytest.mark.trio
