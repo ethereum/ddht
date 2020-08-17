@@ -10,6 +10,7 @@ from eth_keys import keys
 import rlp
 import trio
 
+from ddht._utils import humanize_node_id
 from ddht.abc import NodeDBAPI
 from ddht.base_message import BaseMessage, InboundMessage, OutboundMessage
 from ddht.encryption import aesgcm_decrypt
@@ -36,9 +37,9 @@ RANDOM_ENCRYPTED_DATA_SIZE = 12
 
 
 class SessionStatus(enum.Enum):
-    BEFORE = enum.auto()
-    DURING = enum.auto()
-    AFTER = enum.auto()
+    BEFORE = "|"
+    DURING = "~"
+    AFTER = "-"
 
 
 class BaseSession(SessionAPI):
@@ -82,6 +83,27 @@ class BaseSession(SessionAPI):
 
         self._inbound_message_send_channel = inbound_message_send_channel
         self._outbound_envelope_send_channel = outbound_envelope_send_channel
+
+    def __str__(self) -> str:
+        if self.is_initiator:
+            connector = f"-{self._status.value}->"
+        else:
+            connector = f"<-{self._status.value}-"
+
+        if self.is_after_handshake:
+            remote_display = (
+                f"{humanize_node_id(self.remote_node_id)}@{self.remote_endpoint}"
+            )
+        else:
+            remote_display = f"UNKNOWN@{self.remote_endpoint}"
+
+        return (
+            "Session["
+            f"{humanize_node_id(self._local_node_id)}"
+            f"{connector}"
+            f"{remote_display}"
+            "]"
+        )
 
     @property
     def is_before_handshake(self) -> bool:
