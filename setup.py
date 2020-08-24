@@ -10,10 +10,11 @@ extras_require = {
         "factory-boy==2.12.0",
         "hypothesis>=4.45.1,<5",
         "pexpect==4.8.0",
-        "pytest==5.4.1",
+        "pytest==6.0.1",
+        "pytest-randomly>=3.1.0,<3.2",
         "pytest-trio>=0.5.2,<0.6",
-        "pytest-xdist",
-        "tox==3.14.6",
+        "pytest-xdist==2.0.0",
+        "tox==3.19.0",
     ],
     "lint": [
         "black==19.10b0",
@@ -71,6 +72,8 @@ setup(
         "trio>=0.13.0,<0.14",
         "trio-typing>=0.3.0,<0.4",
         "upnpclient>=0.0.8,<1",
+        # TODO: this should be removed once the `py-trie` requirements have been updated.
+        "typing-extensions==3.7.4.2",
     ],
     python_requires=">=3.8, <4",
     extras_require=extras_require,
