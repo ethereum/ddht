@@ -15,7 +15,7 @@ class EndpointFactory(factory.Factory):  # type: ignore
     ip_address = factory.LazyFunction(
         lambda: socket.inet_aton(factory.Faker("ipv4").generate({}))
     )
-    port = factory.Faker("pyint", min_value=0, max_value=65535)
+    port = factory.Faker("pyint", min_value=1024, max_value=65535)
 
     @classmethod
     def localhost(cls, *args: Any, **kwargs: Any) -> Endpoint:
