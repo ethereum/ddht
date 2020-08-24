@@ -3,6 +3,7 @@ from typing import NamedTuple
 
 from async_service import Service
 from eth_utils import ValidationError
+import trio
 from trio.abc import ReceiveChannel, SendChannel
 
 from ddht.datagram import InboundDatagram, OutboundDatagram
@@ -69,9 +70,16 @@ class EnvelopeDecoder(Service):
                             f"Failed to decode a packet from {endpoint}", exc_info=True
                         )
                     else:
-                        await self._inbound_envelope_send_channel.send(
-                            InboundEnvelope(packet, endpoint)
-                        )
+                        try:
+                            await self._inbound_envelope_send_channel.send(
+                                InboundEnvelope(packet, endpoint)
+                            )
+                        except trio.BrokenResourceError:
+                            self.logger.debug(
+                                "EnvelopeDecoder exiting due to `trio.BrokenResourceError`"
+                            )
+                            self.manager.cancel()
+                            return
 
 
 class EnvelopeEncoder(Service):
@@ -97,4 +105,13 @@ class EnvelopeEncoder(Service):
                     self.logger.debug(
                         f"Encoded {packet.__class__.__name__} for {endpoint}"
                     )
-                    await self._outbound_datagram_send_channel.send(outbound_datagram)
+                    try:
+                        await self._outbound_datagram_send_channel.send(
+                            outbound_datagram
+                        )
+                    except trio.BrokenResourceError:
+                        self.logger.debug(
+                            "EnvelopeEncoder exiting due to `trio.BrokenResourceError`"
+                        )
+                        self.manager.cancel()
+                        return

@@ -5,7 +5,7 @@ from ddht.base_message import InboundMessage, OutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.event import Event
 from ddht.v5_1.abc import EventsAPI, SessionAPI
-from ddht.v5_1.envelope import InboundEnvelope
+from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import (
     FindNodeMessage,
     FoundNodesMessage,
@@ -28,6 +28,12 @@ class Events(EventsAPI):
         )
         self.session_timeout: EventAPI[SessionAPI] = Event("session.timeout")
 
+        self.packet_sent: EventAPI[Tuple[SessionAPI, OutboundEnvelope]] = Event(
+            "session.packet.sent"
+        )
+        self.packet_received: EventAPI[Tuple[SessionAPI, InboundEnvelope]] = Event(
+            "session.packet.received"
+        )
         self.packet_discarded: EventAPI[Tuple[SessionAPI, InboundEnvelope]] = Event(
             "session.packet.discarded"
         )

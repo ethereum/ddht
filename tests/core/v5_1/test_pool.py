@@ -4,7 +4,6 @@ import trio
 from ddht.tools.driver import Network
 from ddht.tools.factories.endpoint import EndpointFactory
 from ddht.tools.factories.node_id import NodeIDFactory
-from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 from ddht.v5_1.events import Events
 from ddht.v5_1.exceptions import SessionNotFound
 from ddht.v5_1.session import SessionInitiator, SessionRecipient
@@ -125,43 +124,3 @@ async def test_pool_get_session_by_endpoint(network, initiator, pool, events):
     assert session_f not in endpoint_matches
     assert session_g not in endpoint_matches
     assert session_h not in endpoint_matches
-
-
-@pytest.mark.trio
-async def test_pool_get_idle_sessions(autojump_clock, network, initiator, pool):
-    endpoint = EndpointFactory()
-
-    # A: One with an incomplete handshake
-    remote_a = network.node(endpoint=endpoint)
-    session_a = pool.initiate_session(endpoint, remote_a.node_id)
-
-    # B: One with a complete handshake
-    driver_b = network.session_pair(initiator)
-    await driver_b.handshake()
-    session_b = driver_b.initiator.session
-
-    # sleep a little
-    await trio.sleep(SESSION_IDLE_TIMEOUT - 1)
-
-    # Now two more that won't be timed out
-    # C: One with an incomplete handshake
-    remote_c = network.node(endpoint=endpoint)
-    pool.initiate_session(endpoint, remote_c.node_id)
-
-    # D: One with a complete handshake
-    driver_d = network.session_pair(initiator)
-    await driver_d.handshake()
-
-    # sleep a little more
-    await trio.sleep(2)
-
-    timed_out_sessions = pool.get_idle_sesssions()
-
-    assert len(timed_out_sessions) == 2
-    assert session_a in timed_out_sessions
-    assert session_b in timed_out_sessions
-
-    # now time them all out.
-    await trio.sleep(SESSION_IDLE_TIMEOUT)
-
-    assert len(pool.get_idle_sesssions()) == 4
