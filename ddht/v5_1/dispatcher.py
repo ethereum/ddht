@@ -1,5 +1,6 @@
 import collections
 from contextlib import contextmanager
+import functools
 import logging
 import secrets
 from typing import (
@@ -17,11 +18,12 @@ from async_generator import asynccontextmanager
 from async_service import Service
 import trio
 
-from ddht.abc import NodeDBAPI
+from ddht.abc import EventAPI, NodeDBAPI
 from ddht.base_message import (
     AnyInboundMessage,
     AnyOutboundMessage,
     InboundMessage,
+    OutboundMessage,
     TMessage,
 )
 from ddht.endpoint import Endpoint
@@ -31,7 +33,19 @@ from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope
 from ddht.v5_1.events import Events
-from ddht.v5_1.messages import PingMessage, PongMessage, v51_registry
+from ddht.v5_1.messages import (
+    FindNodeMessage,
+    FoundNodesMessage,
+    PingMessage,
+    PongMessage,
+    RegisterTopicMessage,
+    RegistrationConfirmationMessage,
+    TalkRequestMessage,
+    TalkResponseMessage,
+    TicketMessage,
+    TopicQueryMessage,
+    v51_registry,
+)
 
 
 class _Subcription(NamedTuple):
@@ -45,6 +59,64 @@ def get_random_request_id() -> int:
 
 
 MAX_REQUEST_ID_ATTEMPTS = 3
+
+
+def _get_event_for_outbound_message(
+    events: EventsAPI, message: OutboundMessage[TMessage],
+) -> EventAPI[OutboundMessage[TMessage]]:
+    message_type = type(message.message)
+
+    if message_type is PingMessage:
+        return events.ping_sent
+    elif message_type is PongMessage:
+        return events.pong_sent
+    elif message_type is FindNodeMessage:
+        return events.find_nodes_sent
+    elif message_type is FoundNodesMessage:
+        return events.found_nodes_sent
+    elif message_type is TalkRequestMessage:
+        return events.talk_request_sent
+    elif message_type is TalkResponseMessage:
+        return events.talk_response_sent
+    elif message_type is RegisterTopicMessage:
+        return events.register_topic_sent
+    elif message_type is TicketMessage:
+        return events.ticket_sent
+    elif message_type is RegistrationConfirmationMessage:
+        return events.registration_confirmation_sent
+    elif message_type is TopicQueryMessage:
+        return events.topic_query_sent
+    else:
+        raise Exception(f"Unhandled message type: {message_type}")
+
+
+def _get_event_for_inbound_message(
+    events: EventsAPI, message: InboundMessage[TMessage]
+) -> EventAPI[InboundMessage[TMessage]]:
+    message_type = type(message.message)
+
+    if message_type is PingMessage:
+        return events.ping_received
+    elif message_type is PongMessage:
+        return events.pong_received
+    elif message_type is FindNodeMessage:
+        return events.find_nodes_received
+    elif message_type is FoundNodesMessage:
+        return events.found_nodes_received
+    elif message_type is TalkRequestMessage:
+        return events.talk_request_received
+    elif message_type is TalkResponseMessage:
+        return events.talk_response_received
+    elif message_type is RegisterTopicMessage:
+        return events.register_topic_received
+    elif message_type is TicketMessage:
+        return events.ticket_received
+    elif message_type is RegistrationConfirmationMessage:
+        return events.registration_confirmation_received
+    elif message_type is TopicQueryMessage:
+        return events.topic_query_received
+    else:
+        raise Exception(f"Unhandled message type: {message_type}")
 
 
 class Dispatcher(Service, DispatcherAPI):
@@ -110,25 +182,21 @@ class Dispatcher(Service, DispatcherAPI):
                             "inbound envelope %s dispatched to %s", envelope, session,
                         )
 
-    async def trigger_event_for_outbound_message(
-        self, message: AnyOutboundMessage
-    ) -> None:
-        message_type = type(message.message)
-        if message_type is PingMessage:
-            await self._events.ping_sent.trigger(message)
-        elif message_type is PongMessage:
-            await self._events.pong_sent.trigger(message)
-        else:
-            raise Exception(f"Unhandled message type: {message_type}")
-
     async def _handle_outbound_messages(
         self, receive_channel: trio.abc.ReceiveChannel[AnyOutboundMessage],
     ) -> None:
+        @functools.lru_cache(16)
+        def get_event(
+            message: OutboundMessage[TMessage],
+        ) -> EventAPI[OutboundMessage[TMessage]]:
+            return _get_event_for_outbound_message(self._events, message)
+
         async with trio.open_nursery() as nursery:
             async with receive_channel:
                 async for message in receive_channel:
                     # trigger Event
-                    await self.trigger_event_for_outbound_message(message)
+                    event = get_event(message)
+                    await event.trigger(message)
 
                     # feed sessions
                     sessions = self._get_sessions_for_outbound_message(message)
@@ -138,24 +206,20 @@ class Dispatcher(Service, DispatcherAPI):
                             "outbound message %s dispatched to %s", message, session
                         )
 
-    async def trigger_event_for_inbound_message(
-        self, message: AnyInboundMessage
-    ) -> None:
-        message_type = type(message.message)
-        if message_type is PingMessage:
-            await self._events.ping_received.trigger(message)
-        elif message_type is PongMessage:
-            await self._events.pong_received.trigger(message)
-        else:
-            raise Exception(f"Unhandled message type: {message_type}")
-
     async def _handle_inbound_messages(
         self, receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage],
     ) -> None:
+        @functools.lru_cache(16)
+        def get_event(
+            message: InboundMessage[TMessage],
+        ) -> EventAPI[InboundMessage[TMessage]]:
+            return _get_event_for_inbound_message(self._events, message)
+
         async with receive_channel:
             async for message in receive_channel:
                 # trigger Event
-                await self.trigger_event_for_inbound_message(message)
+                event = get_event(message)
+                await event.trigger(message)
 
                 # feed subscriptions
                 message_id = self._registry.get_message_id(type(message.message))
