@@ -1,8 +1,5 @@
 from async_service import background_trio_service
 from eth.db.backends.memory import MemoryDB
-from eth_utils.toolz import sliding_window
-from hypothesis import given
-from hypothesis import strategies as st
 import pytest
 import pytest_trio
 import trio
@@ -28,7 +25,6 @@ from ddht.v5.routing_table_manager import (
     PingHandlerService,
     PingSenderService,
     iter_closest_nodes,
-    partition_enr_indices_by_size,
 )
 
 
@@ -411,30 +407,6 @@ async def test_send_endpoint_vote(
     endpoint_vote = endpoint_vote_channels[1].receive_nowait()
     assert endpoint_vote.endpoint == fake_local_endpoint
     assert endpoint_vote.node_id == inbound_message.sender_node_id
-
-
-@given(
-    sizes=st.lists(st.integers(min_value=1)), max_size=st.integers(min_value=1),
-)
-def test_enr_partitioning(sizes, max_size):
-    partitions = partition_enr_indices_by_size(sizes, max_size)
-    indices = [index for partition in partitions for index in partition]
-    dropped_indices = tuple(
-        index for index, size in enumerate(sizes) if size > max_size
-    )
-
-    assert len(indices) == len(set(indices))
-    assert set(indices) == set(range(len(sizes))) - set(dropped_indices)
-    assert all(index1 < index2 for index1, index2 in sliding_window(2, indices))
-
-    partitioned_sizes = tuple(
-        tuple(sizes[index] for index in partition) for partition in partitions
-    )
-    assert all(sum(partition) <= max_size for partition in partitioned_sizes)
-    assert all(
-        sum(partition) + next_partition[0] > max_size
-        for partition, next_partition in sliding_window(2, partitioned_sizes)
-    )
 
 
 def test_closest_nodes_empty(empty_routing_table):
