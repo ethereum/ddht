@@ -384,7 +384,10 @@ class SessionInitiator(BaseSession):
             ephemeral_public_key=ephemeral_public_key,
             record=(
                 local_enr
-                if packet.auth_data.enr_sequence_number < local_enr.sequence_number
+                if (
+                    packet.auth_data.enr_sequence_number < local_enr.sequence_number
+                    or packet.auth_data.enr_sequence_number == 0
+                )
                 else None
             ),
         )
