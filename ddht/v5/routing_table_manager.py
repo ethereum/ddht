@@ -6,10 +6,9 @@ import time
 from typing import Generator, List, Optional, Sequence, Set, Tuple
 
 from async_service import Service
-from eth_utils import encode_hex, to_tuple
+from eth_utils import encode_hex
 from eth_utils.toolz import take
 from mypy_extensions import TypedDict
-import rlp
 import trio
 from trio.abc import SendChannel
 
@@ -22,7 +21,7 @@ from ddht.base_message import (
     OutboundMessage,
 )
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
+from ddht.enr import ENR, partition_enrs
 from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
 from ddht.typing import NodeID
@@ -38,47 +37,6 @@ from ddht.v5.constants import (
 )
 from ddht.v5.endpoint_tracker import EndpointVote
 from ddht.v5.messages import FindNodeMessage, NodesMessage, PingMessage, PongMessage
-
-
-@to_tuple
-def partition_enr_indices_by_size(
-    enr_sizes: Sequence[int], max_payload_size: int
-) -> Generator[Tuple[int, ...], None, None]:
-    current_partition: Tuple[int, ...] = ()
-    current_partition_size = 0
-    for index, size in enumerate(enr_sizes):
-        if size > max_payload_size:
-            continue
-
-        if current_partition_size + size <= max_payload_size:
-            current_partition = current_partition + (index,)
-            current_partition_size += size
-        else:
-            yield current_partition
-            current_partition = (index,)
-            current_partition_size = size
-
-    if current_partition:
-        yield current_partition
-
-
-def partition_enrs(
-    enrs: Sequence[ENR], max_payload_size: int
-) -> Tuple[Tuple[ENR, ...], ...]:
-    """
-    Partition a list of ENRs to groups to be sent in separate NODES messages.
-
-    The goal is to send as few messages as possible, but each message must not exceed the maximum
-    allowed size.
-
-    If a single ENR exceeds the maximum payload size, it will be dropped.
-    """
-    serialized_enrs = tuple(rlp.encode(enr) for enr in enrs)
-    enr_sizes = tuple(len(serialized_enr) for serialized_enr in serialized_enrs)
-    partitioned_enr_indices = partition_enr_indices_by_size(enr_sizes, max_payload_size)
-    return tuple(
-        tuple(enrs[index] for index in indices) for indices in partitioned_enr_indices
-    )
 
 
 class BaseRoutingTableManagerComponent(Service):

@@ -18,7 +18,7 @@ from eth_utils import ValidationError, to_dict
 from eth_utils.toolz import cons, interleave
 import rlp
 from rlp.exceptions import DeserializationError
-from rlp.sedes import Binary, big_endian_int, binary, raw
+from rlp.sedes import Binary, CountableList, big_endian_int, binary, raw
 
 from ddht.constants import ENR_REPR_PREFIX, IP_V4_SIZE, IP_V6_SIZE, MAX_ENR_SIZE
 from ddht.identity_schemes import (
@@ -356,3 +356,42 @@ ENR_KEY_SEDES_MAPPING = {
 
 # Must use raw for values with an unknown key as they may be lists or individual values.
 FALLBACK_ENR_VALUE_SEDES = raw
+
+
+def _partition_enrs(
+    enrs: Sequence[ENR], max_payload_size: int
+) -> Iterable[Tuple[ENR, ...]]:
+    num_records = len(enrs)
+    min_records = max_payload_size // MAX_ENR_SIZE
+    left = 0
+    right = min_records
+
+    while right < num_records:
+        encoded = rlp.encode(enrs[left : right + 1], CountableList(ENRSedes))
+        if len(encoded) > max_payload_size:
+            yield tuple(enrs[left:right])
+            left, right = right, right + min_records
+            continue
+        else:
+            right += 1
+
+    yield tuple(enrs[left:right])
+
+
+def partition_enrs(
+    enrs: Sequence[ENR], max_payload_size: int
+) -> Tuple[Tuple[ENR, ...], ...]:
+    """
+    Partition a list of ENRs to groups to be sent in separate NODES messages.
+
+    The goal is to send as few messages as possible, but each message must not exceed the maximum
+    allowed size.
+
+    If a single ENR exceeds the maximum payload size, it will be dropped.
+    """
+    if max_payload_size < MAX_ENR_SIZE:
+        raise ValueError(
+            "Cannot parition ENR records under the max singular ENR record size"
+        )
+
+    return tuple(_partition_enrs(enrs, max_payload_size))
