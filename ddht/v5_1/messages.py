@@ -42,7 +42,7 @@ class FindNodeMessage(BaseMessage):
 
 
 @v51_registry.register
-class NodesMessage(BaseMessage):
+class FoundNodesMessage(BaseMessage):
     message_type = 4
 
     fields = (
@@ -53,21 +53,21 @@ class NodesMessage(BaseMessage):
 
 
 @v51_registry.register
-class TalkReqMessage(BaseMessage):
+class TalkRequestMessage(BaseMessage):
     message_type = 5
 
     fields = (("request_id", big_endian_int), ("protocol", binary), ("request", binary))
 
 
 @v51_registry.register
-class TalkRespMessage(BaseMessage):
+class TalkResponseMessage(BaseMessage):
     message_type = 6
 
     fields = (("request_id", big_endian_int), ("response", binary))
 
 
 @v51_registry.register
-class RegTopicMessage(BaseMessage):
+class RegisterTopicMessage(BaseMessage):
     message_type = 7
 
     fields = (
@@ -90,7 +90,7 @@ class TicketMessage(BaseMessage):
 
 
 @v51_registry.register
-class RegConfirmationMessage(BaseMessage):
+class RegistrationConfirmationMessage(BaseMessage):
     message_type = 9
 
     fields = (("request_id", big_endian_int), ("topic", binary))

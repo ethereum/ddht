@@ -17,7 +17,18 @@ from ddht.base_message import (
 from ddht.endpoint import Endpoint
 from ddht.typing import NodeID, SessionKeys
 from ddht.v5_1.envelope import InboundEnvelope
-from ddht.v5_1.messages import PingMessage, PongMessage
+from ddht.v5_1.messages import (
+    FindNodeMessage,
+    FoundNodesMessage,
+    PingMessage,
+    PongMessage,
+    RegisterTopicMessage,
+    RegistrationConfirmationMessage,
+    TalkRequestMessage,
+    TalkResponseMessage,
+    TicketMessage,
+    TopicQueryMessage,
+)
 
 
 class SessionAPI(ABC):
@@ -85,6 +96,34 @@ class EventsAPI(ABC):
 
     pong_sent: EventAPI[OutboundMessage[PongMessage]]
     pong_received: EventAPI[InboundMessage[PongMessage]]
+
+    find_nodes_sent: EventAPI[OutboundMessage[FindNodeMessage]]
+    find_nodes_received: EventAPI[InboundMessage[FindNodeMessage]]
+
+    found_nodes_sent: EventAPI[OutboundMessage[FoundNodesMessage]]
+    found_nodes_received: EventAPI[InboundMessage[FoundNodesMessage]]
+
+    talk_request_sent: EventAPI[OutboundMessage[TalkRequestMessage]]
+    talk_request_received: EventAPI[InboundMessage[TalkRequestMessage]]
+
+    talk_response_sent: EventAPI[OutboundMessage[TalkResponseMessage]]
+    talk_response_received: EventAPI[InboundMessage[TalkResponseMessage]]
+
+    register_topic_sent: EventAPI[OutboundMessage[RegisterTopicMessage]]
+    register_topic_received: EventAPI[InboundMessage[RegisterTopicMessage]]
+
+    ticket_sent: EventAPI[OutboundMessage[TicketMessage]]
+    ticket_received: EventAPI[InboundMessage[TicketMessage]]
+
+    registration_confirmation_sent: EventAPI[
+        OutboundMessage[RegistrationConfirmationMessage]
+    ]
+    registration_confirmation_received: EventAPI[
+        InboundMessage[RegistrationConfirmationMessage]
+    ]
+
+    topic_query_sent: EventAPI[OutboundMessage[TopicQueryMessage]]
+    topic_query_received: EventAPI[InboundMessage[TopicQueryMessage]]
 
 
 class PoolAPI(ABC):

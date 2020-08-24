@@ -6,7 +6,18 @@ from ddht.endpoint import Endpoint
 from ddht.event import Event
 from ddht.v5_1.abc import EventsAPI, SessionAPI
 from ddht.v5_1.envelope import InboundEnvelope
-from ddht.v5_1.messages import PingMessage, PongMessage
+from ddht.v5_1.messages import (
+    FindNodeMessage,
+    FoundNodesMessage,
+    PingMessage,
+    PongMessage,
+    RegisterTopicMessage,
+    RegistrationConfirmationMessage,
+    TalkRequestMessage,
+    TalkResponseMessage,
+    TicketMessage,
+    TopicQueryMessage,
+)
 
 
 class Events(EventsAPI):
@@ -39,4 +50,60 @@ class Events(EventsAPI):
         )
         self.pong_received: EventAPI[InboundMessage[PongMessage]] = Event(
             "messages.pong.received"
+        )
+
+        self.find_nodes_sent: EventAPI[OutboundMessage[FindNodeMessage]] = Event(
+            "messages.find_nodes.sent"
+        )
+        self.find_nodes_received: EventAPI[InboundMessage[FindNodeMessage]] = Event(
+            "messages.find_nodes.received"
+        )
+
+        self.found_nodes_sent: EventAPI[OutboundMessage[FoundNodesMessage]] = Event(
+            "messages.found_nodes.sent"
+        )
+        self.found_nodes_received: EventAPI[InboundMessage[FoundNodesMessage]] = Event(
+            "messages.found_nodes.received"
+        )
+
+        self.talk_request_sent: EventAPI[OutboundMessage[TalkRequestMessage]] = Event(
+            "messages.talk_request.sent"
+        )
+        self.talk_request_received: EventAPI[
+            InboundMessage[TalkRequestMessage]
+        ] = Event("messages.talk_request.received")
+
+        self.talk_response_sent: EventAPI[OutboundMessage[TalkResponseMessage]] = Event(
+            "messages.talk_response.sent"
+        )
+        self.talk_response_received: EventAPI[
+            InboundMessage[TalkResponseMessage]
+        ] = Event("messages.talk_response.received")
+
+        self.register_topic_sent: EventAPI[
+            OutboundMessage[RegisterTopicMessage]
+        ] = Event("messages.register_topic.sent")
+        self.register_topic_received: EventAPI[
+            InboundMessage[RegisterTopicMessage]
+        ] = Event("messages.register_topic.received")
+
+        self.ticket_sent: EventAPI[OutboundMessage[TicketMessage]] = Event(
+            "messages.ticket.sent"
+        )
+        self.ticket_received: EventAPI[InboundMessage[TicketMessage]] = Event(
+            "messages.ticket.received"
+        )
+
+        self.registration_confirmation_sent: EventAPI[
+            OutboundMessage[RegistrationConfirmationMessage]
+        ] = Event("messages.registration_confirmation.sent")
+        self.registration_confirmation_received: EventAPI[
+            InboundMessage[RegistrationConfirmationMessage]
+        ] = Event("messages.registration_confirmation.received")
+
+        self.topic_query_sent: EventAPI[OutboundMessage[TopicQueryMessage]] = Event(
+            "messages.topic_query.sent"
+        )
+        self.topic_query_received: EventAPI[InboundMessage[TopicQueryMessage]] = Event(
+            "messages.topic_query.received"
         )
