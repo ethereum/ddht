@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import AsyncContextManager, ContextManager, Optional, Tuple, Type
+from typing import AsyncContextManager, ContextManager, Optional, Sequence, Tuple, Type
 import uuid
 
 from async_service import ServiceAPI
 from eth_keys import keys
 import trio
 
-from ddht.abc import EventAPI
+from ddht.abc import ENRManagerAPI, EventAPI
 from ddht.base_message import (
     AnyOutboundMessage,
     InboundMessage,
@@ -15,6 +15,7 @@ from ddht.base_message import (
     TMessage,
 )
 from ddht.endpoint import Endpoint
+from ddht.enr import ENR
 from ddht.typing import NodeID, SessionKeys
 from ddht.v5_1.envelope import InboundEnvelope
 from ddht.v5_1.messages import (
@@ -182,4 +183,114 @@ class DispatcherAPI(ServiceAPI):
     ) -> AsyncContextManager[
         trio.abc.ReceiveChannel[InboundMessage[TMessage]]
     ]:  # noqa: E501
+        ...
+
+
+class ClientAPI(ServiceAPI):
+    enr_manager: ENRManagerAPI
+    events: EventsAPI
+    message_dispatcher: DispatcherAPI
+    pool: PoolAPI
+
+    @abstractmethod
+    async def wait_listening(self) -> None:
+        ...
+
+    @abstractmethod
+    async def send_ping(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        request_id: Optional[int] = None,
+    ) -> int:
+        ...
+
+    async def send_pong(
+        self, dest_endpoint: Endpoint, dest_node_id: NodeID, *, request_id: int,
+    ) -> None:
+        ...
+
+    async def send_find_nodes(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        distance: int,
+        request_id: Optional[int] = None,
+    ) -> int:
+        ...
+
+    async def send_found_nodes(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        enrs: Sequence[ENR],
+        request_id: int,
+    ) -> int:
+        ...
+
+    async def send_talk_request(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        protocol: bytes,
+        request: bytes,
+        request_id: Optional[int] = None,
+    ) -> int:
+        ...
+
+    async def send_talk_response(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        response: bytes,
+        request_id: int,
+    ) -> None:
+        ...
+
+    async def send_register_topic(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        topic: bytes,
+        enr: ENR,
+        ticket: bytes = b"",
+        request_id: Optional[int] = None,
+    ) -> int:
+        ...
+
+    async def send_ticket(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        ticket: bytes,
+        wait_time: int,
+        request_id: int,
+    ) -> None:
+        ...
+
+    async def send_registration_confirmation(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        topic: bytes,
+        request_id: int,
+    ) -> None:
+        ...
+
+    async def send_topic_query(
+        self,
+        dest_endpoint: Endpoint,
+        dest_node_id: NodeID,
+        *,
+        topic: bytes,
+        request_id: int,
+    ) -> None:
         ...
