@@ -1,14 +1,14 @@
 from contextlib import contextmanager, nullcontext
 import logging
 import socket
-from typing import Iterator, Optional, Sequence
+from typing import Collection, Iterator, List, Optional, Sequence, Tuple
 
 from async_service import Service
 from eth_keys import keys
 import trio
 
 from ddht.abc import NodeDBAPI
-from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
+from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, InboundMessage
 from ddht.datagram import (
     DatagramReceiver,
     DatagramSender,
@@ -21,7 +21,7 @@ from ddht.enr_manager import ENRManager
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, EventsAPI
-from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE
+from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.dispatcher import Dispatcher
 from ddht.v5_1.envelope import (
     EnvelopeDecoder,
@@ -168,7 +168,7 @@ class Client(Service, ClientAPI):
     # Message API
     #
     @contextmanager
-    def get_request_id(
+    def _get_request_id(
         self, node_id: NodeID, request_id: Optional[int] = None
     ) -> Iterator[int]:
         if request_id is None:
@@ -180,50 +180,44 @@ class Client(Service, ClientAPI):
             yield message_request_id
 
     async def send_ping(
-        self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
-        *,
-        request_id: Optional[int] = None,
+        self, endpoint: Endpoint, node_id: NodeID, *, request_id: Optional[int] = None,
     ) -> int:
-        with self.get_request_id(dest_node_id, request_id) as message_request_id:
+        with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 PingMessage(message_request_id, self.enr_manager.enr.sequence_number),
-                dest_endpoint,
-                dest_node_id,
+                endpoint,
+                node_id,
             )
             await self.message_dispatcher.send_message(message)
 
         return message_request_id
 
     async def send_pong(
-        self, dest_endpoint: Endpoint, dest_node_id: NodeID, *, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, request_id: int,
     ) -> None:
         message = AnyOutboundMessage(
             PongMessage(
                 request_id,
                 self.enr_manager.enr.sequence_number,
-                dest_endpoint.ip_address,
-                dest_endpoint.port,
+                endpoint.ip_address,
+                endpoint.port,
             ),
-            dest_endpoint,
-            dest_node_id,
+            endpoint,
+            node_id,
         )
         await self.message_dispatcher.send_message(message)
 
     async def send_find_nodes(
         self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
+        endpoint: Endpoint,
+        node_id: NodeID,
         *,
-        distance: int,
+        distances: Collection[int],
         request_id: Optional[int] = None,
     ) -> int:
-        with self.get_request_id(dest_node_id, request_id) as message_request_id:
+        with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
-                FindNodeMessage(message_request_id, distance),
-                dest_endpoint,
-                dest_node_id,
+                FindNodeMessage(message_request_id, distances), endpoint, node_id,
             )
             await self.message_dispatcher.send_message(message)
 
@@ -231,8 +225,8 @@ class Client(Service, ClientAPI):
 
     async def send_found_nodes(
         self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
+        endpoint: Endpoint,
+        node_id: NodeID,
         *,
         enrs: Sequence[ENR],
         request_id: int,
@@ -243,9 +237,7 @@ class Client(Service, ClientAPI):
         num_batches = len(enr_batches)
         for batch in enr_batches:
             message = AnyOutboundMessage(
-                FoundNodesMessage(request_id, num_batches, batch,),
-                dest_endpoint,
-                dest_node_id,
+                FoundNodesMessage(request_id, num_batches, batch,), endpoint, node_id,
             )
             await self.message_dispatcher.send_message(message)
 
@@ -253,51 +245,46 @@ class Client(Service, ClientAPI):
 
     async def send_talk_request(
         self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
+        endpoint: Endpoint,
+        node_id: NodeID,
         *,
         protocol: bytes,
         request: bytes,
         request_id: Optional[int] = None,
     ) -> int:
-        with self.get_request_id(dest_node_id, request_id) as message_request_id:
+        with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 TalkRequestMessage(message_request_id, protocol, request),
-                dest_endpoint,
-                dest_node_id,
+                endpoint,
+                node_id,
             )
             await self.message_dispatcher.send_message(message)
 
         return message_request_id
 
     async def send_talk_response(
-        self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
-        *,
-        response: bytes,
-        request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, response: bytes, request_id: int,
     ) -> None:
         message = AnyOutboundMessage(
-            TalkResponseMessage(request_id, response,), dest_endpoint, dest_node_id,
+            TalkResponseMessage(request_id, response,), endpoint, node_id,
         )
         await self.message_dispatcher.send_message(message)
 
     async def send_register_topic(
         self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
+        endpoint: Endpoint,
+        node_id: NodeID,
         *,
         topic: bytes,
         enr: ENR,
         ticket: bytes = b"",
         request_id: Optional[int] = None,
     ) -> int:
-        with self.get_request_id(dest_node_id, request_id) as message_request_id:
+        with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 RegisterTopicMessage(message_request_id, topic, enr, ticket),
-                dest_endpoint,
-                dest_node_id,
+                endpoint,
+                node_id,
             )
             await self.message_dispatcher.send_message(message)
 
@@ -305,42 +292,106 @@ class Client(Service, ClientAPI):
 
     async def send_ticket(
         self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
+        endpoint: Endpoint,
+        node_id: NodeID,
         *,
         ticket: bytes,
         wait_time: int,
         request_id: int,
     ) -> None:
         message = AnyOutboundMessage(
-            TicketMessage(request_id, ticket, wait_time), dest_endpoint, dest_node_id,
+            TicketMessage(request_id, ticket, wait_time), endpoint, node_id,
         )
         await self.message_dispatcher.send_message(message)
 
     async def send_registration_confirmation(
-        self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
-        *,
-        topic: bytes,
-        request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: int,
     ) -> None:
         message = AnyOutboundMessage(
-            RegistrationConfirmationMessage(request_id, topic),
-            dest_endpoint,
-            dest_node_id,
+            RegistrationConfirmationMessage(request_id, topic), endpoint, node_id,
         )
         await self.message_dispatcher.send_message(message)
 
     async def send_topic_query(
         self,
-        dest_endpoint: Endpoint,
-        dest_node_id: NodeID,
+        endpoint: Endpoint,
+        node_id: NodeID,
         *,
         topic: bytes,
-        request_id: int,
-    ) -> None:
-        message = AnyOutboundMessage(
-            TopicQueryMessage(request_id, topic), dest_endpoint, dest_node_id,
-        )
-        await self.message_dispatcher.send_message(message)
+        request_id: Optional[int] = None,
+    ) -> int:
+        with self._get_request_id(node_id, request_id) as message_request_id:
+            message = AnyOutboundMessage(
+                TopicQueryMessage(message_request_id, topic), endpoint, node_id,
+            )
+            await self.message_dispatcher.send_message(message)
+        return message_request_id
+
+    #
+    # Request/Response API
+    #
+    async def ping(
+        self, endpoint: Endpoint, node_id: NodeID
+    ) -> InboundMessage[PongMessage]:
+        with self._get_request_id(node_id) as request_id:
+            request = AnyOutboundMessage(
+                PingMessage(request_id, self.enr_manager.enr.sequence_number),
+                endpoint,
+                node_id,
+            )
+            async with self.message_dispatcher.subscribe_request(
+                request, PongMessage
+            ) as subscription:
+                with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
+                    return await subscription.receive()
+
+    async def find_nodes(
+        self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int],
+    ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
+        with self._get_request_id(node_id) as request_id:
+            request = AnyOutboundMessage(
+                FindNodeMessage(request_id, distances), endpoint, node_id,
+            )
+            async with self.message_dispatcher.subscribe_request(
+                request, FoundNodesMessage
+            ) as subscription:
+                with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
+                    # TODO: Adherence to the spec dictates that we validate
+                    # these ENR records are indeed at `distance` from the
+                    # target node_id
+                    head_response = await subscription.receive()
+                    total = head_response.message.total
+                    if total == 1:
+                        return (head_response,)
+                    elif total > 1:
+                        tail_responses: List[InboundMessage[FoundNodesMessage]] = []
+                        for _ in range(total - 1):
+                            tail_responses.append(await subscription.receive())
+                        return (head_response,) + tuple(tail_responses)
+                    else:
+                        # TODO: this code path needs to be excercised and
+                        # probably replaced with some sort of
+                        # `SessionTerminated` exception.
+                        raise Exception("Invalid `total` counter in response")
+
+    async def talk(
+        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, request: bytes
+    ) -> InboundMessage[TalkResponseMessage]:
+        raise NotImplementedError
+
+    async def register_topic(
+        self,
+        endpoint: Endpoint,
+        node_id: NodeID,
+        topic: bytes,
+        ticket: Optional[bytes] = None,
+    ) -> Tuple[
+        InboundMessage[TicketMessage],
+        Optional[InboundMessage[RegistrationConfirmationMessage]],
+    ]:
+        raise NotImplementedError
+
+    async def topic_query(
+        self, endpoint: Endpoint, node_id: NodeID, topic: bytes
+    ) -> InboundMessage[FoundNodesMessage]:
+        raise NotImplementedError

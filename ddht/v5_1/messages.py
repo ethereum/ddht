@@ -38,7 +38,10 @@ class PongMessage(BaseMessage):
 class FindNodeMessage(BaseMessage):
     message_type = 3
 
-    fields = (("request_id", big_endian_int), ("distance", big_endian_int))
+    fields = (
+        ("request_id", big_endian_int),
+        ("distances", CountableList(big_endian_int)),
+    )
 
 
 @v51_registry.register
