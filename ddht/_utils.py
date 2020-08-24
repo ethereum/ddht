@@ -114,9 +114,11 @@ def read_node_key_file(path: pathlib.Path) -> keys.PrivateKey:
 
 
 def get_open_port() -> int:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("", 0))
-    s.listen(1)
-    port = s.getsockname()[1]
-    s.close()
-    return port  # type: ignore
+    port: int = 0
+    while port < 1024:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+        s.close()
+    return port
