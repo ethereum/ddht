@@ -574,11 +574,11 @@ class RoutingTableManager(Service):
         )
 
         self.ping_handler_service = PingHandlerService(
-            outbound_message_send_channel=outbound_message_send_channel,  # type: ignore
+            outbound_message_send_channel=outbound_message_send_channel,
             **shared_component_kwargs,
         )
         self.find_node_handler_service = FindNodeHandlerService(
-            outbound_message_send_channel=outbound_message_send_channel,  # type: ignore
+            outbound_message_send_channel=outbound_message_send_channel,
             **shared_component_kwargs,
         )
         self.ping_sender_service = PingSenderService(
