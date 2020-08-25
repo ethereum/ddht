@@ -11,9 +11,10 @@ from ddht.endpoint import Endpoint
 from ddht.tools.driver.abc import NodeAPI
 from ddht.tools.factories.enr import ENRFactory
 from ddht.typing import NodeID
-from ddht.v5_1.abc import ClientAPI, EventsAPI
+from ddht.v5_1.abc import ClientAPI, EventsAPI, NetworkAPI
 from ddht.v5_1.client import Client
 from ddht.v5_1.events import Events
+from ddht.v5_1.network import Network
 
 
 class Node(NodeAPI):
@@ -58,3 +59,16 @@ class Node(NodeAPI):
         async with background_trio_service(client):
             await client.wait_listening()
             yield client
+
+    @asynccontextmanager
+    async def network(self) -> AsyncIterator[NetworkAPI]:
+        client = Client(
+            local_private_key=self.private_key,
+            listen_on=self.endpoint,
+            node_db=self.node_db,
+            events=self.events,
+        )
+        network = Network(client)
+        async with background_trio_service(network):
+            await client.wait_listening()
+            yield network
