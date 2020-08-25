@@ -179,10 +179,18 @@ class Dispatcher(Service, DispatcherAPI):
             async for envelope in receive_channel:
                 was_handled = False
                 for session in self._get_sessions_for_inbound_envelope(envelope):
-                    was_handled |= await session.handle_inbound_envelope(envelope)
-                    self.logger.debug(
-                        "inbound envelope %s dispatched to %s", envelope, session,
-                    )
+                    try:
+                        was_handled |= await session.handle_inbound_envelope(envelope)
+                    except trio.BrokenResourceError:
+                        self.logger.debug(
+                            "Dispatcher exiting due to trio.BrokenResourceError"
+                        )
+                        self.manager.cancel()
+                        return
+                    else:
+                        self.logger.debug(
+                            "inbound envelope %s dispatched to %s", envelope, session,
+                        )
                 if was_handled is False:
                     if envelope.packet.is_message:
                         session = self._pool.receive_session(envelope.sender_endpoint)

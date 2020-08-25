@@ -4,9 +4,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    Deque,
     Generic,
+    Iterator,
     List,
     MutableMapping,
+    Optional,
+    Tuple,
     Type,
     TypeVar,
 )
@@ -173,4 +177,48 @@ class MessageTypeRegistryAPI(MessageTypeRegistryBaseType):
 
     @abstractmethod
     def get_message_id(self, message_data_class: Type[BaseMessage]) -> int:
+        ...
+
+
+class RoutingTableAPI(ABC):
+    center_node_id: NodeID
+    bucket_size: int
+
+    @abstractmethod
+    def get_index_bucket_and_replacement_cache(
+        self, node_id: NodeID
+    ) -> Tuple[int, Deque[NodeID], Deque[NodeID]]:
+        ...
+
+    @abstractmethod
+    def update(self, node_id: NodeID) -> Optional[NodeID]:
+        ...
+
+    @abstractmethod
+    def update_bucket_unchecked(self, node_id: NodeID) -> None:
+        ...
+
+    @abstractmethod
+    def remove(self, node_id: NodeID) -> None:
+        ...
+
+    @abstractmethod
+    def get_nodes_at_log_distance(self, log_distance: int) -> Tuple[NodeID, ...]:
+        ...
+
+    @property
+    @abstractmethod
+    def is_empty(self) -> bool:
+        ...
+
+    @abstractmethod
+    def get_least_recently_updated_log_distance(self) -> int:
+        ...
+
+    @abstractmethod
+    def iter_nodes_around(self, reference_node_id: NodeID) -> Iterator[NodeID]:
+        ...
+
+    @abstractmethod
+    def iter_all_random(self) -> Iterator[NodeID]:
         ...

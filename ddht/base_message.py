@@ -48,9 +48,5 @@ class InboundMessage(Generic[TMessage]):
         )
 
 
-class AnyInboundMessage(InboundMessage[BaseMessage]):
-    pass
-
-
-class AnyOutboundMessage(OutboundMessage[BaseMessage]):
-    pass
+AnyInboundMessage = InboundMessage[BaseMessage]
+AnyOutboundMessage = OutboundMessage[BaseMessage]

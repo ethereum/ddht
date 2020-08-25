@@ -9,7 +9,7 @@ from typing import Any, Deque, Iterator, List, Optional, Tuple, Type, cast
 
 from eth_utils import big_endian_to_int, encode_hex
 
-from ddht.abc import AddressAPI, TAddress
+from ddht.abc import AddressAPI, RoutingTableAPI, TAddress
 from ddht.constants import NUM_ROUTING_TABLE_BUCKETS
 from ddht.typing import NodeID
 
@@ -96,7 +96,7 @@ def compute_log_distance(left_node_id: NodeID, right_node_id: NodeID) -> int:
     return distance.bit_length()
 
 
-class KademliaRoutingTable:
+class KademliaRoutingTable(RoutingTableAPI):
     def __init__(self, center_node_id: NodeID, bucket_size: int) -> None:
         self.logger = logging.getLogger("ddht.kademlia.KademliaRoutingTable")
         self.center_node_id = center_node_id
