@@ -33,6 +33,7 @@ from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope
 from ddht.v5_1.events import Events
+from ddht.v5_1.exceptions import SessionNotFound
 from ddht.v5_1.messages import (
     FindNodeMessage,
     FoundNodesMessage,
@@ -168,18 +169,32 @@ class Dispatcher(Service, DispatcherAPI):
         self.manager.run_daemon_task(
             self._handle_outbound_messages, self._outbound_message_receive_channel,
         )
+        self.manager.run_daemon_task(self._monitor_hanshake_completions)
         await self.manager.wait_finished()
 
     async def _handle_inbound_envelopes(
         self, receive_channel: trio.abc.ReceiveChannel[InboundEnvelope],
     ) -> None:
-        async with trio.open_nursery() as nursery:
-            async with receive_channel:
-                async for envelope in receive_channel:
-                    for session in self._get_sessions_for_inbound_envelope(envelope):
-                        nursery.start_soon(session.handle_inbound_envelope, envelope)
+        async with receive_channel:
+            async for envelope in receive_channel:
+                was_handled = False
+                for session in self._get_sessions_for_inbound_envelope(envelope):
+                    was_handled |= await session.handle_inbound_envelope(envelope)
+                    self.logger.debug(
+                        "inbound envelope %s dispatched to %s", envelope, session,
+                    )
+                if was_handled is False:
+                    if envelope.packet.is_message:
+                        session = self._pool.receive_session(envelope.sender_endpoint)
+                        await session.handle_inbound_envelope(envelope)
                         self.logger.debug(
-                            "inbound envelope %s dispatched to %s", envelope, session,
+                            "inbound envelope %s initiated new session: %s",
+                            envelope,
+                            session,
+                        )
+                    else:
+                        self.logger.debug(
+                            "discarding unhandled inbound envelope %s", envelope,
                         )
 
     async def _handle_outbound_messages(
@@ -249,8 +264,49 @@ class Dispatcher(Service, DispatcherAPI):
                         pass
 
     #
-    # Session Retrieval
+    # Session Management
     #
+    async def _monitor_hanshake_completions(self) -> None:
+        """
+        Ensure that we only ever have one fully handshaked session for any
+        given endpoint/node-id.  Anytime we find a duplicate sessions exists we
+        discard them, preferring the newly handshaked session.
+        """
+        async with self._events.session_handshake_complete.subscribe() as subscription:
+            async for session in subscription:
+                for other in self._pool.get_sessions_for_endpoint(
+                    session.remote_endpoint
+                ):
+                    if not other.is_after_handshake:
+                        continue
+                    elif other.id == session.id:
+                        continue
+                    elif other.remote_node_id != session.remote_node_id:
+                        continue
+                    else:
+                        self.logger.debug(
+                            "Newly handshaked session %s triggered discard of previous session %s",
+                            session,
+                            other,
+                        )
+                        self._pool.remove_session(other.id)
+
+    async def _monitor_session_timeout(self, session: SessionAPI) -> None:
+        """
+        Monitor for the session to timeout, removing it from the pool.
+        """
+        while self.manager.is_running:
+            await trio.sleep_until(session.timeout_at)
+
+            if session.is_timed_out:
+                try:
+                    self._pool.remove_session(session.id)
+                except SessionNotFound:
+                    break
+                else:
+                    await self._events.session_timeout.trigger(session)
+                    break
+
     def _get_sessions_for_inbound_envelope(
         self, envelope: InboundEnvelope
     ) -> Tuple[SessionAPI, ...]:
@@ -270,6 +326,7 @@ class Dispatcher(Service, DispatcherAPI):
             self.logger.debug(
                 "Inbound envelope %s initiated new session: %s", envelope, session
             )
+            self.manager.run_task(self._monitor_session_timeout, session)
             sessions = (session,)
 
         return sessions
@@ -286,6 +343,7 @@ class Dispatcher(Service, DispatcherAPI):
                 not session.is_after_handshake
                 or session.remote_node_id == message.receiver_node_id
             )
+            and not (session.is_before_handshake and session.is_recipient)
         )
 
         if not sessions:
@@ -295,6 +353,7 @@ class Dispatcher(Service, DispatcherAPI):
             self.logger.debug(
                 "Outbound message %s initiated new session: %s", message, session
             )
+            self.manager.run_task(self._monitor_session_timeout, session)
             sessions = (session,)
 
         return sessions

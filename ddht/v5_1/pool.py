@@ -12,7 +12,6 @@ from ddht.endpoint import Endpoint
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import NodeID
 from ddht.v5_1.abc import EventsAPI, PoolAPI, SessionAPI
-from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 from ddht.v5_1.envelope import OutboundEnvelope
 from ddht.v5_1.events import Events
 from ddht.v5_1.exceptions import SessionNotFound
@@ -60,20 +59,6 @@ class Pool(PoolAPI):
 
         self._sessions_by_endpoint[session.remote_endpoint].remove(session)
         return session
-
-    def get_idle_sesssions(self) -> Tuple[SessionAPI, ...]:
-        idle_at = trio.current_time() - SESSION_IDLE_TIMEOUT
-        return tuple(
-            session
-            for session in self._sessions.values()
-            if (
-                (
-                    session.is_after_handshake
-                    and session.last_message_received_at <= idle_at
-                )
-                or (session.created_at <= idle_at)
-            )
-        )
 
     def get_sessions_for_endpoint(
         self, remote_endpoint: Endpoint

@@ -25,7 +25,7 @@ from ddht.base_message import (
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.typing import NodeID, SessionKeys
-from ddht.v5_1.envelope import InboundEnvelope
+from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import (
     FindNodeMessage,
     FoundNodesMessage,
@@ -48,6 +48,12 @@ class SessionAPI(ABC):
     events: "EventsAPI"
 
     is_initiator: bool
+
+    @property
+    @abstractmethod
+    def is_recipient(self) -> bool:
+        ...
+
     created_at: float
 
     @property
@@ -60,11 +66,27 @@ class SessionAPI(ABC):
     def keys(self) -> SessionKeys:
         ...
 
+    #
+    # Timeouts
+    #
+    @property
+    @abstractmethod
+    def is_timed_out(self) -> bool:
+        ...
+
+    @property
+    @abstractmethod
+    def timeout_at(self) -> float:
+        ...
+
     @property
     @abstractmethod
     def last_message_received_at(self) -> float:
         ...
 
+    #
+    # Handshake Status
+    #
     @property
     @abstractmethod
     def is_before_handshake(self) -> bool:
@@ -80,12 +102,15 @@ class SessionAPI(ABC):
     def is_after_handshake(self) -> bool:
         ...
 
+    #
+    # Message and Envelope handlers
+    #
     @abstractmethod
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         ...
 
     @abstractmethod
-    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
+    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> bool:
         ...
 
 
@@ -94,6 +119,8 @@ class EventsAPI(ABC):
     session_handshake_complete: EventAPI[SessionAPI]
     session_timeout: EventAPI[SessionAPI]
 
+    packet_sent: EventAPI[Tuple[SessionAPI, OutboundEnvelope]]
+    packet_received: EventAPI[Tuple[SessionAPI, InboundEnvelope]]
     packet_discarded: EventAPI[Tuple[SessionAPI, InboundEnvelope]]
 
     listening: EventAPI[Endpoint]
@@ -141,10 +168,6 @@ class PoolAPI(ABC):
 
     @abstractmethod
     def remove_session(self, session_id: uuid.UUID) -> SessionAPI:
-        ...
-
-    @abstractmethod
-    def get_idle_sesssions(self) -> Tuple[SessionAPI, ...]:
         ...
 
     @abstractmethod

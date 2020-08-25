@@ -7,6 +7,7 @@ from typing import Optional, Tuple, cast
 import uuid
 
 from eth_keys import keys
+from eth_utils import ValidationError
 import rlp
 import trio
 
@@ -16,10 +17,11 @@ from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
 from ddht.encryption import aesgcm_decrypt
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
-from ddht.exceptions import DecryptionError
+from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import AES128Key, IDNonce, NodeID, Nonce, SessionKeys
 from ddht.v5_1.abc import EventsAPI, SessionAPI
+from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import v51_registry
@@ -110,6 +112,10 @@ class BaseSession(SessionAPI):
         )
 
     @property
+    def is_recipient(self) -> bool:
+        return not self.is_initiator
+
+    @property
     def is_before_handshake(self) -> bool:
         return self._status is SessionStatus.BEFORE
 
@@ -120,6 +126,17 @@ class BaseSession(SessionAPI):
     @property
     def is_after_handshake(self) -> bool:
         return self._status is SessionStatus.AFTER
+
+    @property
+    def is_timed_out(self) -> bool:
+        return self.timeout_at >= trio.current_time()
+
+    @property
+    def timeout_at(self) -> float:
+        if self.is_after_handshake:
+            return self._last_message_received_at + SESSION_IDLE_TIMEOUT
+        else:
+            return self.created_at + SESSION_IDLE_TIMEOUT
 
     @property
     def last_message_received_at(self) -> float:
@@ -247,6 +264,7 @@ class SessionInitiator(BaseSession):
 
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
+            await self._events.packet_sent.trigger((self, envelope))
             await self._outbound_envelope_send_channel.send(envelope)
             self.logger.debug("%s: Sent message: %s", self, message)
         elif self.is_during_handshake:
@@ -270,8 +288,9 @@ class SessionInitiator(BaseSession):
         else:
             raise Exception("Invariant: All states handled")
 
-    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
+    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> bool:
         self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+        await self._events.packet_received.trigger((self, envelope))
 
         if self.is_after_handshake:
             if envelope.packet.is_message:
@@ -284,6 +303,7 @@ class SessionInitiator(BaseSession):
                         "%s: Discarding undecryptable packet: %s", self, envelope
                     )
                     await self._events.packet_discarded.trigger((self, envelope))
+                    return False
                 else:
                     self._last_message_received_at = trio.current_time()
 
@@ -294,9 +314,11 @@ class SessionInitiator(BaseSession):
                             sender_node_id=self.remote_node_id,
                         )
                     )
+                    return True
             else:
                 self.logger.debug("%s: Discarding MessagePacket: %s", self, envelope)
                 await self._events.packet_discarded.trigger((self, envelope))
+                return False
         elif self.is_during_handshake:
             if envelope.packet.is_who_are_you:
                 (
@@ -315,14 +337,17 @@ class SessionInitiator(BaseSession):
                     cast(Packet[WhoAreYouPacket], envelope.packet),
                 )
                 await self._process_message_buffers()
+                return True
             else:
                 self.logger.debug(
                     "%s: Discarding non WhoAreYouPacket: %s", self, envelope
                 )
                 await self._events.packet_discarded.trigger((self, envelope))
+                return False
         elif self.is_before_handshake:
             self.logger.debug("%s: Discarding: %s", self, envelope)
             await self._events.packet_discarded.trigger((self, envelope))
+            return False
         else:
             raise Exception("Invariant: All states handled")
 
@@ -335,11 +360,11 @@ class SessionInitiator(BaseSession):
             source_node_id=self._local_node_id,
             dest_node_id=self.remote_node_id,
         )
-        await self._outbound_envelope_send_channel.send(
-            OutboundEnvelope(
-                packet=self._initiating_packet, receiver_endpoint=self.remote_endpoint,
-            )
+        envelope = OutboundEnvelope(
+            packet=self._initiating_packet, receiver_endpoint=self.remote_endpoint,
         )
+        await self._events.packet_sent.trigger((self, envelope))
+        await self._outbound_envelope_send_channel.send(envelope)
 
     async def _receive_handshake_response(
         self, packet: Packet[WhoAreYouPacket],
@@ -400,11 +425,11 @@ class SessionInitiator(BaseSession):
             dest_node_id=self._remote_node_id,
         )
 
-        await self._outbound_envelope_send_channel.send(
-            OutboundEnvelope(
-                packet=handshake_packet, receiver_endpoint=self.remote_endpoint,
-            )
+        envelope = OutboundEnvelope(
+            packet=handshake_packet, receiver_endpoint=self.remote_endpoint,
         )
+        await self._events.packet_sent.trigger((self, envelope))
+        await self._outbound_envelope_send_channel.send(envelope)
 
     async def _process_message_buffers(self) -> None:
         if not self.is_after_handshake:
@@ -457,6 +482,7 @@ class SessionRecipient(BaseSession):
 
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
+            await self._events.packet_sent.trigger((self, envelope))
             await self._outbound_envelope_send_channel.send(envelope)
             self.logger.debug("%s: Sent message: %s", self, message)
         elif self.is_during_handshake:
@@ -475,8 +501,9 @@ class SessionRecipient(BaseSession):
         else:
             raise Exception("Invariant: All states handled")
 
-    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> None:
+    async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> bool:
         self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+        await self._events.packet_received.trigger((self, envelope))
 
         if self.is_after_handshake:
             if envelope.packet.is_message:
@@ -489,6 +516,7 @@ class SessionRecipient(BaseSession):
                         "%s: Discarding undecryptable packet: %s", self, envelope
                     )
                     await self._events.packet_discarded.trigger((self, envelope))
+                    return False
                 else:
                     self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
@@ -498,28 +526,56 @@ class SessionRecipient(BaseSession):
                             sender_node_id=self.remote_node_id,
                         )
                     )
+                    return True
             else:
                 self.logger.debug(
                     "%s: Discarding non Message packet: %s", self, envelope
                 )
                 await self._events.packet_discarded.trigger((self, envelope))
+                return False
         elif self.is_during_handshake:
             if envelope.packet.is_handshake:
-                self._keys = await self._receive_handshake_completion(
-                    cast(Packet[HandshakePacket], envelope.packet),
-                )
-                self._status = SessionStatus.AFTER
-                self._last_message_received_at = trio.current_time()
-                await self._events.session_handshake_complete.trigger(self)
-                await self._process_message_buffers()
+                try:
+                    self._keys = await self._receive_handshake_completion(
+                        cast(Packet[HandshakePacket], envelope.packet),
+                    )
+                except HandshakeFailure:
+                    self.logger.debug(
+                        "%s: Discarding invalid Handshake packet: %s", self, envelope
+                    )
+                    await self._events.packet_discarded.trigger((self, envelope))
+                    return False
+                else:
+                    self._status = SessionStatus.AFTER
+                    self._last_message_received_at = trio.current_time()
+                    await self._events.session_handshake_complete.trigger(self)
+                    await self._process_message_buffers()
+                    return True
             elif envelope.packet.is_message:
                 self.logger.debug("%s: Buffering Message: %s", self, envelope)
                 self._inbound_envelope_buffer_send_channel.send_nowait(envelope)
+                # We cannot actually know whether this packet will be properly
+                # handled.  However, of the available choices, returning
+                # `False` here is optimal.
+                #
+                # If we return `True` and the other side is indeed trying to
+                # initiate a new session, we will not end up sending the
+                # `WhoAreYouPacket` necessary to go through the handshake
+                # process and the initiator will timeout waiting for a
+                # response.
+                #
+                # If we return `False` then the dispatcher will initiate a new
+                # session, triggering the sending of a `WhoAreYouPacket`.  If
+                # the initiator **is not** trying to initiate a new session,
+                # this packet will simply be ignored.  If they are, then they
+                # will proceed with the handshake.
+                return False
             elif envelope.packet.is_who_are_you:
                 self.logger.debug(
                     "%s: Discarding WhoAreYouPacket packet: %s", self, envelope
                 )
                 await self._events.packet_discarded.trigger((self, envelope))
+                return False
             else:
                 raise Exception(f"Unrecognized packet: {envelope}")
         elif self.is_before_handshake:
@@ -531,11 +587,13 @@ class SessionRecipient(BaseSession):
                     cast(Packet[MessagePacket], envelope.packet),
                     envelope.sender_endpoint,
                 )
+                return True
             else:
                 self.logger.debug(
                     "%s: Discarding non MessagePacket: %s", self, envelope
                 )
                 await self._events.packet_discarded.trigger((self, envelope))
+                return False
         else:
             raise Exception("Invariant: All states handled")
 
@@ -564,12 +622,11 @@ class SessionRecipient(BaseSession):
             source_node_id=self._local_node_id,
             dest_node_id=packet.header.source_node_id,
         )
-        await self._outbound_envelope_send_channel.send(
-            OutboundEnvelope(
-                packet=self.handshake_response_packet,
-                receiver_endpoint=sender_endpoint,
-            )
+        envelope = OutboundEnvelope(
+            packet=self.handshake_response_packet, receiver_endpoint=sender_endpoint,
         )
+        await self._events.packet_sent.trigger((self, envelope))
+        await self._outbound_envelope_send_channel.send(envelope)
 
     async def _receive_handshake_completion(
         self, packet: Packet[HandshakePacket]
@@ -587,12 +644,15 @@ class SessionRecipient(BaseSession):
 
         # Verify the id_nonce_signature which ensures that the remote node has
         # not lied about their node_id
-        remote_enr.identity_scheme.validate_id_nonce_signature(
-            id_nonce=self.handshake_response_packet.auth_data.id_nonce,
-            ephemeral_public_key=packet.auth_data.ephemeral_public_key,
-            signature=packet.auth_data.id_signature,
-            public_key=remote_enr.public_key,
-        )
+        try:
+            remote_enr.identity_scheme.validate_id_nonce_signature(
+                id_nonce=self.handshake_response_packet.auth_data.id_nonce,
+                ephemeral_public_key=packet.auth_data.ephemeral_public_key,
+                signature=packet.auth_data.id_signature,
+                public_key=remote_enr.public_key,
+            )
+        except ValidationError as err:
+            raise HandshakeFailure(str(err)) from err
 
         session_keys = remote_enr.identity_scheme.compute_session_keys(
             local_private_key=self._local_private_key,

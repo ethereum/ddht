@@ -3,6 +3,7 @@ from socket import inet_aton, inet_ntoa
 from typing import NamedTuple
 
 from async_service import ManagerAPI, as_service
+import trio
 from trio.abc import ReceiveChannel, SendChannel
 from trio.socket import SocketType
 
@@ -43,7 +44,14 @@ async def DatagramReceiver(
             endpoint = Endpoint(inet_aton(ip_address), port)
             logger.debug(f"Received {len(datagram)} bytes from {endpoint}")
             inbound_datagram = InboundDatagram(datagram, endpoint)
-            await inbound_datagram_send_channel.send(inbound_datagram)
+            try:
+                await inbound_datagram_send_channel.send(inbound_datagram)
+            except trio.BrokenResourceError:
+                logger.debug(
+                    "DatagramReceiver exiting due to `trio.BrokenResourceError`"
+                )
+                manager.cancel()
+                return
 
 
 @as_service
