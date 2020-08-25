@@ -16,16 +16,10 @@ from ddht.v5_1.packets import AnyPacket
 
 
 class NodeAPI(ABC):
+    private_key: keys.PrivateKey
     enr: ENR
     node_db: NodeDBAPI
     events: EventsAPI
-    pool: PoolAPI
-    channels: SessionChannels
-
-    @property
-    @abstractmethod
-    def private_key(self) -> keys.PrivateKey:
-        ...
 
     @property
     @abstractmethod
@@ -46,6 +40,7 @@ class SessionDriverAPI(ABC):
     session: SessionAPI
     node: NodeAPI
     remote: NodeAPI
+    channels: SessionChannels
 
     @property
     @abstractmethod
@@ -95,13 +90,23 @@ class SessionPairAPI(ABC):
         ...
 
 
-class NetworkAPI(ABC):
+class TesterAPI(ABC):
+    @abstractmethod
+    def register_pool(self, pool: PoolAPI, channels: SessionChannels) -> None:
+        ...
+
     @abstractmethod
     def node(self) -> NodeAPI:
         ...
 
     @abstractmethod
-    def session_pair(self, initiator: NodeAPI, recipient: NodeAPI) -> SessionPairAPI:
+    def session_pair(
+        self,
+        initiator: Optional[NodeAPI] = None,
+        recipient: Optional[NodeAPI] = None,
+        initiator_session: Optional[SessionAPI] = None,
+        recipient_session: Optional[SessionAPI] = None,
+    ) -> SessionPairAPI:
         ...
 
     def dispatcher_pair(

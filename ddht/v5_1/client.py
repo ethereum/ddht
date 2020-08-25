@@ -1,7 +1,7 @@
 from contextlib import contextmanager, nullcontext
 import logging
 import socket
-from typing import Collection, Iterator, List, Optional, Sequence, Tuple
+from typing import Collection, ContextManager, Iterator, List, Optional, Sequence, Tuple
 
 from async_service import Service
 from eth_keys import keys
@@ -171,6 +171,8 @@ class Client(Service, ClientAPI):
     def _get_request_id(
         self, node_id: NodeID, request_id: Optional[int] = None
     ) -> Iterator[int]:
+        request_id_context: ContextManager[int]
+
         if request_id is None:
             request_id_context = self.message_dispatcher.reserve_request_id(node_id)
         else:

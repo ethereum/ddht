@@ -1,17 +1,13 @@
 import pytest
 import trio
 
-from ddht.tools.driver import Network
 from ddht.tools.factories.endpoint import EndpointFactory
 from ddht.tools.factories.node_id import NodeIDFactory
+from ddht.tools.factories.v5_1 import SessionChannels
 from ddht.v5_1.events import Events
 from ddht.v5_1.exceptions import SessionNotFound
+from ddht.v5_1.pool import Pool
 from ddht.v5_1.session import SessionInitiator, SessionRecipient
-
-
-@pytest.fixture
-def network():
-    return Network()
 
 
 @pytest.fixture
@@ -20,18 +16,32 @@ def events():
 
 
 @pytest.fixture
-async def initiator(network, events):
-    return network.node(events=events)
+async def initiator(tester, events):
+    return tester.node(events=events)
 
 
 @pytest.fixture
-async def recipient(network):
-    return network.node()
+async def recipient(tester):
+    return tester.node()
 
 
 @pytest.fixture
-async def pool(initiator, events):
-    return initiator.pool
+async def channels():
+    return SessionChannels.init()
+
+
+@pytest.fixture
+async def pool(tester, initiator, events, channels):
+    pool = Pool(
+        local_private_key=initiator.private_key,
+        local_node_id=initiator.enr.node_id,
+        node_db=initiator.node_db,
+        outbound_envelope_send_channel=channels.outbound_envelope_send_channel,
+        inbound_message_send_channel=channels.inbound_message_send_channel,
+        events=initiator.events,
+    )
+    tester.register_pool(pool, channels)
+    return pool
 
 
 @pytest.mark.trio
@@ -77,16 +87,16 @@ async def test_pool_receive_session(initiator, recipient, pool, events):
 
 
 @pytest.mark.trio
-async def test_pool_get_session_by_endpoint(network, initiator, pool, events):
+async def test_pool_get_session_by_endpoint(tester, initiator, pool, events):
     endpoint = EndpointFactory()
 
     # A: initiated locally, handshake incomplete
-    remote_a = network.node(endpoint=endpoint)
+    remote_a = tester.node(endpoint=endpoint)
     session_a = pool.initiate_session(endpoint, remote_a.node_id)
 
     # B: initiated locally, handshake complete
-    remote_b = network.node(endpoint=endpoint)
-    driver_b = network.session_pair(initiator, remote_b)
+    remote_b = tester.node(endpoint=endpoint)
+    driver_b = tester.session_pair(initiator, remote_b,)
     with trio.fail_after(1):
         await driver_b.handshake()
     session_b = driver_b.initiator.session
@@ -95,8 +105,8 @@ async def test_pool_get_session_by_endpoint(network, initiator, pool, events):
     session_c = pool.receive_session(endpoint)
 
     # D: initiated remotely, handshake complete
-    remote_d = network.node(endpoint=endpoint)
-    driver_d = network.session_pair(remote_d, initiator)
+    remote_d = tester.node(endpoint=endpoint)
+    driver_d = tester.session_pair(remote_d, initiator,)
     await driver_d.handshake()
     session_d = driver_d.recipient.session
 
@@ -105,11 +115,11 @@ async def test_pool_get_session_by_endpoint(network, initiator, pool, events):
     session_f = pool.initiate_session(EndpointFactory(), NodeIDFactory())
 
     # Some other sessions with non-matching endpoints after handshake
-    driver_g = network.session_pair(initiator)
+    driver_g = tester.session_pair(initiator,)
     await driver_g.handshake()
     session_g = driver_g.initiator.session
 
-    driver_h = network.session_pair(recipient=initiator)
+    driver_h = tester.session_pair(recipient=initiator,)
     await driver_h.handshake()
     session_h = driver_h.recipient.session
 

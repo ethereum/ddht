@@ -6,10 +6,11 @@ from ddht.v5_1.messages import PingMessage, PongMessage
 
 
 @pytest.mark.trio
-async def test_dispatcher_handles_incoming_envelopes(network, driver, alice, bob):
+@pytest.mark.this_one
+async def test_dispatcher_handles_incoming_envelopes(tester, driver, alice, bob):
     await driver.handshake()
 
-    async with network.dispatcher_pair(alice, bob) as (
+    async with tester.dispatcher_pair(alice, bob) as (
         alice_dispatcher,
         bob_dispatcher,
     ):
@@ -19,8 +20,8 @@ async def test_dispatcher_handles_incoming_envelopes(network, driver, alice, bob
 
 
 @pytest.fixture
-async def paired_dispatchers(network, driver, alice, bob):
-    async with network.dispatcher_pair(alice, bob) as (
+async def paired_dispatchers(tester, driver, alice, bob):
+    async with tester.dispatcher_pair(alice, bob) as (
         alice_dispatcher,
         bob_dispatcher,
     ):
@@ -47,18 +48,19 @@ async def test_dispatcher_bidirectional_communication(
 
 @pytest.mark.trio
 async def test_dispatcher_handles_incoming_envelopes_with_multiple_sessions(
-    network, driver, alice, bob, paired_dispatchers
+    tester, driver, alice, bob, paired_dispatchers
 ):
     driver_a = driver
     # setup another session (that hasn't been handshaked yet.
-    driver_b = network.session_pair(bob, alice)
+    driver_b = tester.session_pair(bob, alice)
 
     # now when we send a message to initiate the handshake from `driver_b`,
     # that message should also be routed to `driver_a` but will not be
     # decodable and should be discarded.
-    async with driver_a.initiator.events.packet_discarded.subscribe_and_wait():
-        async with alice.events.ping_received.subscribe_and_wait():
-            await driver_b.initiator.send_ping(1234)
+    with trio.fail_after(2):
+        async with driver_a.initiator.events.packet_discarded.subscribe_and_wait():
+            async with alice.events.ping_received.subscribe_and_wait():
+                await driver_b.initiator.send_ping(1234)
 
 
 @pytest.mark.trio
@@ -84,9 +86,9 @@ async def test_dispatcher_send_message_with_existing_session(
 
 @pytest.mark.trio
 async def test_dispatcher_send_message_creates_session(
-    network, driver, alice, paired_dispatchers
+    tester, driver, alice, paired_dispatchers
 ):
-    carol = network.node()
+    carol = tester.node()
     alice_dispatcher, _ = paired_dispatchers
 
     async with alice.events.session_created.subscribe_and_wait():
@@ -100,16 +102,16 @@ async def test_dispatcher_send_message_creates_session(
 
 
 @pytest.mark.trio
-async def test_dispatcher_subscribe_to_message_type(network, alice, bob):
-    carol = network.node()
-    driver_a = network.session_pair(alice, bob)
-    driver_b = network.session_pair(carol, alice)
+async def test_dispatcher_subscribe_to_message_type(tester, alice, bob):
+    carol = tester.node()
+    driver_a = tester.session_pair(alice, bob)
+    driver_b = tester.session_pair(carol, alice)
 
     await driver_a.handshake()
     await driver_b.handshake()
 
-    async with network.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
-        async with network.dispatcher_pair(alice, carol):
+    async with tester.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
+        async with tester.dispatcher_pair(alice, carol):
             async with alice_dispatcher.subscribe(PingMessage) as ping_subscription:
                 await driver_a.recipient.send_ping(1234)
                 await driver_a.initiator.send_pong(1234)
@@ -126,17 +128,17 @@ async def test_dispatcher_subscribe_to_message_type(network, alice, bob):
 
 @pytest.mark.trio
 async def test_dispatcher_subscribe_to_message_type_with_endpoint_filter(
-    network, alice, bob
+    tester, alice, bob
 ):
-    carol = network.node()
-    driver_a = network.session_pair(alice, bob)
-    driver_b = network.session_pair(carol, alice)
+    carol = tester.node()
+    driver_a = tester.session_pair(alice, bob)
+    driver_b = tester.session_pair(carol, alice)
 
     await driver_a.handshake()
     await driver_b.handshake()
 
-    async with network.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
-        async with network.dispatcher_pair(alice, carol):
+    async with tester.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
+        async with tester.dispatcher_pair(alice, carol):
             async with alice_dispatcher.subscribe(
                 PingMessage, endpoint=carol.endpoint
             ) as ping_subscription:
@@ -154,17 +156,17 @@ async def test_dispatcher_subscribe_to_message_type_with_endpoint_filter(
 
 @pytest.mark.trio
 async def test_dispatcher_subscribe_to_message_type_with_node_id_filter(
-    network, alice, bob
+    tester, alice, bob
 ):
-    carol = network.node()
-    driver_a = network.session_pair(alice, bob)
-    driver_b = network.session_pair(carol, alice)
+    carol = tester.node()
+    driver_a = tester.session_pair(alice, bob)
+    driver_b = tester.session_pair(carol, alice)
 
     await driver_a.handshake()
     await driver_b.handshake()
 
-    async with network.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
-        async with network.dispatcher_pair(alice, carol):
+    async with tester.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
+        async with tester.dispatcher_pair(alice, carol):
             async with alice_dispatcher.subscribe(
                 PingMessage, node_id=carol.node_id
             ) as ping_subscription:
@@ -181,16 +183,16 @@ async def test_dispatcher_subscribe_to_message_type_with_node_id_filter(
 
 
 @pytest.mark.trio
-async def test_dispatcher_subscribe_request_response(network, alice, bob):
-    carol = network.node()
-    driver_a = network.session_pair(alice, bob)
-    driver_b = network.session_pair(carol, alice)
+async def test_dispatcher_subscribe_request_response(tester, alice, bob):
+    carol = tester.node()
+    driver_a = tester.session_pair(alice, bob)
+    driver_b = tester.session_pair(carol, alice)
 
     await driver_a.handshake()
     await driver_b.handshake()
 
-    async with network.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
-        async with network.dispatcher_pair(alice, carol):
+    async with tester.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
+        async with tester.dispatcher_pair(alice, carol):
             request = OutboundMessage(
                 PingMessage(1234, alice.enr.sequence_number), bob.endpoint, bob.node_id,
             )

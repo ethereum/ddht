@@ -15,7 +15,7 @@ from async_service import ServiceAPI
 from eth_keys import keys
 import trio
 
-from ddht.abc import ENRManagerAPI, EventAPI
+from ddht.abc import ENRManagerAPI, EventAPI, NodeDBAPI
 from ddht.base_message import (
     AnyOutboundMessage,
     InboundMessage,
@@ -204,8 +204,8 @@ class DispatcherAPI(ServiceAPI):
     def subscribe(
         self,
         payload_type: Type[TMessage],
-        endpoint: Optional[Endpoint],
-        node_id: Optional[NodeID],
+        endpoint: Optional[Endpoint] = None,
+        node_id: Optional[NodeID] = None,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
         ...
 
@@ -220,8 +220,9 @@ class DispatcherAPI(ServiceAPI):
 class ClientAPI(ServiceAPI):
     enr_manager: ENRManagerAPI
     events: EventsAPI
-    message_dispatcher: DispatcherAPI
+    dispatcher: DispatcherAPI
     pool: PoolAPI
+    node_db: NodeDBAPI
 
     @abstractmethod
     async def wait_listening(self) -> None:
