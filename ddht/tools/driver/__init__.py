@@ -1,1 +1,1 @@
-from .network import Network  # noqa: F401
+from .tester import Tester  # noqa: F401

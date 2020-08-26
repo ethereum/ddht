@@ -3,8 +3,8 @@ from typing import Any
 
 import factory
 
-from ddht._utils import get_open_port
 from ddht.endpoint import Endpoint
+from ddht.tools.factories.socket import robust_get_open_port
 
 LOCALHOST = socket.inet_aton("127.0.0.1")
 
@@ -16,7 +16,7 @@ class EndpointFactory(factory.Factory):  # type: ignore
     ip_address = factory.LazyFunction(
         lambda: socket.inet_aton(factory.Faker("ipv4").generate({}))
     )
-    port = factory.LazyFunction(get_open_port)
+    port = factory.LazyFunction(robust_get_open_port)
 
     @classmethod
     def localhost(cls, *args: Any, **kwargs: Any) -> Endpoint:
