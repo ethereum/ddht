@@ -3,9 +3,21 @@ import functools
 import ipaddress
 import itertools
 import logging
+import math
 import random
 import struct
-from typing import Any, Deque, Iterator, List, Optional, Tuple, Type, cast
+from typing import (
+    Any,
+    Collection,
+    Deque,
+    Iterator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    cast,
+)
 
 from eth_utils import big_endian_to_int, encode_hex
 
@@ -310,3 +322,38 @@ class KademliaRoutingTable(RoutingTableAPI):
         random.shuffle(node_ids)
         for node_id in node_ids:
             yield node_id
+
+
+def iter_closest_nodes(
+    target: NodeID, routing_table: RoutingTableAPI, seen_nodes: Collection[NodeID]
+) -> Iterator[NodeID]:
+    """
+    Iterate over the nodes in the routing table as well as additional nodes in order of
+    distance to the target. Duplicates will only be yielded once.
+    """
+    yielded_nodes: Set[NodeID] = set()
+    routing_iter = routing_table.iter_nodes_around(target)
+
+    def dist(node: Optional[NodeID]) -> float:
+        if node is not None:
+            return compute_distance(target, node)
+        else:
+            return math.inf
+
+    seen_iter = iter(sorted(seen_nodes, key=dist))
+    closest_routing = next(routing_iter, None)
+    closest_seen = next(seen_iter, None)
+
+    while not (closest_routing is None and closest_seen is None):
+        node_to_yield: NodeID
+
+        if dist(closest_routing) < dist(closest_seen):
+            node_to_yield = closest_routing  # type: ignore
+            closest_routing = next(routing_iter, None)
+        else:
+            node_to_yield = closest_seen  # type: ignore
+            closest_seen = next(seen_iter, None)
+
+        if node_to_yield not in yielded_nodes:
+            yielded_nodes.add(node_to_yield)
+            yield node_to_yield

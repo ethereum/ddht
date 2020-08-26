@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import AsyncContextManager, NamedTuple, Optional, Tuple
+from typing import AsyncContextManager, Collection, NamedTuple, Optional, Tuple
 
 from eth_keys import keys
 
@@ -43,7 +43,9 @@ class NodeAPI(ABC):
         ...
 
     @abstractmethod
-    def network(self) -> AsyncContextManager[NetworkAPI]:
+    def network(
+        self, bootnodes: Collection[ENR] = ()
+    ) -> AsyncContextManager[NetworkAPI]:
         ...
 
 

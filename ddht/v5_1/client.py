@@ -5,6 +5,7 @@ from typing import Collection, ContextManager, Iterator, List, Optional, Sequenc
 
 from async_service import Service
 from eth_keys import keys
+from eth_utils import ValidationError
 import trio
 
 from ddht.abc import NodeDBAPI
@@ -18,6 +19,7 @@ from ddht.datagram import (
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR, partition_enrs
 from ddht.enr_manager import ENRManager
+from ddht.kademlia import compute_log_distance
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, EventsAPI
@@ -130,6 +132,10 @@ class Client(Service, ClientAPI):
 
         self._ready = trio.Event()
 
+    @property
+    def local_node_id(self) -> NodeID:
+        return self.pool.local_node_id
+
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.dispatcher)
 
@@ -219,7 +225,9 @@ class Client(Service, ClientAPI):
     ) -> int:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
-                FindNodeMessage(message_request_id, distances), endpoint, node_id,
+                FindNodeMessage(message_request_id, tuple(distances)),
+                endpoint,
+                node_id,
             )
             await self.dispatcher.send_message(message)
 
@@ -352,29 +360,45 @@ class Client(Service, ClientAPI):
     ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
         with self._get_request_id(node_id) as request_id:
             request = AnyOutboundMessage(
-                FindNodeMessage(request_id, distances), endpoint, node_id,
+                FindNodeMessage(request_id, tuple(distances)), endpoint, node_id,
             )
             async with self.dispatcher.subscribe_request(
                 request, FoundNodesMessage
             ) as subscription:
                 with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
-                    # TODO: Adherence to the spec dictates that we validate
-                    # these ENR records are indeed at `distance` from the
-                    # target node_id
                     head_response = await subscription.receive()
                     total = head_response.message.total
+                    responses: Tuple[InboundMessage[FoundNodesMessage], ...]
                     if total == 1:
-                        return (head_response,)
+                        responses = (head_response,)
                     elif total > 1:
                         tail_responses: List[InboundMessage[FoundNodesMessage]] = []
                         for _ in range(total - 1):
                             tail_responses.append(await subscription.receive())
-                        return (head_response,) + tuple(tail_responses)
+                        responses = (head_response,) + tuple(tail_responses)
                     else:
                         # TODO: this code path needs to be excercised and
                         # probably replaced with some sort of
                         # `SessionTerminated` exception.
                         raise Exception("Invalid `total` counter in response")
+
+                # Validate that all responses are indeed at one of the
+                # specified distances.
+                for response in responses:
+                    for enr in response.message.enrs:
+                        if enr.node_id == node_id:
+                            if 0 not in distances:
+                                raise ValidationError(
+                                    f"Invalid response: distance=0  expected={distances}"
+                                )
+                        else:
+                            distance = compute_log_distance(enr.node_id, node_id)
+                            if distance not in distances:
+                                raise ValidationError(
+                                    f"Invalid response: distance={distance}  expected={distances}"
+                                )
+
+                return responses
 
     async def talk(
         self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, request: bytes
