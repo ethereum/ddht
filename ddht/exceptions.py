@@ -6,6 +6,14 @@ class BaseDDHTError(Exception):
     pass
 
 
+class DecodingError(BaseDDHTError):
+    """
+    Raised when a datagram could not be decoded.
+    """
+
+    pass
+
+
 class DecryptionError(BaseDDHTError):
     """
     Raised when a message could not be decrypted.

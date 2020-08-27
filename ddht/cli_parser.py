@@ -5,6 +5,7 @@ from typing import Any
 
 from ddht import __version__
 from ddht.cli_commands import do_main
+from ddht.constants import ProtocolVersion
 from ddht.enr import ENR
 
 parser = argparse.ArgumentParser(description="Discovery V5 DHT")
@@ -29,6 +30,13 @@ network_parser = parser.add_argument_group("network")
 # Core
 #
 ddht_parser.add_argument("--private-key", help="Hex encoded 32 byte private key")
+ddht_parser.add_argument(
+    "--protocol-version",
+    default=ProtocolVersion.v5,
+    type=ProtocolVersion,
+    choices=ProtocolVersion,
+    help="Protocol version which should be used",
+)
 
 base_dir_parser = ddht_parser.add_mutually_exclusive_group()
 

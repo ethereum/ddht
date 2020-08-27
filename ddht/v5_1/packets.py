@@ -10,6 +10,7 @@ import rlp
 from ddht.base_message import BaseMessage
 from ddht.encryption import aesctr_decrypt_stream, aesctr_encrypt, aesgcm_encrypt
 from ddht.enr import ENR, ENRSedes
+from ddht.exceptions import DecodingError
 from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
 
 PROTOCOL_ID = b"discv5  "
@@ -30,7 +31,9 @@ class MessagePacket:
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "MessagePacket":
         if len(data) != 12:
-            raise Exception("TODO")
+            raise DecodingError(
+                f"Invalid length for MessagePacket: length={len(data)}  data={data.hex()}"
+            )
         return cls(cast(Nonce, data))
 
 
@@ -54,7 +57,9 @@ class WhoAreYouPacket:
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "WhoAreYouPacket":
         if len(data) != 52:
-            raise Exception("TODO")
+            raise DecodingError(
+                f"Invalid length for WhoAreYouPacket: length={len(data)}  data={data.hex()}"
+            )
         stream = BytesIO(data)
         request_nonce = cast(Nonce, stream.read(12))
         id_nonce = cast(IDNonce, stream.read(32))
@@ -83,7 +88,9 @@ class HandshakeHeader(NamedTuple):
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "HandshakeHeader":
         if len(data) != 3:
-            raise Exception("TODO")
+            raise DecodingError(
+                f"Invalid length for HandshakeHeader: length={len(data)}  data={data.hex()}"
+            )
         version = data[0]
         signature_size = data[1]
         ephemeral_key_size = data[2]
@@ -113,11 +120,15 @@ class HandshakePacket:
     def from_wire_bytes(cls, data: bytes) -> "HandshakePacket":
         stream = BytesIO(data)
         auth_data_head = HandshakeHeader.from_wire_bytes(stream.read(3))
-        if (
-            len(data)
-            < 3 + auth_data_head.signature_size + auth_data_head.ephemeral_key_size
-        ):
-            raise Exception("TODO")
+        expected_length = (
+            3 + auth_data_head.signature_size + auth_data_head.ephemeral_key_size
+        )
+        if len(data) < expected_length:
+            raise DecodingError(
+                f"Invalid length for HandshakePacket: "
+                f"expected={expected_length}  actual={len(data)}  "
+                f"data={data.hex()}"
+            )
         id_signature = stream.read(auth_data_head.signature_size)
         ephemeral_public_key = stream.read(auth_data_head.ephemeral_key_size)
         enr_bytes = stream.read()
@@ -147,6 +158,10 @@ class Header(NamedTuple):
 
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "Header":
+        if len(data) != 43:
+            raise DecodingError(
+                f"Invalid length for Header: length={len(data)}  data={data.hex()}"
+            )
         protocol_id = data[:8]
         remote_node_id = cast(NodeID, data[8:40])
         flag = data[40]
@@ -245,7 +260,7 @@ def decode_packet(data: bytes, local_node_id: NodeID,) -> AnyPacket:
     elif header.flag == 2:
         auth_data = HandshakePacket.from_wire_bytes(auth_data_bytes)
     else:
-        raise Exception("TODO")
+        raise DecodingError(f"Unable to decode datagram: {data.hex()}", data)
 
     message_cipher_text = data[16 + 43 + header.auth_data_size :]
 

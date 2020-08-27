@@ -287,7 +287,8 @@ class UnsignedENR(BaseENR, ENRContentSedes):
         return other.__class__ is self.__class__ and dict(other) == dict(self)
 
     def __hash__(self) -> int:
-        return hash((self.sequence_number, tuple(self.items())))
+        sorted_key_value_pairs = tuple(sorted(self.items(), key=operator.itemgetter(0)))
+        return hash((self.sequence_number, sorted_key_value_pairs))
 
 
 class ENR(BaseENR, ENRSedes):
@@ -333,7 +334,8 @@ class ENR(BaseENR, ENRSedes):
         )
 
     def __hash__(self) -> int:
-        return hash((self.signature, self.sequence_number, tuple(self.items())))
+        sorted_key_value_pairs = tuple(sorted(self.items(), key=operator.itemgetter(0)))
+        return hash((self.signature, self.sequence_number, sorted_key_value_pairs))
 
     def __repr__(self) -> str:
         base64_rlp = base64.urlsafe_b64encode(rlp.encode(self))

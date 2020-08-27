@@ -8,13 +8,16 @@ from eth_keys import keys
 from eth_utils import decode_hex
 
 from ddht._utils import get_open_port
-from ddht.constants import DEFAULT_BOOTNODES, DEFAULT_PORT
+from ddht.constants import DEFAULT_PORT, ProtocolVersion
 from ddht.enr import ENR
 from ddht.typing import AnyIPAddress
+from ddht.v5.constants import DEFAULT_BOOTNODES as DEFAULT_V5_BOOTNODES
+from ddht.v5_1.constants import DEFAULT_BOOTNODES as DEFAULT_V51_BOOTNODES
 from ddht.xdg import get_xdg_ddht_root
 
 
 class BootInfoKwargs(TypedDict, total=False):
+    protocol_version: ProtocolVersion
     base_dir: pathlib.Path
     port: int
     listen_on: Optional[AnyIPAddress]
@@ -25,6 +28,8 @@ class BootInfoKwargs(TypedDict, total=False):
 
 
 def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
+    protocol_version = args.protocol_version
+
     is_ephemeral = args.ephemeral is True
     is_upnp_enabled = not args.disable_upnp
 
@@ -50,7 +55,16 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
         listen_on = args.listen_address
 
     if args.bootnodes is None:
-        bootnodes = tuple(ENR.from_repr(enr_repr) for enr_repr in DEFAULT_BOOTNODES)
+        if protocol_version is ProtocolVersion.v5:
+            bootnodes = tuple(
+                ENR.from_repr(enr_repr) for enr_repr in DEFAULT_V5_BOOTNODES
+            )
+        elif protocol_version is ProtocolVersion.v5_1:
+            bootnodes = tuple(
+                ENR.from_repr(enr_repr) for enr_repr in DEFAULT_V51_BOOTNODES
+            )
+        else:
+            raise Exception(f"Unsupported protocol version: {protocol_version}")
     else:
         bootnodes = args.bootnodes
 
@@ -62,6 +76,7 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
         private_key = None
 
     return BootInfoKwargs(
+        protocol_version=protocol_version,
         base_dir=base_dir,
         port=port,
         listen_on=listen_on,
@@ -74,6 +89,7 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
 
 @dataclass(frozen=True)
 class BootInfo:
+    protocol_version: ProtocolVersion
     base_dir: pathlib.Path
     port: int
     listen_on: Optional[AnyIPAddress]

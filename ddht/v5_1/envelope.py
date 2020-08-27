@@ -8,6 +8,7 @@ from trio.abc import ReceiveChannel, SendChannel
 
 from ddht.datagram import InboundDatagram, OutboundDatagram
 from ddht.endpoint import Endpoint
+from ddht.exceptions import DecodingError, DecryptionError
 from ddht.typing import NodeID
 from ddht.v5_1.packets import AnyPacket, decode_packet
 
@@ -63,11 +64,15 @@ class EnvelopeDecoder(Service):
                     try:
                         packet = decode_packet(datagram, self._local_node_id)
                         self.logger.debug(
-                            f"Successfully decoded {packet.__class__.__name__} from {endpoint}"
+                            "Successfully decoded %s from %s",
+                            packet.__class__.__name__,
+                            endpoint,
                         )
-                    except ValidationError:
-                        self.logger.warning(
-                            f"Failed to decode a packet from {endpoint}", exc_info=True
+                    except (DecryptionError, DecodingError, ValidationError):
+                        self.logger.debug(
+                            "Failed to decode datagram %s from %s",
+                            datagram.hex(),
+                            endpoint,
                         )
                     else:
                         try:
@@ -103,7 +108,7 @@ class EnvelopeEncoder(Service):
                         packet.to_wire_bytes(), endpoint
                     )
                     self.logger.debug(
-                        f"Encoded {packet.__class__.__name__} for {endpoint}"
+                        "Encoded %s for %s", packet.__class__.__name__, endpoint,
                     )
                     try:
                         await self._outbound_datagram_send_channel.send(
