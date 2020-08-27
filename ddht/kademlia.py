@@ -112,6 +112,10 @@ class KademliaRoutingTable(RoutingTableAPI):
 
         self.bucket_update_order: Deque[int] = collections.deque()
 
+    @property
+    def num_buckets(self) -> int:
+        return len(self.buckets)
+
     def _contains(self, node_id: NodeID, include_replacement_cache: bool) -> bool:
         _, bucket, replacement_cache = self.get_index_bucket_and_replacement_cache(
             node_id

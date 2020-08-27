@@ -184,6 +184,11 @@ class RoutingTableAPI(ABC):
     center_node_id: NodeID
     bucket_size: int
 
+    @property
+    @abstractmethod
+    def num_buckets(self) -> int:
+        ...
+
     @abstractmethod
     def get_index_bucket_and_replacement_cache(
         self, node_id: NodeID

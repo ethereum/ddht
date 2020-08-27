@@ -9,7 +9,14 @@ from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.tools.factories.v5_1 import SessionChannels
 from ddht.typing import NodeID
-from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
+from ddht.v5_1.abc import (
+    ClientAPI,
+    DispatcherAPI,
+    EventsAPI,
+    NetworkAPI,
+    PoolAPI,
+    SessionAPI,
+)
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.packets import AnyPacket
@@ -33,6 +40,10 @@ class NodeAPI(ABC):
 
     @abstractmethod
     def client(self) -> AsyncContextManager[ClientAPI]:
+        ...
+
+    @abstractmethod
+    def network(self) -> AsyncContextManager[NetworkAPI]:
         ...
 
 

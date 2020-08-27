@@ -15,7 +15,7 @@ from async_service import ServiceAPI
 from eth_keys import keys
 import trio
 
-from ddht.abc import ENRManagerAPI, EventAPI, NodeDBAPI
+from ddht.abc import ENRManagerAPI, EventAPI, NodeDBAPI, RoutingTableAPI
 from ddht.base_message import (
     AnyOutboundMessage,
     InboundMessage,
@@ -349,4 +349,37 @@ class ClientAPI(ServiceAPI):
     async def topic_query(
         self, endpoint: Endpoint, node_id: NodeID, topic: bytes
     ) -> InboundMessage[FoundNodesMessage]:
+        ...
+
+
+class NetworkAPI(ServiceAPI):
+    client: ClientAPI
+    routing_table: RoutingTableAPI
+
+    #
+    # Proxied ClientAPI properties
+    #
+    @property
+    @abstractmethod
+    def events(self) -> EventsAPI:
+        ...
+
+    @property
+    @abstractmethod
+    def dispatcher(self) -> DispatcherAPI:
+        ...
+
+    @property
+    @abstractmethod
+    def enr_manager(self) -> ENRManagerAPI:
+        ...
+
+    @property
+    @abstractmethod
+    def pool(self) -> PoolAPI:
+        ...
+
+    @property
+    @abstractmethod
+    def node_db(self) -> NodeDBAPI:
         ...

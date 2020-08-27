@@ -9,8 +9,10 @@ def tester():
 
 
 @pytest.fixture
-async def alice(tester):
-    return tester.node()
+async def alice(tester, bob):
+    node = tester.node()
+    node.node_db.set_enr(bob.enr)
+    return node
 
 
 @pytest.fixture

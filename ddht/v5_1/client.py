@@ -63,7 +63,7 @@ class Client(Service, ClientAPI):
         self._listening = trio.Event()
 
         self.enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
-        self._node_db = node_db
+        self.node_db = node_db
         self._registry = message_type_registry
 
         # Datagrams
@@ -103,18 +103,18 @@ class Client(Service, ClientAPI):
         self.pool = Pool(
             local_private_key=self._local_private_key,
             local_node_id=self.enr_manager.enr.node_id,
-            node_db=self._node_db,
+            node_db=self.node_db,
             outbound_envelope_send_channel=self._outbound_envelope_send_channel,
             inbound_message_send_channel=self._inbound_message_send_channel,
             message_type_registry=self._registry,
             events=self.events,
         )
 
-        self.message_dispatcher = Dispatcher(
+        self.dispatcher = Dispatcher(
             self._inbound_envelope_receive_channel,
             self._inbound_message_receive_channel,
             self.pool,
-            self._node_db,
+            self.node_db,
             self._registry,
             self.events,
         )
@@ -131,7 +131,7 @@ class Client(Service, ClientAPI):
         self._ready = trio.Event()
 
     async def run(self) -> None:
-        self.manager.run_daemon_child_service(self.message_dispatcher)
+        self.manager.run_daemon_child_service(self.dispatcher)
 
         self.manager.run_daemon_child_service(self.envelope_decoder)
         self.manager.run_daemon_child_service(self.envelope_encoder)
@@ -174,7 +174,7 @@ class Client(Service, ClientAPI):
         request_id_context: ContextManager[int]
 
         if request_id is None:
-            request_id_context = self.message_dispatcher.reserve_request_id(node_id)
+            request_id_context = self.dispatcher.reserve_request_id(node_id)
         else:
             request_id_context = nullcontext(request_id)
 
@@ -190,7 +190,7 @@ class Client(Service, ClientAPI):
                 endpoint,
                 node_id,
             )
-            await self.message_dispatcher.send_message(message)
+            await self.dispatcher.send_message(message)
 
         return message_request_id
 
@@ -207,7 +207,7 @@ class Client(Service, ClientAPI):
             endpoint,
             node_id,
         )
-        await self.message_dispatcher.send_message(message)
+        await self.dispatcher.send_message(message)
 
     async def send_find_nodes(
         self,
@@ -221,7 +221,7 @@ class Client(Service, ClientAPI):
             message = AnyOutboundMessage(
                 FindNodeMessage(message_request_id, distances), endpoint, node_id,
             )
-            await self.message_dispatcher.send_message(message)
+            await self.dispatcher.send_message(message)
 
         return message_request_id
 
@@ -241,7 +241,7 @@ class Client(Service, ClientAPI):
             message = AnyOutboundMessage(
                 FoundNodesMessage(request_id, num_batches, batch,), endpoint, node_id,
             )
-            await self.message_dispatcher.send_message(message)
+            await self.dispatcher.send_message(message)
 
         return num_batches
 
@@ -260,7 +260,7 @@ class Client(Service, ClientAPI):
                 endpoint,
                 node_id,
             )
-            await self.message_dispatcher.send_message(message)
+            await self.dispatcher.send_message(message)
 
         return message_request_id
 
@@ -270,7 +270,7 @@ class Client(Service, ClientAPI):
         message = AnyOutboundMessage(
             TalkResponseMessage(request_id, response,), endpoint, node_id,
         )
-        await self.message_dispatcher.send_message(message)
+        await self.dispatcher.send_message(message)
 
     async def send_register_topic(
         self,
@@ -288,7 +288,7 @@ class Client(Service, ClientAPI):
                 endpoint,
                 node_id,
             )
-            await self.message_dispatcher.send_message(message)
+            await self.dispatcher.send_message(message)
 
         return message_request_id
 
@@ -304,7 +304,7 @@ class Client(Service, ClientAPI):
         message = AnyOutboundMessage(
             TicketMessage(request_id, ticket, wait_time), endpoint, node_id,
         )
-        await self.message_dispatcher.send_message(message)
+        await self.dispatcher.send_message(message)
 
     async def send_registration_confirmation(
         self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: int,
@@ -312,7 +312,7 @@ class Client(Service, ClientAPI):
         message = AnyOutboundMessage(
             RegistrationConfirmationMessage(request_id, topic), endpoint, node_id,
         )
-        await self.message_dispatcher.send_message(message)
+        await self.dispatcher.send_message(message)
 
     async def send_topic_query(
         self,
@@ -326,7 +326,7 @@ class Client(Service, ClientAPI):
             message = AnyOutboundMessage(
                 TopicQueryMessage(message_request_id, topic), endpoint, node_id,
             )
-            await self.message_dispatcher.send_message(message)
+            await self.dispatcher.send_message(message)
         return message_request_id
 
     #
@@ -341,7 +341,7 @@ class Client(Service, ClientAPI):
                 endpoint,
                 node_id,
             )
-            async with self.message_dispatcher.subscribe_request(
+            async with self.dispatcher.subscribe_request(
                 request, PongMessage
             ) as subscription:
                 with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
@@ -354,7 +354,7 @@ class Client(Service, ClientAPI):
             request = AnyOutboundMessage(
                 FindNodeMessage(request_id, distances), endpoint, node_id,
             )
-            async with self.message_dispatcher.subscribe_request(
+            async with self.dispatcher.subscribe_request(
                 request, FoundNodesMessage
             ) as subscription:
                 with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
