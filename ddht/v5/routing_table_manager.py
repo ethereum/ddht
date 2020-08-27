@@ -1,9 +1,8 @@
 import itertools
 import logging
-import math
 import secrets
 import time
-from typing import Generator, List, Optional, Sequence, Set, Tuple
+from typing import List, Optional, Tuple
 
 from async_service import Service
 from eth_utils import encode_hex
@@ -23,7 +22,7 @@ from ddht.base_message import (
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR, partition_enrs
 from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
-from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
+from ddht.kademlia import KademliaRoutingTable, compute_log_distance, iter_closest_nodes
 from ddht.typing import NodeID
 from ddht.v5.abc import MessageDispatcherAPI
 from ddht.v5.constants import (
@@ -598,38 +597,3 @@ class RoutingTableManager(Service):
             self.manager.run_daemon_child_service(child_service)
 
         await self.manager.wait_finished()
-
-
-def iter_closest_nodes(
-    target: NodeID, routing_table: KademliaRoutingTable, seen_nodes: Sequence[NodeID]
-) -> Generator[NodeID, None, None]:
-    """
-    Iterate over the nodes in the routing table as well as additional nodes in order of
-    distance to the target. Duplicates will only be yielded once.
-    """
-    yielded_nodes: Set[NodeID] = set()
-    routing_iter = routing_table.iter_nodes_around(target)
-
-    def dist(node: Optional[NodeID]) -> float:
-        if node is not None:
-            return compute_distance(target, node)
-        else:
-            return math.inf
-
-    seen_iter = iter(sorted(seen_nodes, key=dist))
-    closest_routing = next(routing_iter, None)
-    closest_seen = next(seen_iter, None)
-
-    while not (closest_routing is None and closest_seen is None):
-        node_to_yield: NodeID
-
-        if dist(closest_routing) < dist(closest_seen):
-            node_to_yield = closest_routing  # type: ignore
-            closest_routing = next(routing_iter, None)
-        else:
-            node_to_yield = closest_seen  # type: ignore
-            closest_seen = next(seen_iter, None)
-
-        if node_to_yield not in yielded_nodes:
-            yielded_nodes.add(node_to_yield)
-            yield node_to_yield

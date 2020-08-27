@@ -224,6 +224,11 @@ class ClientAPI(ServiceAPI):
     pool: PoolAPI
     node_db: NodeDBAPI
 
+    @property
+    @abstractmethod
+    def local_node_id(self) -> NodeID:
+        ...
+
     @abstractmethod
     async def wait_listening(self) -> None:
         ...
@@ -325,7 +330,7 @@ class ClientAPI(ServiceAPI):
         ...
 
     async def find_nodes(
-        self, endpoint: Endpoint, node_id: NodeID, distance: Collection[int]
+        self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int]
     ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
         ...
 
@@ -361,6 +366,11 @@ class NetworkAPI(ServiceAPI):
     #
     @property
     @abstractmethod
+    def local_node_id(self) -> NodeID:
+        ...
+
+    @property
+    @abstractmethod
     def events(self) -> EventsAPI:
         ...
 
@@ -382,4 +392,25 @@ class NetworkAPI(ServiceAPI):
     @property
     @abstractmethod
     def node_db(self) -> NodeDBAPI:
+        ...
+
+    #
+    # High Level API
+    #
+    async def ping(
+        self, node_id: NodeID, endpoint: Optional[Endpoint] = None
+    ) -> PongMessage:
+        ...
+
+    async def find_nodes(
+        self, node_id: NodeID, *distances: int, endpoint: Optional[Endpoint] = None,
+    ) -> Tuple[ENR, ...]:
+        ...
+
+    async def get_enr(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+    ) -> ENR:
+        ...
+
+    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENR, ...]:
         ...

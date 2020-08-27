@@ -214,17 +214,23 @@ class Dispatcher(Service, DispatcherAPI):
         ) -> EventAPI[OutboundMessage[TMessage]]:
             return _get_event_for_outbound_message(self._events, message)
 
-        async with trio.open_nursery() as nursery:
-            async with receive_channel:
-                async for message in receive_channel:
-                    # trigger Event
-                    event = get_event(message)
-                    await event.trigger(message)
+        async with receive_channel:
+            async for message in receive_channel:
+                # trigger Event
+                event = get_event(message)
+                await event.trigger(message)
 
-                    # feed sessions
-                    sessions = self._get_sessions_for_outbound_message(message)
-                    for session in sessions:
-                        nursery.start_soon(session.handle_outbound_message, message)
+                # feed sessions
+                sessions = self._get_sessions_for_outbound_message(message)
+                for session in sessions:
+                    try:
+                        await session.handle_outbound_message(message)
+                    except trio.BrokenResourceError:
+                        self.logger.debug(
+                            "Dispatcher exiting due to trio.BrokenResourceError"
+                        )
+                        self.manager.cancel()
+                    else:
                         self.logger.debug(
                             "outbound message %s dispatched to %s", message, session
                         )
