@@ -133,10 +133,9 @@ class KademliaRoutingTable(RoutingTableAPI):
             node_id
         )
         if include_replacement_cache:
-            nodes = bucket + replacement_cache
+            return node_id in bucket or node_id in replacement_cache
         else:
-            nodes = bucket
-        return node_id in nodes
+            return node_id in bucket
 
     def get_index_bucket_and_replacement_cache(
         self, node_id: NodeID

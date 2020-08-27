@@ -1,13 +1,13 @@
-import functools
 import itertools
 import logging
 import operator
 import secrets
+import time
 from typing import Collection, Iterable, List, Optional, Set, Tuple
 
 from async_service import Service
 from eth_utils import to_tuple
-from eth_utils.toolz import groupby, take
+from eth_utils.toolz import cons, excepts, first, groupby, take
 import trio
 
 from ddht._utils import every, humanize_node_id
@@ -28,7 +28,7 @@ from ddht.kademlia import (
 )
 from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, NetworkAPI, PoolAPI
-from ddht.v5_1.constants import DEFAULT_BOOTNODES
+from ddht.v5_1.constants import DEFAULT_BOOTNODES, ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.messages import FindNodeMessage, PingMessage, PongMessage
 
 
@@ -78,8 +78,50 @@ class Network(Service, NetworkAPI):
     #
     # High Level API
     #
+    async def bond(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+    ) -> bool:
+        try:
+            pong = await self.ping(node_id, endpoint=endpoint)
+        except trio.TooSlowError:
+            self.logger.debug(
+                "Bonding with %s timed out during ping", humanize_node_id(node_id)
+            )
+            return False
+
+        try:
+            enr = self.node_db.get_enr(node_id)
+        except KeyError:
+            try:
+                enr = await self.get_enr(node_id, endpoint=endpoint)
+            except trio.TooSlowError:
+                self.logger.debug(
+                    "Bonding with %s timed out during ENR retrieval",
+                    humanize_node_id(node_id),
+                )
+                return False
+        else:
+            if pong.enr_seq > enr.sequence_number:
+                try:
+                    enr = await self.get_enr(node_id, endpoint=endpoint)
+                except trio.TooSlowError:
+                    self.logger.debug(
+                        "Bonding with %s timed out during ENR retrieval",
+                        humanize_node_id(node_id),
+                    )
+                else:
+                    self.node_db.set_enr(enr)
+
+        self.routing_table.update(enr.node_id)
+
+        self._routing_table_ready.set()
+        return True
+
+    async def _bond(self, node_id: NodeID, endpoint: Endpoint) -> None:
+        await self.bond(node_id, endpoint=endpoint)
+
     async def ping(
-        self, node_id: NodeID, endpoint: Optional[Endpoint] = None
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> PongMessage:
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
@@ -122,6 +164,7 @@ class Network(Service, NetworkAPI):
                 enrs = await self.find_nodes(node_id, distance)
             except trio.TooSlowError:
                 unresponsive_node_ids.add(node_id)
+                return
 
             for enr in enrs:
                 received_node_ids.add(enr.node_id)
@@ -181,11 +224,56 @@ class Network(Service, NetworkAPI):
         self.manager.run_daemon_child_service(self.client)
         await self.client.wait_listening()
 
+        self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
+        self.manager.run_daemon_task(self._track_last_pong)
         self.manager.run_daemon_task(self._manage_routing_table)
         self.manager.run_daemon_task(self._pong_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
 
         await self.manager.wait_finished()
+
+    async def _ping_oldest_routing_table_entry(self) -> None:
+        await self._routing_table_ready.wait()
+
+        while self.manager.is_running:
+            # Here we preserve the lazy iteration while still checking that the
+            # iterable is not empty before passing it into `min` below which
+            # throws an ambiguous `ValueError` otherwise if the iterable is
+            # empty.
+            nodes_iter = self.routing_table.iter_all_random()
+            try:
+                first_node_id = first(nodes_iter)
+            except StopIteration:
+                await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+                continue
+            else:
+                least_recently_ponged_node_id = min(
+                    cons(first_node_id, nodes_iter),
+                    key=excepts(KeyError, self.node_db.get_last_pong_time, lambda _: 0),
+                )
+
+            too_old_at = time.time() - ROUTING_TABLE_KEEP_ALIVE
+            try:
+                last_pong_at = self.node_db.get_last_pong_time(
+                    least_recently_ponged_node_id
+                )
+            except KeyError:
+                pass
+            else:
+                if last_pong_at > too_old_at:
+                    await trio.sleep(last_pong_at - too_old_at)
+                    continue
+
+            did_bond = await self.bond(least_recently_ponged_node_id)
+            if not did_bond:
+                self.routing_table.remove(least_recently_ponged_node_id)
+
+    async def _track_last_pong(self) -> None:
+        async with self.dispatcher.subscribe(PongMessage) as subscription:
+            async for message in subscription:
+                self.node_db.set_last_pong_time(
+                    message.sender_node_id, int(time.time())
+                )
 
     async def _manage_routing_table(self) -> None:
         # First load all the bootnode ENRs into our database
@@ -202,9 +290,7 @@ class Network(Service, NetworkAPI):
                     if enr.node_id == self.local_node_id:
                         continue
                     endpoint = self._endpoint_for_enr(enr)
-                    nursery.start_soon(
-                        functools.partial(self._bond, endpoint=endpoint), enr.node_id,
-                    )
+                    nursery.start_soon(self._bond, enr.node_id, endpoint)
 
                 with trio.move_on_after(10):
                     await self._routing_table_ready.wait()
@@ -221,9 +307,7 @@ class Network(Service, NetworkAPI):
                 found_enrs = await self.recursive_find_nodes(target_node_id)
                 for enr in found_enrs:
                     endpoint = self._endpoint_for_enr(enr)
-                    nursery.start_soon(
-                        functools.partial(self._bond, endpoint=endpoint), enr.node_id,
-                    )
+                    nursery.start_soon(self._bond, enr.node_id, endpoint)
 
     async def _pong_when_pinged(self) -> None:
         async with self.dispatcher.subscribe(PingMessage) as subscription:
@@ -291,44 +375,6 @@ class Network(Service, NetworkAPI):
     #
     # Utility
     #
-    async def _bond(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
-    ) -> None:
-        try:
-            pong = await self.ping(node_id, endpoint=endpoint)
-        except trio.TooSlowError:
-            self.logger.debug(
-                "Bonding with %s timed out during ping", humanize_node_id(node_id)
-            )
-            return
-
-        try:
-            enr = self.node_db.get_enr(node_id)
-        except KeyError:
-            try:
-                enr = await self.get_enr(node_id, endpoint=endpoint)
-            except trio.TooSlowError:
-                self.logger.debug(
-                    "Bonding with %s timed out during ENR retrieval",
-                    humanize_node_id(node_id),
-                )
-                return
-        else:
-            if pong.enr_seq > enr.sequence_number:
-                try:
-                    enr = await self.get_enr(node_id, endpoint=endpoint)
-                except trio.TooSlowError:
-                    self.logger.debug(
-                        "Bonding with %s timed out during ENR retrieval",
-                        humanize_node_id(node_id),
-                    )
-                else:
-                    self.node_db.set_enr(enr)
-
-        self.routing_table.update(enr.node_id)
-
-        self._routing_table_ready.set()
-
     def _endpoint_for_enr(self, enr: ENR) -> Endpoint:
         try:
             ip_address = enr[IP_V4_ADDRESS_ENR_KEY]

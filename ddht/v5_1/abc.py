@@ -397,8 +397,13 @@ class NetworkAPI(ServiceAPI):
     #
     # High Level API
     #
+    async def bond(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+    ) -> bool:
+        ...
+
     async def ping(
-        self, node_id: NodeID, endpoint: Optional[Endpoint] = None
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> PongMessage:
         ...
 

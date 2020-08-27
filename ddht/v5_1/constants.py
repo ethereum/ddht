@@ -5,6 +5,8 @@ from ddht.enr import ENR
 
 SESSION_IDLE_TIMEOUT = 60
 
+ROUTING_TABLE_KEEP_ALIVE = 300
+
 REQUEST_RESPONSE_TIMEOUT = 10
 
 # safe upper bound on the size of the ENR list in a nodes message
