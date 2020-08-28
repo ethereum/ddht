@@ -49,11 +49,23 @@ base_dir_parser.add_argument(
 # Logging
 #
 logging_parser.add_argument(
-    "-l",
-    "--log-level",
+    "--log-file",
+    type=str,
+    default="ddht.debuglog",
+    dest="log_file",
+    help=("Configure the logging destination"),
+)
+logging_parser.add_argument(
+    "--log-level-file",
     type=int,
-    dest="log_level",
-    help=("Configure the logging level. "),
+    dest="log_level_file",
+    help=("Configure the file logging level"),
+)
+logging_parser.add_argument(
+    "--log-level-stderr",
+    type=int,
+    dest="log_level_stderr",
+    help=("Configure the stderr logging level"),
 )
 
 
