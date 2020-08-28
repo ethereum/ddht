@@ -14,7 +14,7 @@ from ddht._utils import every, humanize_node_id
 from ddht.abc import ENRManagerAPI, NodeDBAPI
 from ddht.constants import (
     IP_V4_ADDRESS_ENR_KEY,
-    NUM_ROUTING_TABLE_BUCKETS,
+    ROUTING_TABLE_BUCKET_SIZE,
     UDP_PORT_ENR_KEY,
 )
 from ddht.endpoint import Endpoint
@@ -42,7 +42,7 @@ class Network(Service, NetworkAPI):
 
         self._bootnodes = tuple(bootnodes)
         self.routing_table = KademliaRoutingTable(
-            self.client.enr_manager.enr.node_id, NUM_ROUTING_TABLE_BUCKETS,
+            self.client.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
         self._routing_table_ready = trio.Event()
 

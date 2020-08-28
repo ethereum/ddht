@@ -12,7 +12,7 @@ from ddht.boot_info import BootInfo
 from ddht.constants import (
     DEFAULT_LISTEN,
     IP_V4_ADDRESS_ENR_KEY,
-    NUM_ROUTING_TABLE_BUCKETS,
+    ROUTING_TABLE_BUCKET_SIZE,
 )
 from ddht.datagram import (
     DatagramReceiver,
@@ -93,7 +93,7 @@ class Application(Service):
             self.manager.run_daemon_child_service(upnp_service)
 
         routing_table = KademliaRoutingTable(
-            enr_manager.enr.node_id, NUM_ROUTING_TABLE_BUCKETS
+            enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE
         )
 
         for enr in self._boot_info.bootnodes:
