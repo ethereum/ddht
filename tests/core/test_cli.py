@@ -1,6 +1,6 @@
-import pexpect
 import logging
 
+import pexpect
 import pytest
 
 from ddht import __version__
@@ -24,9 +24,9 @@ def test_ddht_help():
     "env,expected",
     (
         (None, dict()),
-        ('debug', {None: logging.DEBUG}),
-        ('DEBUG,INFO:root', {None: logging.DEBUG, 'root': logging.INFO}),
-    )
+        ("debug", {None: logging.DEBUG}),
+        ("DEBUG,INFO:root", {None: logging.DEBUG, "root": logging.INFO}),
+    ),
 )
 def test_loglevel_parsing(env, expected):
     parsed = ddht_logging.environment_to_log_levels(env)
@@ -35,4 +35,4 @@ def test_loglevel_parsing(env, expected):
 
 def test_bad_log_level():
     with pytest.raises(Exception):
-        ddht_logging.environment_to_log_levels('debu')
+        ddht_logging.environment_to_log_levels("debu")
