@@ -26,6 +26,7 @@ TCP_PORT_ENR_KEY = b"tcp"
 IP_V4_SIZE = 4  # size of an IPv4 address
 IP_V6_SIZE = 16  # size of an IPv6 address
 NUM_ROUTING_TABLE_BUCKETS = 256  # number of buckets in the routing table
+ROUTING_TABLE_BUCKET_SIZE = 16
 
 
 class ProtocolVersion(enum.Enum):
