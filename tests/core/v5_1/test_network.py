@@ -1,12 +1,14 @@
 import collections
 from contextlib import AsyncExitStack
 import secrets
+import time
 
 import pytest
 import trio
 
 from ddht.kademlia import compute_log_distance
 from ddht.tools.factories.enr import ENRFactory
+from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.messages import FoundNodesMessage
 
 
@@ -139,3 +141,67 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
 
         # Ensure that one of the three closest node ids was in the returned node ids
         assert best_node_ids_by_distance.intersection(found_node_ids)
+
+
+@pytest.mark.trio
+async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_clock):
+    async with AsyncExitStack() as stack:
+        carol = tester.node()
+        dylan = tester.node()
+
+        # startup a few peers to put in the routing table
+        bob_network = await stack.enter_async_context(bob.network())
+        carol_network = await stack.enter_async_context(carol.network())
+
+        # populate the routing table and ENR database
+        alice.node_db.set_enr(bob.enr)
+        alice.node_db.set_enr(carol.enr)
+        alice.node_db.set_enr(dylan.enr)
+
+        async with AsyncExitStack() as handshakes_done:
+            await handshakes_done.enter_async_context(
+                bob.events.session_handshake_complete.subscribe_and_wait()
+            )
+            await handshakes_done.enter_async_context(
+                carol.events.session_handshake_complete.subscribe_and_wait()
+            )
+
+            alice_network = await stack.enter_async_context(
+                alice.network(bootnodes=[bob.enr, carol.enr, dylan.enr]),
+            )
+        alice_network.routing_table.update(dylan.node_id)
+        alice_network.routing_table.update(bob.node_id)
+        alice_network.routing_table.update(carol.node_id)
+
+        assert alice_network.routing_table._contains(bob.node_id, False)
+        assert alice_network.routing_table._contains(carol.node_id, False)
+        assert alice_network.routing_table._contains(dylan.node_id, False)
+
+        # run through a few checkpoints which should remove dylan from the routing table
+        await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+
+        assert alice_network.routing_table._contains(bob.node_id, False)
+        assert alice_network.routing_table._contains(carol.node_id, False)
+        assert not alice_network.routing_table._contains(dylan.node_id, False)
+
+        # now take carol offline and let her be removed
+        carol_network.get_manager().cancel()
+        alice.node_db.set_last_pong_time(
+            carol.node_id, int(time.time() - ROUTING_TABLE_KEEP_ALIVE - 1)
+        )
+        await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+
+        assert alice_network.routing_table._contains(bob.node_id, False)
+        assert not alice_network.routing_table._contains(carol.node_id, False)
+        assert not alice_network.routing_table._contains(dylan.node_id, False)
+
+        # now take bob offline and let her be removed
+        bob_network.get_manager().cancel()
+        alice.node_db.set_last_pong_time(
+            bob.node_id, int(time.time() - ROUTING_TABLE_KEEP_ALIVE - 1)
+        )
+        await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+
+        assert not alice_network.routing_table._contains(bob.node_id, False)
+        assert not alice_network.routing_table._contains(carol.node_id, False)
+        assert not alice_network.routing_table._contains(dylan.node_id, False)
