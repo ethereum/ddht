@@ -24,7 +24,7 @@ logger = logging.getLogger("ddht")
 async def main() -> None:
     args = parser.parse_args()
 
-    setup_logging(args.log_level)
+    setup_logging(args.log_file, args.log_level_file, args.log_level_stderr)
 
     logger.info(DDHT_HEADER)
 
