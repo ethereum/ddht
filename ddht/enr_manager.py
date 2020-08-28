@@ -55,7 +55,11 @@ class ENRManager(ENRManagerAPI):
         try:
             base_enr = node_db.get_enr(self._node_id)
         except KeyError:
-            self.logger.info("Local ENR created: %r", minimal_enr)
+            self.logger.info(
+                "Local ENR created: seq=%d  enr=%r",
+                minimal_enr.sequence_number,
+                minimal_enr,
+            )
             self._enr = minimal_enr
             node_db.set_enr(self._enr)
         else:
@@ -76,5 +80,7 @@ class ENRManager(ENRManagerAPI):
                 identity_scheme_registry=self._identity_scheme_registry,
             ).to_signed_enr(self._private_key.to_bytes())
             self._node_db.set_enr(self._enr)
-            self.logger.info("Local ENR Updated: %r", self.enr)
+            self.logger.info(
+                "Local ENR Updated: seq=%d  enr=%r", self.enr.sequence_number, self.enr
+            )
         return self._enr

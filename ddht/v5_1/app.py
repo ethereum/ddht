@@ -16,7 +16,6 @@ from ddht.node_db import NodeDB
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
 from ddht.v5_1.client import Client
-from ddht.v5_1.constants import DEFAULT_BOOTNODES
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import v51_registry
 from ddht.v5_1.network import Network
@@ -94,7 +93,7 @@ class Application(Service):
                 self._update_enr_ip_from_upnp, enr_manager, upnp_service
             )
 
-        bootnodes = DEFAULT_BOOTNODES + self._boot_info.bootnodes
+        bootnodes = self._boot_info.bootnodes
 
         client = Client(
             local_private_key=local_private_key,
@@ -110,6 +109,6 @@ class Application(Service):
         logger.info("Starting discovery service...")
         logger.info("Listening on %s:%d", listen_on, port)
         logger.info("Local Node ID: %s", encode_hex(enr_manager.enr.node_id))
-        logger.info("Local ENR: %s", enr_manager.enr)
+        logger.info("Local ENR: seq=%d enr=%s", enr_manager.enr)
 
         await run_trio_service(network)
