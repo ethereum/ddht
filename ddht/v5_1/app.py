@@ -109,6 +109,8 @@ class Application(Service):
         logger.info("Starting discovery service...")
         logger.info("Listening on %s:%d", listen_on, port)
         logger.info("Local Node ID: %s", encode_hex(enr_manager.enr.node_id))
-        logger.info("Local ENR: seq=%d enr=%s", enr_manager.enr)
+        logger.info(
+            "Local ENR: seq=%d enr=%s", enr_manager.enr.sequence_number, enr_manager.enr
+        )
 
         await run_trio_service(network)
