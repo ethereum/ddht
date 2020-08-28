@@ -34,7 +34,7 @@ async def DatagramReceiver(
     inbound_datagram_send_channel: SendChannel[InboundDatagram],
 ) -> None:
     """Read datagrams from a socket and send them to a channel."""
-    logger = logging.getLogger("ddht.v5.channel_services.DatagramReceiver")
+    logger = logging.getLogger("ddht.DatagramReceiver")
 
     async with inbound_datagram_send_channel:
         while manager.is_running:
@@ -61,7 +61,7 @@ async def DatagramSender(
     sock: SocketType,
 ) -> None:
     """Take datagrams from a channel and send them via a socket to their designated receivers."""
-    logger = logging.getLogger("ddht.v5.channel_services.DatagramSender")
+    logger = logging.getLogger("ddht.DatagramSender")
 
     async with outbound_datagram_receive_channel:
         async for datagram, endpoint in outbound_datagram_receive_channel:
