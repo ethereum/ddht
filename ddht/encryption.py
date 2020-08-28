@@ -58,7 +58,14 @@ def aesctr_encrypt(key: AES128Key, iv: bytes, plain_text: bytes) -> bytes:
 def aesctr_decrypt_stream(
     key: AES128Key, iv: bytes, cipher_text: bytes
 ) -> Iterator[int]:
-    cipher = Cipher(AES(key), CTR(iv), backend=default_backend())
+    aes_key = AES(key)
+    ctr = CTR(iv)
+
+    try:
+        cipher = Cipher(aes_key, ctr, backend=default_backend())
+    except ValueError as err:
+        raise DecryptionError(str(err)) from err
+
     decryptor = cipher.decryptor()
     num_blocks = int(math.ceil(len(cipher_text) / 16))
     for i in range(num_blocks):

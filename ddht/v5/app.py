@@ -63,26 +63,13 @@ class Application(Service):
     def __init__(self, boot_info: BootInfo) -> None:
         self._boot_info = boot_info
 
-    async def _update_enr_ip_from_upnp(
-        self, enr_manager: ENRManager, upnp_service: UPnPService
-    ) -> None:
-        await upnp_service.get_manager().wait_started()
-
-        with trio.move_on_after(10):
-            _, external_ip = await upnp_service.get_ip_addresses()
-            enr_manager.update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
-
-        while self.manager.is_running:
-            _, external_ip = await upnp_service.wait_ip_changed()
-            enr_manager.update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
-
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
         message_type_registry = v5_registry
 
         enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
         enr_database_dir.mkdir(exist_ok=True)
-        node_db = NodeDB(default_identity_scheme_registry, LevelDB(enr_database_dir))
+        node_db = NodeDB(identity_scheme_registry, LevelDB(enr_database_dir))
 
         local_private_key = get_local_private_key(self._boot_info)
 
@@ -104,9 +91,6 @@ class Application(Service):
         if self._boot_info.is_upnp_enabled:
             upnp_service = UPnPService(port)
             self.manager.run_daemon_child_service(upnp_service)
-            self.manager.run_daemon_task(
-                self._update_enr_ip_from_upnp, enr_manager, upnp_service
-            )
 
         routing_table = KademliaRoutingTable(
             enr_manager.enr.node_id, NUM_ROUTING_TABLE_BUCKETS

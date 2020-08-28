@@ -1,7 +1,7 @@
 import pytest
 
-from ddht.constants import DEFAULT_BOOTNODES
 from ddht.enr import ENR
+from ddht.v5_1.constants import DEFAULT_BOOTNODES
 
 
 @pytest.mark.parametrize(

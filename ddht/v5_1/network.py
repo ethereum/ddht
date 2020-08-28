@@ -28,7 +28,7 @@ from ddht.kademlia import (
 )
 from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, NetworkAPI, PoolAPI
-from ddht.v5_1.constants import DEFAULT_BOOTNODES, ROUTING_TABLE_KEEP_ALIVE
+from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.messages import FindNodeMessage, PingMessage, PongMessage
 
 
@@ -37,9 +37,7 @@ class Network(Service, NetworkAPI):
 
     _bootnodes: Tuple[ENR, ...]
 
-    def __init__(
-        self, client: ClientAPI, bootnodes: Collection[ENR] = DEFAULT_BOOTNODES
-    ) -> None:
+    def __init__(self, client: ClientAPI, bootnodes: Collection[ENR],) -> None:
         self.client = client
 
         self._bootnodes = tuple(bootnodes)

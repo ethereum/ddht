@@ -6,7 +6,6 @@ from ddht.v5_1.messages import PingMessage, PongMessage
 
 
 @pytest.mark.trio
-@pytest.mark.this_one
 async def test_dispatcher_handles_incoming_envelopes(tester, driver, alice, bob):
     await driver.handshake()
 

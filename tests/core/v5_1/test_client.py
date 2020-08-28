@@ -1,8 +1,11 @@
 import itertools
 
+from hypothesis import given
+from hypothesis import strategies as st
 import pytest
 import trio
 
+from ddht.datagram import OutboundDatagram
 from ddht.kademlia import KademliaRoutingTable
 from ddht.tools.factories.enr import ENRFactory
 
@@ -234,3 +237,23 @@ async def test_client_request_response_find_nodes_found_nodes(
                     assert found_node_ids == expected_node_ids
 
     assert len(checked_bucket_indexes) > 4
+
+
+@given(datagram_bytes=st.binary(max_size=1024))
+@pytest.mark.trio
+async def test_client_handles_malformed_datagrams(tester, datagram_bytes):
+    bob = tester.node()
+    async with bob.client() as bob_client:
+        alice = tester.node()
+        alice.node_db.set_enr(bob.enr)
+        bob.node_db.set_enr(alice.enr)
+
+        async with alice.client():
+            async with alice.events.ping_received.subscribe() as subscription:
+                await bob_client._outbound_datagram_send_channel.send(
+                    OutboundDatagram(datagram_bytes, alice.endpoint)
+                )
+                request_id = await bob_client.send_ping(alice.endpoint, alice.node_id)
+
+                ping = await subscription.receive()
+                assert ping.message.request_id == request_id

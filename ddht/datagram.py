@@ -42,7 +42,7 @@ async def DatagramReceiver(
                 DISCOVERY_DATAGRAM_BUFFER_SIZE
             )
             endpoint = Endpoint(inet_aton(ip_address), port)
-            logger.debug(f"Received {len(datagram)} bytes from {endpoint}")
+            logger.debug("Received %d bytes from %s", len(datagram), endpoint)
             inbound_datagram = InboundDatagram(datagram, endpoint)
             try:
                 await inbound_datagram_send_channel.send(inbound_datagram)
@@ -65,5 +65,5 @@ async def DatagramSender(
 
     async with outbound_datagram_receive_channel:
         async for datagram, endpoint in outbound_datagram_receive_channel:
-            logger.debug(f"Sending {len(datagram)} bytes to {endpoint}")
+            logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
             await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
