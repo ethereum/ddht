@@ -17,6 +17,20 @@ Read more in the [documentation on ReadTheDocs](https://ddht.readthedocs.io/). [
 pip install ddht
 ```
 
+To run it:
+
+```sh
+ddht
+```
+
+`--help` will tell you about the arguments `ddht` accepts. The LOGLEVEL environment
+variable can be used to control which log messages are emitted. For example, to suppress
+unimportant messages from the Packer you can run:
+
+```sh
+LOGLEVEL=WARNING:ddht.v5.packer.Packer ddht
+```
+
 ## Developer Setup
 
 If you would like to hack on ddht, please check out the [Snake Charmers
