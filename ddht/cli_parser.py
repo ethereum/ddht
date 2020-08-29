@@ -50,10 +50,9 @@ base_dir_parser.add_argument(
 #
 logging_parser.add_argument(
     "--log-file",
-    type=str,
-    default="ddht.debuglog",
+    type=pathlib.Path,
     dest="log_file",
-    help=("Configure the logging destination"),
+    help=("Manually override the logging destination."),
 )
 logging_parser.add_argument(
     "--log-level-file",
