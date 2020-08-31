@@ -1,5 +1,7 @@
 import logging
+import logging.handlers
 import os
+import pathlib
 import sys
 from typing import Dict, Optional, Tuple
 
@@ -54,7 +56,9 @@ def environment_to_log_levels(raw_levels: Optional[str]) -> Dict[Optional[str], 
     return levels
 
 
-def setup_logging(logfile: str, file_log_level: int, stderr_level: int = None) -> None:
+def setup_logging(
+    logfile: pathlib.Path, file_log_level: int, stderr_level: int = None
+) -> None:
     stderr_level = stderr_level or logging.INFO
     file_log_level = file_log_level or logging.DEBUG
 
@@ -82,10 +86,24 @@ def setup_stderr_logging(level: int) -> logging.StreamHandler:
     return handler_stream
 
 
-def setup_file_logging(logfile: str, level: int) -> logging.FileHandler:
-    handler_file = logging.FileHandler(logfile)
+def setup_file_logging(
+    logfile: pathlib.Path, level: int
+) -> logging.handlers.RotatingFileHandler:
+
+    ten_MB = 10 * 1024 * 1024
+
+    handler_file = logging.handlers.RotatingFileHandler(
+        logfile,
+        maxBytes=ten_MB,
+        backupCount=5,
+        delay=True,  # don't open the file until we try to write a logline
+    )
     handler_file.setLevel(level)
     handler_file.setFormatter(LOG_FORMATTER)
+
+    if logfile.exists():
+        # begin a new file every time we launch, this makes debugging much easier
+        handler_file.doRollover()
 
     logger = logging.getLogger()
     logger.addHandler(handler_file)
