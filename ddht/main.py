@@ -39,7 +39,7 @@ async def main() -> None:
         logdir = log_file = get_xdg_ddht_root() / "logs"
         logdir.mkdir(parents=True, exist_ok=True)
 
-        log_file = logdir / "ddht.logfile"
+        log_file = logdir / "ddht.log"
     else:
         log_file = args.log_file
 
