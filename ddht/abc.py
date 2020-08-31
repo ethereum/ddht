@@ -184,6 +184,9 @@ class RoutingTableAPI(ABC):
     center_node_id: NodeID
     bucket_size: int
 
+    buckets: Tuple[Deque[NodeID], ...]
+    replacement_caches: Tuple[Deque[NodeID], ...]
+
     @property
     @abstractmethod
     def num_buckets(self) -> int:

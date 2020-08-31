@@ -18,6 +18,7 @@ from async_generator import asynccontextmanager
 from async_service import Service
 import trio
 
+from ddht._utils import humanize_node_id
 from ddht.abc import EventAPI, NodeDBAPI
 from ddht.base_message import (
     AnyInboundMessage,
@@ -288,6 +289,14 @@ class Dispatcher(Service, DispatcherAPI):
         """
         async with self._events.session_handshake_complete.subscribe() as subscription:
             async for session in subscription:
+                self.logger.info(
+                    "Session established: %s@%s (%s) id=%s",
+                    humanize_node_id(session.remote_node_id),
+                    session.remote_endpoint,
+                    "outbound" if session.is_initiator else "inbound",
+                    session.id,
+                )
+
                 for other in self._pool.get_sessions_for_endpoint(
                     session.remote_endpoint
                 ):
