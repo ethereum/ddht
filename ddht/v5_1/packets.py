@@ -133,7 +133,12 @@ class HandshakePacket:
         ephemeral_public_key = stream.read(auth_data_head.ephemeral_key_size)
         enr_bytes = stream.read()
         if len(enr_bytes) > 0:
-            enr = rlp.decode(enr_bytes, sedes=ENRSedes)
+            try:
+                enr = rlp.decode(enr_bytes, sedes=ENRSedes)
+            except rlp.DecodingError as err:
+                # re-raise using the local library DecodingError instead of the
+                # rlp one
+                raise DecodingError(str(err)) from err
         else:
             enr = None
 
