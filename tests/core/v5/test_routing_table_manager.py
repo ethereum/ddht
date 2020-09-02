@@ -1,21 +1,19 @@
 from async_service import background_trio_service
-from eth.db.backends.memory import MemoryDB
+from eth_enr import ENRDB
+from eth_enr.tools.factories import ENRFactory
 import pytest
 import pytest_trio
 import trio
 from trio.testing import wait_all_tasks_blocked
 
 from ddht.base_message import InboundMessage
-from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
-from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import (
     FindNodeMessageFactory,
     InboundMessageFactory,
     PingMessageFactory,
 )
 from ddht.tools.factories.endpoint import EndpointFactory
-from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.v5.constants import ROUTING_TABLE_PING_INTERVAL
 from ddht.v5.message_dispatcher import MessageDispatcher
@@ -76,29 +74,29 @@ def routing_table(empty_routing_table, remote_enr):
 
 
 @pytest_trio.trio_fixture
-async def filled_routing_table(routing_table, node_db):
+async def filled_routing_table(routing_table, enr_db):
     # add entries until the first bucket is full
     while len(routing_table.get_nodes_at_log_distance(255)) < routing_table.bucket_size:
         enr = ENRFactory()
         routing_table.update(enr.node_id)
-        node_db.set_enr(enr)
+        enr_db.set_enr(enr)
     return routing_table
 
 
 @pytest_trio.trio_fixture
-async def node_db(local_enr, remote_enr):
-    node_db = NodeDB(default_identity_scheme_registry, MemoryDB())
-    node_db.set_enr(local_enr)
-    node_db.set_enr(remote_enr)
-    return node_db
+async def enr_db(local_enr, remote_enr):
+    enr_db = ENRDB({})
+    enr_db.set_enr(local_enr)
+    enr_db.set_enr(remote_enr)
+    return enr_db
 
 
 @pytest_trio.trio_fixture
 async def message_dispatcher(
-    node_db, inbound_message_channels, outbound_message_channels
+    enr_db, inbound_message_channels, outbound_message_channels
 ):
     message_dispatcher = MessageDispatcher(
-        node_db=node_db,
+        enr_db=enr_db,
         inbound_message_receive_channel=inbound_message_channels[1],
         outbound_message_send_channel=outbound_message_channels[0],
     )
@@ -111,7 +109,7 @@ async def ping_handler_service(
     local_enr,
     routing_table,
     message_dispatcher,
-    node_db,
+    enr_db,
     inbound_message_channels,
     outbound_message_channels,
 ):
@@ -119,7 +117,7 @@ async def ping_handler_service(
         local_node_id=local_enr.node_id,
         routing_table=routing_table,
         message_dispatcher=message_dispatcher,
-        node_db=node_db,
+        enr_db=enr_db,
         outbound_message_send_channel=outbound_message_channels[0],
     )
     async with background_trio_service(ping_handler_service):
@@ -131,7 +129,7 @@ async def find_node_handler_service(
     local_enr,
     routing_table,
     message_dispatcher,
-    node_db,
+    enr_db,
     inbound_message_channels,
     outbound_message_channels,
     endpoint_vote_channels,
@@ -140,7 +138,7 @@ async def find_node_handler_service(
         local_node_id=local_enr.node_id,
         routing_table=routing_table,
         message_dispatcher=message_dispatcher,
-        node_db=node_db,
+        enr_db=enr_db,
         outbound_message_send_channel=outbound_message_channels[0],
     )
     async with background_trio_service(find_node_handler_service):
@@ -152,7 +150,7 @@ async def ping_sender_service(
     local_enr,
     routing_table,
     message_dispatcher,
-    node_db,
+    enr_db,
     inbound_message_channels,
     endpoint_vote_channels,
 ):
@@ -160,7 +158,7 @@ async def ping_sender_service(
         local_node_id=local_enr.node_id,
         routing_table=routing_table,
         message_dispatcher=message_dispatcher,
-        node_db=node_db,
+        enr_db=enr_db,
         endpoint_vote_send_channel=endpoint_vote_channels[0],
     )
     async with background_trio_service(ping_sender_service):
@@ -297,12 +295,12 @@ async def test_find_node_handler_sends_many_remote_enrs(
     inbound_message_channels,
     outbound_message_channels,
     filled_routing_table,
-    node_db,
+    enr_db,
 ):
     distance = 255
     node_ids = filled_routing_table.get_nodes_at_log_distance(distance)
     assert len(node_ids) == filled_routing_table.bucket_size
-    enrs = [node_db.get_enr(node_id) for node_id in node_ids]
+    enrs = [enr_db.get_enr(node_id) for node_id in node_ids]
 
     find_node = FindNodeMessageFactory(distance=distance)
     inbound_message = InboundMessageFactory(message=find_node)
@@ -335,7 +333,7 @@ async def test_find_node_handler_sends_empty(
     inbound_message_channels,
     outbound_message_channels,
     routing_table,
-    node_db,
+    enr_db,
 ):
     distance = 5
     assert len(routing_table.get_nodes_at_log_distance(distance)) == 0

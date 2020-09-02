@@ -8,20 +8,18 @@ from typing import (
     Generic,
     Iterator,
     List,
-    MutableMapping,
     Optional,
     Tuple,
     Type,
     TypeVar,
 )
 
+from eth_enr.abc import IdentitySchemeAPI
 from eth_typing import NodeID
 import trio
 
 from ddht.base_message import BaseMessage
-from ddht.enr import ENR
-from ddht.identity_schemes import IdentitySchemeRegistry
-from ddht.typing import ENR_KV
+from ddht.typing import IDNonce, SessionKeys
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
 
@@ -80,20 +78,6 @@ class AddressAPI(ABC):
         ...
 
 
-class DatabaseAPI(MutableMapping[bytes, bytes], ABC):
-    @abstractmethod
-    def set(self, key: bytes, value: bytes) -> None:
-        ...
-
-    @abstractmethod
-    def exists(self, key: bytes) -> bool:
-        ...
-
-    @abstractmethod
-    def delete(self, key: bytes) -> None:
-        ...
-
-
 TEventPayload = TypeVar("TEventPayload")
 
 
@@ -118,49 +102,6 @@ class EventAPI(Generic[TEventPayload]):
 
     @abstractmethod
     async def wait(self) -> TEventPayload:
-        ...
-
-
-class NodeDBAPI(ABC):
-    @abstractmethod
-    def __init__(
-        self, identity_scheme_registry: IdentitySchemeRegistry, db: DatabaseAPI
-    ) -> None:
-        ...
-
-    @abstractmethod
-    def set_enr(self, enr: ENR) -> None:
-        ...
-
-    @abstractmethod
-    def get_enr(self, node_id: NodeID) -> ENR:
-        ...
-
-    @abstractmethod
-    def delete_enr(self, node_id: NodeID) -> None:
-        ...
-
-    @abstractmethod
-    def set_last_pong_time(self, node_id: NodeID, last_pong: int) -> None:
-        ...
-
-    @abstractmethod
-    def get_last_pong_time(self, node_id: NodeID) -> int:
-        ...
-
-    @abstractmethod
-    def delete_last_pong_time(self, node_id: NodeID) -> None:
-        ...
-
-
-class ENRManagerAPI(ABC):
-    @property
-    @abstractmethod
-    def enr(self) -> ENR:
-        ...
-
-    @abstractmethod
-    def update(self, *kv_pairs: ENR_KV) -> ENR:
         ...
 
 
@@ -230,4 +171,76 @@ class RoutingTableAPI(ABC):
 
     @abstractmethod
     def iter_all_random(self) -> Iterator[NodeID]:
+        ...
+
+
+class HandshakeSchemeAPI(ABC):
+    identity_scheme: Type[IdentitySchemeAPI]
+
+    #
+    # Handshake
+    #
+    @classmethod
+    @abstractmethod
+    def create_handshake_key_pair(cls) -> Tuple[bytes, bytes]:
+        """Create a random private/public key pair used for performing a handshake."""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def validate_handshake_public_key(cls, public_key: bytes) -> None:
+        """Validate that a public key received during handshake is valid."""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def compute_session_keys(
+        cls,
+        *,
+        local_private_key: bytes,
+        remote_public_key: bytes,
+        local_node_id: NodeID,
+        remote_node_id: NodeID,
+        id_nonce: IDNonce,
+        is_locally_initiated: bool,
+    ) -> SessionKeys:
+        """Compute the symmetric session keys."""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def create_id_nonce_signature(
+        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes, private_key: bytes
+    ) -> bytes:
+        """Sign an id nonce received during handshake."""
+        ...
+
+    @classmethod
+    @abstractmethod
+    def validate_id_nonce_signature(
+        cls,
+        *,
+        id_nonce: IDNonce,
+        ephemeral_public_key: bytes,
+        signature: bytes,
+        public_key: bytes,
+    ) -> None:
+        """Validate the id nonce signature received from a peer."""
+        ...
+
+
+# https://github.com/python/mypy/issues/5264#issuecomment-399407428
+if TYPE_CHECKING:
+    HandshakeSchemeRegistryBaseType = UserDict[
+        Type[IdentitySchemeAPI], Type[HandshakeSchemeAPI]
+    ]
+else:
+    HandshakeSchemeRegistryBaseType = UserDict
+
+
+class HandshakeSchemeRegistryAPI(HandshakeSchemeRegistryBaseType):
+    @abstractmethod
+    def register(
+        self, handshake_scheme_class: Type[HandshakeSchemeAPI]
+    ) -> Type[HandshakeSchemeAPI]:
         ...

@@ -1,151 +1,29 @@
 from hashlib import sha256
-import inspect
 
 from eth_keys.datatypes import NonRecoverableSignature, PrivateKey
 from eth_utils import ValidationError, decode_hex, keccak
 from hypothesis import given
 import pytest
 
-from ddht import identity_schemes as identity_schemes_module
 from ddht.constants import ID_NONCE_SIGNATURE_PREFIX
-from ddht.enr import ENR, UnsignedENR
-from ddht.identity_schemes import (
-    IdentityScheme,
-    V4CompatIdentityScheme,
-    V4IdentityScheme,
-    default_identity_scheme_registry,
+from ddht.handshake_schemes import (
+    V4HandshakeScheme,
     ecdh_agree,
     hkdf_expand_and_extract,
 )
 from ddht.tools.v5_strategies import id_nonce_st, private_key_st
 
 
-def test_default_registry_contents():
-    identity_schemes = tuple(
-        member
-        for _, member in inspect.getmembers(identity_schemes_module)
-        if (
-            inspect.isclass(member)
-            and issubclass(member, IdentityScheme)
-            and member is not IdentityScheme
-        )
-    )
-
-    assert len(identity_schemes) == len(default_identity_scheme_registry)
-    for identity_scheme in identity_schemes:
-        assert identity_scheme.id in default_identity_scheme_registry
-        assert default_identity_scheme_registry[identity_scheme.id] is identity_scheme
-
-
-#
-# V4 identity scheme
-#
-def test_enr_signing():
-    private_key = PrivateKey(b"\x11" * 32)
-    unsigned_enr = UnsignedENR(
-        0,
-        {
-            b"id": b"v4",
-            b"secp256k1": private_key.public_key.to_compressed_bytes(),
-            b"key1": b"value1",
-        },
-    )
-    signature = V4IdentityScheme.create_enr_signature(
-        unsigned_enr, private_key.to_bytes()
-    )
-
-    message_hash = keccak(unsigned_enr.get_signing_message())
-    assert private_key.public_key.verify_msg_hash(
-        message_hash, NonRecoverableSignature(signature)
-    )
-
-
-def test_enr_signature_validation():
-    private_key = PrivateKey(b"\x11" * 32)
-    unsigned_enr = UnsignedENR(
-        0,
-        {
-            b"id": b"v4",
-            b"secp256k1": private_key.public_key.to_compressed_bytes(),
-            b"key1": b"value1",
-        },
-    )
-    enr = unsigned_enr.to_signed_enr(private_key.to_bytes())
-
-    V4IdentityScheme.validate_enr_signature(enr)
-
-    forged_enr = ENR(enr.sequence_number, dict(enr), b"\x00" * 64)
-    with pytest.raises(ValidationError):
-        V4IdentityScheme.validate_enr_signature(forged_enr)
-
-
-def test_enr_v4_compat_signature_validation():
-    private_key = PrivateKey(b"\x11" * 32)
-    enr = ENR(
-        0,
-        {
-            b"id": b"v4-compat",
-            b"secp256k1": private_key.public_key.to_compressed_bytes(),
-            b"key1": b"value1",
-        },
-        signature=b"",
-    )
-
-    V4CompatIdentityScheme.validate_enr_signature(enr)
-
-
-def test_enr_v4_compat_signing():
-    private_key = PrivateKey(b"\x11" * 32)
-    unsigned_enr = UnsignedENR(
-        0,
-        {
-            b"id": b"v4-compat",
-            b"secp256k1": private_key.public_key.to_compressed_bytes(),
-            b"key1": b"value1",
-        },
-    )
-    with pytest.raises(NotImplementedError):
-        V4CompatIdentityScheme.create_enr_signature(unsigned_enr, b"")
-
-
-def test_enr_public_key():
-    private_key = PrivateKey(b"\x11" * 32)
-    public_key = private_key.public_key.to_compressed_bytes()
-    unsigned_enr = UnsignedENR(
-        0, {b"id": b"v4", b"secp256k1": public_key, b"key1": b"value1"}
-    )
-    enr = unsigned_enr.to_signed_enr(private_key.to_bytes())
-
-    assert V4IdentityScheme.extract_public_key(unsigned_enr) == public_key
-    assert V4IdentityScheme.extract_public_key(enr) == public_key
-
-
-def test_enr_node_id():
-    private_key = PrivateKey(b"\x11" * 32)
-    unsigned_enr = UnsignedENR(
-        0,
-        {
-            b"id": b"v4",
-            b"secp256k1": private_key.public_key.to_compressed_bytes(),
-            b"key1": b"value1",
-        },
-    )
-    enr = unsigned_enr.to_signed_enr(private_key.to_bytes())
-
-    node_id = V4IdentityScheme.extract_node_id(enr)
-    assert node_id == keccak(private_key.public_key.to_bytes())
-
-
 def test_handshake_key_generation():
-    private_key, public_key = V4IdentityScheme.create_handshake_key_pair()
-    V4IdentityScheme.validate_uncompressed_public_key(public_key)
-    V4IdentityScheme.validate_handshake_public_key(public_key)
+    private_key, public_key = V4HandshakeScheme.create_handshake_key_pair()
+    V4HandshakeScheme.validate_uncompressed_public_key(public_key)
+    V4HandshakeScheme.validate_handshake_public_key(public_key)
     assert PrivateKey(private_key).public_key.to_bytes() == public_key
 
 
 @pytest.mark.parametrize("public_key", (b"\x01" * 64, b"\x02" * 64))
 def test_handshake_public_key_validation_valid(public_key):
-    V4IdentityScheme.validate_handshake_public_key(public_key)
+    V4HandshakeScheme.validate_handshake_public_key(public_key)
 
 
 @pytest.mark.parametrize(
@@ -154,13 +32,13 @@ def test_handshake_public_key_validation_valid(public_key):
 )
 def test_handshake_public_key_validation_invalid(public_key):
     with pytest.raises(ValidationError):
-        V4IdentityScheme.validate_handshake_public_key(public_key)
+        V4HandshakeScheme.validate_handshake_public_key(public_key)
 
 
 @given(private_key=private_key_st, id_nonce=id_nonce_st, ephemeral_key=private_key_st)
 def test_id_nonce_signing(private_key, id_nonce, ephemeral_key):
     ephemeral_public_key = PrivateKey(ephemeral_key).public_key.to_bytes()
-    signature = V4IdentityScheme.create_id_nonce_signature(
+    signature = V4HandshakeScheme.create_id_nonce_signature(
         id_nonce=id_nonce,
         private_key=private_key,
         ephemeral_public_key=ephemeral_public_key,
@@ -177,13 +55,13 @@ def test_id_nonce_signing(private_key, id_nonce, ephemeral_key):
 @given(private_key=private_key_st, id_nonce=id_nonce_st, ephemeral_key=private_key_st)
 def test_valid_id_nonce_signature_validation(private_key, id_nonce, ephemeral_key):
     ephemeral_public_key = PrivateKey(ephemeral_key).public_key.to_bytes()
-    signature = V4IdentityScheme.create_id_nonce_signature(
+    signature = V4HandshakeScheme.create_id_nonce_signature(
         id_nonce=id_nonce,
         private_key=private_key,
         ephemeral_public_key=ephemeral_public_key,
     )
     public_key = PrivateKey(private_key).public_key.to_compressed_bytes()
-    V4IdentityScheme.validate_id_nonce_signature(
+    V4HandshakeScheme.validate_id_nonce_signature(
         id_nonce=id_nonce,
         ephemeral_public_key=ephemeral_public_key,
         signature=signature,
@@ -195,7 +73,7 @@ def test_invalid_id_nonce_signature_validation():
     id_nonce = b"\xff" * 10
     private_key = b"\x11" * 32
     ephemeral_public_key = b"\x22" * 64
-    signature = V4IdentityScheme.create_id_nonce_signature(
+    signature = V4HandshakeScheme.create_id_nonce_signature(
         id_nonce=id_nonce,
         ephemeral_public_key=ephemeral_public_key,
         private_key=private_key,
@@ -209,7 +87,7 @@ def test_invalid_id_nonce_signature_validation():
     assert different_id_nonce != id_nonce
 
     with pytest.raises(ValidationError):
-        V4IdentityScheme.validate_id_nonce_signature(
+        V4HandshakeScheme.validate_id_nonce_signature(
             id_nonce=id_nonce,
             ephemeral_public_key=ephemeral_public_key,
             signature=signature,
@@ -217,7 +95,7 @@ def test_invalid_id_nonce_signature_validation():
         )
 
     with pytest.raises(ValidationError):
-        V4IdentityScheme.validate_id_nonce_signature(
+        V4HandshakeScheme.validate_id_nonce_signature(
             id_nonce=different_id_nonce,
             ephemeral_public_key=ephemeral_public_key,
             signature=signature,
@@ -225,7 +103,7 @@ def test_invalid_id_nonce_signature_validation():
         )
 
     with pytest.raises(ValidationError):
-        V4IdentityScheme.validate_id_nonce_signature(
+        V4HandshakeScheme.validate_id_nonce_signature(
             id_nonce=id_nonce,
             ephemeral_public_key=different_ephemeral_public_key,
             signature=signature,
@@ -248,7 +126,7 @@ def test_session_key_derivation(initiator_private_key, recipient_private_key, id
     initiator_node_id = keccak(initiator_private_key_object.public_key.to_bytes())
     recipient_node_id = keccak(recipient_private_key_object.public_key.to_bytes())
 
-    initiator_session_keys = V4IdentityScheme.compute_session_keys(
+    initiator_session_keys = V4HandshakeScheme.compute_session_keys(
         local_private_key=initiator_private_key,
         remote_public_key=recipient_public_key,
         local_node_id=initiator_node_id,
@@ -256,7 +134,7 @@ def test_session_key_derivation(initiator_private_key, recipient_private_key, id
         id_nonce=id_nonce,
         is_locally_initiated=True,
     )
-    recipient_session_keys = V4IdentityScheme.compute_session_keys(
+    recipient_session_keys = V4HandshakeScheme.compute_session_keys(
         local_private_key=recipient_private_key,
         remote_public_key=initiator_public_key,
         local_node_id=recipient_node_id,
@@ -369,7 +247,7 @@ def test_official_key_derivation(
 def test_official_id_nonce_signature(
     id_nonce, ephemeral_public_key, local_secret_key, id_nonce_signature
 ):
-    created_signature = V4IdentityScheme.create_id_nonce_signature(
+    created_signature = V4HandshakeScheme.create_id_nonce_signature(
         id_nonce=id_nonce,
         ephemeral_public_key=ephemeral_public_key,
         private_key=local_secret_key,

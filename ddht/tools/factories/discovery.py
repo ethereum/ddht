@@ -1,7 +1,8 @@
+from eth_enr.identity_schemes import V4IdentityScheme
+from eth_enr.tools.factories import ENRFactory
 import factory
 
 from ddht.base_message import InboundMessage
-from ddht.identity_schemes import V4IdentityScheme
 from ddht.v5.channel_services import InboundPacket
 from ddht.v5.constants import (
     AUTH_SCHEME_NAME,
@@ -17,7 +18,6 @@ from ddht.v5.packets import AuthHeader, AuthHeaderPacket, AuthTagPacket, WhoAreY
 from ddht.v5.typing import Topic
 
 from .endpoint import EndpointFactory
-from .enr import ENRFactory
 from .node_id import NodeIDFactory
 
 

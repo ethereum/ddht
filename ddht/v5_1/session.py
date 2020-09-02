@@ -3,9 +3,10 @@ import enum
 import itertools
 import logging
 import secrets
-from typing import Optional, Tuple, cast
+from typing import Optional, Tuple, Type, cast
 import uuid
 
+from eth_enr import ENRAPI, ENRDatabaseAPI, IdentitySchemeAPI
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import ValidationError
@@ -13,12 +14,12 @@ import rlp
 import trio
 
 from ddht._utils import humanize_node_id
-from ddht.abc import NodeDBAPI
+from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
 from ddht.encryption import aesgcm_decrypt
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
+from ddht.handshake_schemes import default_handshake_scheme_registry
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import AES128Key, IDNonce, Nonce, SessionKeys
 from ddht.v5_1.abc import EventsAPI, SessionAPI
@@ -52,13 +53,14 @@ class BaseSession(SessionAPI):
     logger = logging.getLogger("ddht.session.Session")
 
     _last_message_received_at: float
+    _handshake_scheme_registry: HandshakeSchemeRegistryAPI = default_handshake_scheme_registry
 
     def __init__(
         self,
         local_private_key: bytes,
         local_node_id: NodeID,
         remote_endpoint: Endpoint,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
@@ -77,7 +79,7 @@ class BaseSession(SessionAPI):
         self._local_private_key = local_private_key
         self._local_node_id = local_node_id
         self.remote_endpoint = remote_endpoint
-        self._node_db = node_db
+        self._enr_db = enr_db
 
         self._message_type_registry = message_type_registry
 
@@ -138,6 +140,18 @@ class BaseSession(SessionAPI):
             return self._last_message_received_at + SESSION_IDLE_TIMEOUT
         else:
             return self.created_at + SESSION_IDLE_TIMEOUT
+
+    @property
+    def local_enr(self) -> ENRAPI:
+        return self._enr_db.get_enr(self._local_node_id)
+
+    @property
+    def identity_scheme(self) -> Type[IdentitySchemeAPI]:
+        return self.local_enr.identity_scheme
+
+    @property
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
+        return self._handshake_scheme_registry[self.identity_scheme]
 
     @property
     def last_message_received_at(self) -> float:
@@ -234,7 +248,7 @@ class SessionInitiator(BaseSession):
         local_node_id: NodeID,
         remote_node_id: NodeID,
         remote_endpoint: Endpoint,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
@@ -244,7 +258,7 @@ class SessionInitiator(BaseSession):
             local_private_key=local_private_key,
             local_node_id=local_node_id,
             remote_endpoint=remote_endpoint,
-            node_db=node_db,
+            enr_db=enr_db,
             inbound_message_send_channel=inbound_message_send_channel,
             outbound_envelope_send_channel=outbound_envelope_send_channel,
             message_type_registry=message_type_registry,
@@ -257,8 +271,8 @@ class SessionInitiator(BaseSession):
         return self._remote_node_id
 
     @property
-    def remote_enr(self) -> ENR:
-        return self._node_db.get_enr(self.remote_node_id)
+    def remote_enr(self) -> ENRAPI:
+        return self._enr_db.get_enr(self.remote_node_id)
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         self.logger.debug("%s: handling outbound message: %s", self, message)
@@ -376,7 +390,7 @@ class SessionInitiator(BaseSession):
         ephemeral_private_key = keys.PrivateKey(secrets.token_bytes(32))
 
         remote_enr = self.remote_enr
-        session_keys = remote_enr.identity_scheme.compute_session_keys(
+        session_keys = self.handshake_scheme.compute_session_keys(
             local_private_key=ephemeral_private_key.to_bytes(),
             remote_public_key=remote_enr.public_key,
             local_node_id=self._local_node_id,
@@ -395,10 +409,10 @@ class SessionInitiator(BaseSession):
     ) -> None:
         self.logger.debug("%s: sending handshake completion", self)
 
-        local_enr = self._node_db.get_enr(self._local_node_id)
+        local_enr = self.local_enr
 
         # prepare response packet
-        id_nonce_signature = local_enr.identity_scheme.create_id_nonce_signature(
+        id_nonce_signature = self.handshake_scheme.create_id_nonce_signature(
             id_nonce=packet.auth_data.id_nonce,
             ephemeral_public_key=ephemeral_public_key,
             private_key=self._local_private_key,
@@ -451,7 +465,7 @@ class SessionRecipient(BaseSession):
         local_private_key: bytes,
         local_node_id: NodeID,
         remote_endpoint: Endpoint,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         message_type_registry: MessageTypeRegistry = v51_registry,
@@ -461,7 +475,7 @@ class SessionRecipient(BaseSession):
             local_private_key=local_private_key,
             local_node_id=local_node_id,
             remote_endpoint=remote_endpoint,
-            node_db=node_db,
+            enr_db=enr_db,
             inbound_message_send_channel=inbound_message_send_channel,
             outbound_envelope_send_channel=outbound_envelope_send_channel,
             message_type_registry=message_type_registry,
@@ -603,7 +617,7 @@ class SessionRecipient(BaseSession):
     ) -> None:
         self.logger.debug("%s: sending handshake response", self)
         try:
-            remote_enr = self._node_db.get_enr(packet.header.source_node_id)
+            remote_enr = self._enr_db.get_enr(packet.header.source_node_id)
         except KeyError:
             enr_sequence_number = 0
         else:
@@ -639,14 +653,15 @@ class SessionRecipient(BaseSession):
 
         if packet.auth_data.record is not None:
             remote_enr = packet.auth_data.record
-            self._node_db.set_enr(remote_enr)
+            self._enr_db.set_enr(remote_enr)
         else:
-            remote_enr = self._node_db.get_enr(self.remote_node_id)
+            remote_enr = self._enr_db.get_enr(self.remote_node_id)
 
+        handshake_scheme = self.handshake_scheme
         # Verify the id_nonce_signature which ensures that the remote node has
         # not lied about their node_id
         try:
-            remote_enr.identity_scheme.validate_id_nonce_signature(
+            handshake_scheme.validate_id_nonce_signature(
                 id_nonce=self.handshake_response_packet.auth_data.id_nonce,
                 ephemeral_public_key=packet.auth_data.ephemeral_public_key,
                 signature=packet.auth_data.id_signature,
@@ -655,7 +670,7 @@ class SessionRecipient(BaseSession):
         except ValidationError as err:
             raise HandshakeFailure(str(err)) from err
 
-        session_keys = remote_enr.identity_scheme.compute_session_keys(
+        session_keys = handshake_scheme.compute_session_keys(
             local_private_key=self._local_private_key,
             remote_public_key=packet.auth_data.ephemeral_public_key,
             local_node_id=self._local_node_id,

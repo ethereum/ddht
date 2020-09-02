@@ -16,11 +16,12 @@ from typing import (
 
 from async_generator import asynccontextmanager
 from async_service import Service
+from eth_enr import ENRDatabaseAPI
 from eth_typing import NodeID
 import trio
 
 from ddht._utils import humanize_node_id
-from ddht.abc import EventAPI, NodeDBAPI
+from ddht.abc import EventAPI
 from ddht.base_message import (
     AnyInboundMessage,
     AnyOutboundMessage,
@@ -134,14 +135,14 @@ class Dispatcher(Service, DispatcherAPI):
         inbound_envelope_receive_channel: trio.abc.ReceiveChannel[InboundEnvelope],
         inbound_message_receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage],
         pool: PoolAPI,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         message_registry: MessageTypeRegistry = v51_registry,
         events: EventsAPI = None,
     ) -> None:
         self._registry = message_registry
 
         self._pool = pool
-        self._node_db = node_db
+        self._enr_db = enr_db
 
         if events is None:
             events = Events()

@@ -2,6 +2,8 @@ import hashlib
 import secrets
 from typing import Callable, NamedTuple, Optional, Tuple, Union, cast
 
+from eth_enr import ENR
+from eth_enr.abc import ENRAPI
 from eth_typing import Hash32, NodeID
 from eth_utils import (
     ValidationError,
@@ -19,7 +21,6 @@ from ddht.abc import MessageTypeRegistryAPI
 from ddht.base_message import BaseMessage
 from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
 from ddht.encryption import aesgcm_decrypt, aesgcm_encrypt, validate_nonce
-from ddht.enr import ENR
 from ddht.typing import AES128Key, IDNonce, Nonce
 from ddht.v5.constants import (
     AUTH_RESPONSE_VERSION,
@@ -64,7 +65,7 @@ class AuthHeaderPacket(NamedTuple):
         initiator_key: AES128Key,
         id_nonce_signature: bytes,
         auth_response_key: AES128Key,
-        enr: Optional[ENR],
+        enr: Optional[ENRAPI],
         ephemeral_public_key: bytes,
     ) -> "AuthHeaderPacket":
         encrypted_auth_response = compute_encrypted_auth_response(
@@ -93,7 +94,7 @@ class AuthHeaderPacket(NamedTuple):
 
     def decrypt_auth_response(
         self, auth_response_key: AES128Key
-    ) -> Tuple[bytes, Optional[ENR]]:
+    ) -> Tuple[bytes, Optional[ENRAPI]]:
         """Extract id nonce signature and optional ENR from auth header packet."""
         plain_text = aesgcm_decrypt(
             key=auth_response_key,
@@ -431,7 +432,7 @@ def _decode_who_are_you_payload(encoded_packet: bytes) -> Tuple[Nonce, IDNonce, 
 # Packet data computation
 #
 def compute_encrypted_auth_response(
-    auth_response_key: AES128Key, id_nonce_signature: bytes, enr: Optional[ENR]
+    auth_response_key: AES128Key, id_nonce_signature: bytes, enr: Optional[ENRAPI]
 ) -> bytes:
     if enr:
         plain_text_auth_response = rlp.encode(

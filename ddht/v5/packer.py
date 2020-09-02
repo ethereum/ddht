@@ -2,15 +2,15 @@ import logging
 from typing import Dict, List, NamedTuple, Optional
 
 from async_service import LifecycleError, Service, TrioManager
+from eth_enr.abc import ENRAPI, ENRDatabaseAPI
 from eth_typing import NodeID
 from eth_utils import ValidationError, encode_hex
 import trio
 from trio.abc import ReceiveChannel, SendChannel
 
-from ddht.abc import MessageTypeRegistryAPI, NodeDBAPI
+from ddht.abc import MessageTypeRegistryAPI
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.typing import Nonce, SessionKeys
 from ddht.v5.abc import HandshakeParticipantAPI
@@ -33,7 +33,7 @@ class PeerPacker(Service):
         local_private_key: bytes,
         local_node_id: NodeID,
         remote_node_id: NodeID,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         message_type_registry: MessageTypeRegistryAPI,
         inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
         inbound_message_send_channel: SendChannel[AnyInboundMessage],
@@ -43,7 +43,7 @@ class PeerPacker(Service):
         self.local_private_key = local_private_key
         self.local_node_id = local_node_id
         self.remote_node_id = remote_node_id
-        self.node_db = node_db
+        self.enr_db = enr_db
         self.message_type_registry = message_type_registry
 
         self.inbound_packet_receive_channel = inbound_packet_receive_channel
@@ -112,14 +112,14 @@ class PeerPacker(Service):
             raise ValueError("Can only handle packets pre handshake")
 
         if isinstance(inbound_packet.packet, AuthTagPacket):
-            remote_enr: Optional[ENR]
+            remote_enr: Optional[ENRAPI]
 
             try:
-                remote_enr = self.node_db.get_enr(self.remote_node_id)
+                remote_enr = self.enr_db.get_enr(self.remote_node_id)
             except KeyError:
                 remote_enr = None
             try:
-                local_enr = self.node_db.get_enr(self.local_node_id)
+                local_enr = self.enr_db.get_enr(self.local_node_id)
             except KeyError:
                 raise ValueError(
                     f"Unable to find local ENR in DB by node id {encode_hex(self.local_node_id)}"
@@ -186,7 +186,7 @@ class PeerPacker(Service):
 
             if handshake_result.enr is not None:
                 self.logger.debug("Updating ENR in DB with %r", handshake_result.enr)
-                self.node_db.set_enr(handshake_result.enr)
+                self.enr_db.set_enr(handshake_result.enr)
 
             if handshake_result.auth_header_packet is not None:
                 outbound_packet = OutboundPacket(
@@ -258,13 +258,13 @@ class PeerPacker(Service):
             raise ValueError("Can only handle message pre handshake")
 
         try:
-            local_enr = self.node_db.get_enr(self.local_node_id)
+            local_enr = self.enr_db.get_enr(self.local_node_id)
         except KeyError:
             raise ValueError(
                 f"Unable to find local ENR in DB by node id {encode_hex(self.local_node_id)}"
             )
         try:
-            remote_enr = self.node_db.get_enr(self.remote_node_id)
+            remote_enr = self.enr_db.get_enr(self.remote_node_id)
         except KeyError:
             self.logger.warning(
                 "Unable to initiate handshake with %s as their ENR is not present in the DB",
@@ -316,7 +316,7 @@ class PeerPacker(Service):
     # Start Handshake Methods
     #
     def start_handshake_as_initiator(
-        self, local_enr: ENR, remote_enr: ENR, message: BaseMessage
+        self, local_enr: ENRAPI, remote_enr: ENRAPI, message: BaseMessage
     ) -> None:
         if not self.is_pre_handshake:
             raise ValueError("Can only register handshake when its not started yet")
@@ -338,7 +338,7 @@ class PeerPacker(Service):
             )
 
     def start_handshake_as_recipient(
-        self, auth_tag: Nonce, local_enr: ENR, remote_enr: Optional[ENR]
+        self, auth_tag: Nonce, local_enr: ENRAPI, remote_enr: Optional[ENRAPI]
     ) -> None:
         if not self.is_pre_handshake:
             raise ValueError("Can only register handshake when its not started yet")
@@ -440,7 +440,7 @@ class Packer(Service):
         self,
         local_private_key: bytes,
         local_node_id: NodeID,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         message_type_registry: MessageTypeRegistryAPI,
         inbound_packet_receive_channel: ReceiveChannel[InboundPacket],
         inbound_message_send_channel: SendChannel[AnyInboundMessage],
@@ -449,7 +449,7 @@ class Packer(Service):
     ) -> None:
         self.local_private_key = local_private_key
         self.local_node_id = local_node_id
-        self.node_db = node_db
+        self.enr_db = enr_db
         self.message_type_registry = message_type_registry
 
         self.inbound_packet_receive_channel = inbound_packet_receive_channel
@@ -581,7 +581,7 @@ class Packer(Service):
             local_private_key=self.local_private_key,
             local_node_id=self.local_node_id,
             remote_node_id=remote_node_id,
-            node_db=self.node_db,
+            enr_db=self.enr_db,
             message_type_registry=self.message_type_registry,
             inbound_packet_receive_channel=inbound_packet_channels[1],
             # These channels are the standard `trio.abc.XXXChannel` interfaces.

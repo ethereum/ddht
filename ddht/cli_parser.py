@@ -3,10 +3,11 @@ import ipaddress
 import pathlib
 from typing import Any
 
+from eth_enr import ENR
+
 from ddht import __version__
 from ddht.cli_commands import do_main
 from ddht.constants import ProtocolVersion
-from ddht.enr import ENR
 
 parser = argparse.ArgumentParser(description="Discovery V5 DHT")
 parser.set_defaults(func=do_main)

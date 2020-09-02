@@ -1,6 +1,6 @@
+from eth_enr import ENR
 import pytest
 
-from ddht.enr import ENR
 from ddht.v5_1.constants import DEFAULT_BOOTNODES
 
 

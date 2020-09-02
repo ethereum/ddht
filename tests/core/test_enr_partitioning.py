@@ -1,13 +1,15 @@
 import itertools
 
+from eth_enr.constants import MAX_ENR_SIZE
+from eth_enr.sedes import ENRSedes
+from eth_enr.tools.factories import ENRFactory
 from eth_utils.toolz import sliding_window
 from hypothesis import given, settings
 from hypothesis import strategies as st
 import rlp
 
-from ddht.constants import DISCOVERY_MAX_PACKET_SIZE, MAX_ENR_SIZE
-from ddht.enr import ENRSedes, partition_enrs
-from ddht.tools.factories.enr import ENRFactory
+from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
+from ddht.enr import partition_enrs
 
 
 @settings(max_examples=50, deadline=1000)

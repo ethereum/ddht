@@ -9,12 +9,12 @@ from typing import (
     TypeVar,
 )
 
+from eth_enr import ENRAPI, IdentitySchemeAPI
 from eth_typing import NodeID
 
+from ddht.abc import HandshakeSchemeAPI
 from ddht.base_message import AnyInboundMessage, BaseMessage, InboundMessage, TMessage
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
-from ddht.identity_schemes import IdentityScheme
 from ddht.v5.packets import Packet
 from ddht.v5.typing import HandshakeResult, Tag
 
@@ -25,7 +25,7 @@ class HandshakeParticipantAPI(ABC):
         self,
         is_initiator: bool,
         local_private_key: bytes,
-        local_enr: ENR,
+        local_enr: ENRAPI,
         remote_node_id: NodeID,
     ) -> None:
         ...
@@ -54,8 +54,18 @@ class HandshakeParticipantAPI(ABC):
 
     @property
     @abstractmethod
-    def identity_scheme(self) -> Type[IdentityScheme]:
+    def identity_scheme(self) -> Type[IdentitySchemeAPI]:
         """The identity scheme used during the handshake."""
+        ...
+
+    @property
+    @abstractmethod
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
+        """
+        The handshake scheme used during the handshake.
+
+        This value is derived from the `identity_scheme`
+        """
         ...
 
     @property
@@ -66,7 +76,7 @@ class HandshakeParticipantAPI(ABC):
 
     @property
     @abstractmethod
-    def local_enr(self) -> ENR:
+    def local_enr(self) -> ENRAPI:
         """The ENR of this node"""
         ...
 

@@ -1,13 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import AsyncContextManager, Collection, NamedTuple, Optional, Tuple
 
+from eth_enr import ENRAPI, ENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
 
-from ddht.abc import NodeDBAPI
 from ddht.base_message import AnyInboundMessage, BaseMessage
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
 from ddht.tools.factories.v5_1 import SessionChannels
 from ddht.v5_1.abc import (
     ClientAPI,
@@ -24,8 +23,8 @@ from ddht.v5_1.packets import AnyPacket
 
 class NodeAPI(ABC):
     private_key: keys.PrivateKey
-    enr: ENR
-    node_db: NodeDBAPI
+    enr: ENRAPI
+    enr_db: ENRDatabaseAPI
     events: EventsAPI
 
     @property
@@ -44,7 +43,7 @@ class NodeAPI(ABC):
 
     @abstractmethod
     def network(
-        self, bootnodes: Collection[ENR] = ()
+        self, bootnodes: Collection[ENRAPI] = ()
     ) -> AsyncContextManager[NetworkAPI]:
         ...
 

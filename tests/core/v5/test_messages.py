@@ -1,11 +1,11 @@
 import inspect
 
+from eth_enr import ENR
 from eth_utils import decode_hex
 import pytest
 import rlp
 from rlp.sedes import big_endian_int
 
-from ddht.enr import ENR
 from ddht.v5 import messages
 from ddht.v5.messages import (
     BaseMessage,

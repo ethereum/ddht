@@ -4,13 +4,14 @@ import secrets
 import struct
 from typing import Generic, NamedTuple, Optional, TypeVar, Union, cast
 
+from eth_enr.abc import ENRAPI
+from eth_enr.sedes import ENRSedes
 from eth_typing import NodeID
 from eth_utils.toolz import take
 import rlp
 
 from ddht.base_message import BaseMessage
 from ddht.encryption import aesctr_decrypt_stream, aesctr_encrypt, aesgcm_encrypt
-from ddht.enr import ENR, ENRSedes
 from ddht.exceptions import DecodingError
 from ddht.typing import AES128Key, IDNonce, Nonce
 
@@ -103,7 +104,7 @@ class HandshakePacket:
     auth_data_head: HandshakeHeader
     id_signature: bytes
     ephemeral_public_key: bytes
-    record: Optional[ENR]
+    record: Optional[ENRAPI]
 
     flag: int = field(init=False, repr=False, default=2)
 

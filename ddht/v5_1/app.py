@@ -2,6 +2,7 @@ import logging
 
 from async_service import Service, run_trio_service
 from eth.db.backends.level import LevelDB
+from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
 from eth_keys import keys
 from eth_utils import encode_hex
 import trio
@@ -10,9 +11,6 @@ from ddht._utils import generate_node_key_file, read_node_key_file
 from ddht.boot_info import BootInfo
 from ddht.constants import DEFAULT_LISTEN, IP_V4_ADDRESS_ENR_KEY
 from ddht.endpoint import Endpoint
-from ddht.enr_manager import ENRManager
-from ddht.identity_schemes import default_identity_scheme_registry
-from ddht.node_db import NodeDB
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
 from ddht.v5_1.client import Client
@@ -64,11 +62,11 @@ class Application(Service):
 
         enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
         enr_database_dir.mkdir(exist_ok=True)
-        node_db = NodeDB(identity_scheme_registry, LevelDB(enr_database_dir))
+        enr_db = ENRDB(LevelDB(enr_database_dir), identity_scheme_registry)
 
         local_private_key = get_local_private_key(self._boot_info)
 
-        enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
+        enr_manager = ENRManager(enr_db=enr_db, private_key=local_private_key,)
 
         port = self._boot_info.port
         events = Events()
@@ -98,7 +96,7 @@ class Application(Service):
         client = Client(
             local_private_key=local_private_key,
             listen_on=listen_on,
-            node_db=node_db,
+            enr_db=enr_db,
             events=events,
             message_type_registry=message_type_registry,
         )

@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING, NamedTuple, NewType, Optional
 
+from eth_enr.abc import ENRAPI
 from eth_typing import Hash32
 
 from ddht.base_message import BaseMessage
-from ddht.enr import ENR
 from ddht.typing import SessionKeys
 
 if TYPE_CHECKING:
@@ -16,6 +16,6 @@ Topic = NewType("Topic", Hash32)
 
 class HandshakeResult(NamedTuple):
     session_keys: SessionKeys
-    enr: Optional[ENR]
+    enr: Optional[ENRAPI]
     message: Optional[BaseMessage]
     auth_header_packet: Optional["AuthHeaderPacket"]

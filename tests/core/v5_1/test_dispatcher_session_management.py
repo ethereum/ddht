@@ -4,17 +4,12 @@ import trio
 from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 
 
-@pytest.fixture(autouse=True)
-def _share_enr_records(alice, bob):
-    alice.node_db.set_enr(bob.enr)
-    bob.node_db.set_enr(alice.enr)
-
-
 @pytest.mark.trio
 async def test_dispatcher_detects_handshake_timeout_as_initiator(
     alice, bob, autojump_clock
 ):
-    alice.node_db.set_enr(bob.enr)
+    alice.enr_db.set_enr(bob.enr)
+    bob.enr_db.set_enr(alice.enr)
 
     async with alice.client() as alice_client:
         async with bob.client() as bob_client:
@@ -39,7 +34,8 @@ async def test_dispatcher_detects_handshake_timeout_as_initiator(
 async def test_dispatcher_detects_handshake_timeout_as_recipient(
     alice, bob, autojump_clock
 ):
-    alice.node_db.set_enr(bob.enr)
+    alice.enr_db.set_enr(bob.enr)
+    bob.enr_db.set_enr(alice.enr)
 
     async with bob.client():
         async with alice.client() as alice_client:
@@ -66,7 +62,8 @@ async def test_dispatcher_detects_handshake_timeout_as_recipient(
 async def test_dispatcher_initiates_new_session_when_packet_cannot_be_decoded(
     alice, bob, autojump_clock
 ):
-    bob.node_db.set_enr(alice.enr)
+    alice.enr_db.set_enr(bob.enr)
+    bob.enr_db.set_enr(alice.enr)
 
     async with alice.client():
         async with bob.client() as bob_client:
@@ -90,7 +87,8 @@ async def test_dispatcher_initiates_new_session_when_packet_cannot_be_decoded(
 
 @pytest.mark.trio
 async def test_dispatcher_detects_duplicate_handshakes(alice, bob, autojump_clock):
-    bob.node_db.set_enr(alice.enr)
+    alice.enr_db.set_enr(bob.enr)
+    bob.enr_db.set_enr(alice.enr)
 
     async with alice.client() as alice_client:
         async with bob.client() as bob_client:

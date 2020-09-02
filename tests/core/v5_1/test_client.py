@@ -1,5 +1,6 @@
 import itertools
 
+from eth_enr.tools.factories import ENRFactory
 from hypothesis import given
 from hypothesis import strategies as st
 import pytest
@@ -7,19 +8,18 @@ import trio
 
 from ddht.datagram import OutboundDatagram
 from ddht.kademlia import KademliaRoutingTable
-from ddht.tools.factories.enr import ENRFactory
 
 
 @pytest.fixture
 async def alice_client(alice, bob):
-    alice.node_db.set_enr(bob.enr)
+    alice.enr_db.set_enr(bob.enr)
     async with alice.client() as alice_client:
         yield alice_client
 
 
 @pytest.fixture
 async def bob_client(alice, bob):
-    bob.node_db.set_enr(alice.enr)
+    bob.enr_db.set_enr(alice.enr)
     async with bob.client() as bob_client:
         yield bob_client
 
@@ -197,7 +197,7 @@ async def test_client_request_response_find_nodes_found_nodes(
     for i in range(1000):
         enr = ENRFactory()
         table.update(enr.node_id)
-        bob.node_db.set_enr(enr)
+        bob.enr_db.set_enr(enr)
 
     checked_bucket_indexes = []
 
@@ -208,9 +208,7 @@ async def test_client_request_response_find_nodes_found_nodes(
                 if not len(bucket):
                     break
 
-                expected_enrs = tuple(
-                    bob.node_db.get_enr(node_id) for node_id in bucket
-                )
+                expected_enrs = tuple(bob.enr_db.get_enr(node_id) for node_id in bucket)
 
                 async def _send_response():
                     find_nodes = await subscription.receive()
@@ -245,8 +243,8 @@ async def test_client_handles_malformed_datagrams(tester, datagram_bytes):
     bob = tester.node()
     async with bob.client() as bob_client:
         alice = tester.node()
-        alice.node_db.set_enr(bob.enr)
-        bob.node_db.set_enr(alice.enr)
+        alice.enr_db.set_enr(bob.enr)
+        bob.enr_db.set_enr(alice.enr)
 
         async with alice.client():
             async with alice.events.ping_received.subscribe() as subscription:
