@@ -4,6 +4,7 @@ import secrets
 import struct
 from typing import Generic, NamedTuple, Optional, TypeVar, Union, cast
 
+from eth_typing import NodeID
 from eth_utils.toolz import take
 import rlp
 
@@ -11,7 +12,7 @@ from ddht.base_message import BaseMessage
 from ddht.encryption import aesctr_decrypt_stream, aesctr_encrypt, aesgcm_encrypt
 from ddht.enr import ENR, ENRSedes
 from ddht.exceptions import DecodingError
-from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
+from ddht.typing import AES128Key, IDNonce, Nonce
 
 PROTOCOL_ID = b"discv5  "
 

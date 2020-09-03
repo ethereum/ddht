@@ -2,6 +2,7 @@ import logging
 from typing import NamedTuple
 
 from async_service import Service
+from eth_typing import NodeID
 from eth_utils import ValidationError
 import trio
 from trio.abc import ReceiveChannel, SendChannel
@@ -9,7 +10,6 @@ from trio.abc import ReceiveChannel, SendChannel
 from ddht.datagram import InboundDatagram, OutboundDatagram
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DecodingError, DecryptionError
-from ddht.typing import NodeID
 from ddht.v5_1.packets import AnyPacket, decode_packet
 
 

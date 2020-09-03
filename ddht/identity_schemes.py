@@ -11,10 +11,11 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from eth_keys.datatypes import NonRecoverableSignature, PrivateKey, PublicKey
 from eth_keys.exceptions import BadSignature
 from eth_keys.exceptions import ValidationError as EthKeysValidationError
+from eth_typing import NodeID
 from eth_utils import ValidationError, encode_hex, keccak
 
 from ddht.constants import AES128_KEY_SIZE, HKDF_INFO, ID_NONCE_SIGNATURE_PREFIX
-from ddht.typing import AES128Key, IDNonce, NodeID, SessionKeys
+from ddht.typing import AES128Key, IDNonce, SessionKeys
 
 if TYPE_CHECKING:
     from ddht.enr import ENR, BaseENR  # noqa: F401

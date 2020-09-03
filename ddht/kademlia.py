@@ -19,11 +19,11 @@ from typing import (
     cast,
 )
 
+from eth_typing import NodeID
 from eth_utils import big_endian_to_int, encode_hex
 
 from ddht.abc import AddressAPI, RoutingTableAPI, TAddress
 from ddht.constants import NUM_ROUTING_TABLE_BUCKETS
-from ddht.typing import NodeID
 
 
 def check_relayed_addr(sender: AddressAPI, addr: AddressAPI) -> bool:

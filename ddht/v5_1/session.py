@@ -7,6 +7,7 @@ from typing import Optional, Tuple, cast
 import uuid
 
 from eth_keys import keys
+from eth_typing import NodeID
 from eth_utils import ValidationError
 import rlp
 import trio
@@ -19,7 +20,7 @@ from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.message_registry import MessageTypeRegistry
-from ddht.typing import AES128Key, IDNonce, NodeID, Nonce, SessionKeys
+from ddht.typing import AES128Key, IDNonce, Nonce, SessionKeys
 from ddht.v5_1.abc import EventsAPI, SessionAPI
 from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope

@@ -2,12 +2,13 @@ import secrets
 from typing import Optional, Type
 
 from eth_keys.datatypes import PublicKey
+from eth_typing import NodeID
 from eth_utils import ValidationError, encode_hex
 
 from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.identity_schemes import IdentityScheme
-from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
+from ddht.typing import AES128Key, IDNonce, Nonce
 from ddht.v5.abc import HandshakeParticipantAPI
 from ddht.v5.messages import BaseMessage
 from ddht.v5.packets import (

@@ -3,6 +3,7 @@ from typing import AsyncIterator, Collection, Optional
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
 from eth_keys import keys
+from eth_typing import NodeID
 from eth_utils import humanize_hash
 
 from ddht.abc import NodeDBAPI
@@ -11,7 +12,6 @@ from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.tools.driver.abc import NodeAPI
 from ddht.tools.factories.enr import ENRFactory
-from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, EventsAPI, NetworkAPI
 from ddht.v5_1.client import Client
 from ddht.v5_1.events import Events

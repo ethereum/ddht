@@ -1,7 +1,8 @@
 import hashlib
 
+from eth_typing import NodeID
+
 from ddht._utils import sxor
-from ddht.typing import NodeID
 from ddht.v5.typing import Tag
 
 

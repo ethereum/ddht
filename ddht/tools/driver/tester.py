@@ -5,6 +5,7 @@ from typing import AsyncIterator, Dict, NamedTuple, Optional, Set, Tuple
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
 from eth_keys import keys
+from eth_typing import NodeID
 import trio
 
 from ddht._utils import humanize_node_id
@@ -17,7 +18,6 @@ from ddht.tools.factories.endpoint import EndpointFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_db import NodeDBFactory
 from ddht.tools.factories.v5_1 import SessionChannels
-from ddht.typing import NodeID
 from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.dispatcher import Dispatcher
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope

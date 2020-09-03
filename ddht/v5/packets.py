@@ -2,7 +2,7 @@ import hashlib
 import secrets
 from typing import Callable, NamedTuple, Optional, Tuple, Union, cast
 
-from eth_typing import Hash32
+from eth_typing import Hash32, NodeID
 from eth_utils import (
     ValidationError,
     big_endian_to_int,
@@ -20,7 +20,7 @@ from ddht.base_message import BaseMessage
 from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
 from ddht.encryption import aesgcm_decrypt, aesgcm_encrypt, validate_nonce
 from ddht.enr import ENR
-from ddht.typing import AES128Key, IDNonce, NodeID, Nonce
+from ddht.typing import AES128Key, IDNonce, Nonce
 from ddht.v5.constants import (
     AUTH_RESPONSE_VERSION,
     AUTH_SCHEME_NAME,

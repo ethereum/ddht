@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 
 from eth.abc import DatabaseAPI
+from eth_typing import NodeID
 from eth_utils.encoding import big_endian_to_int, int_to_big_endian
 import rlp
 
@@ -9,7 +10,6 @@ from ddht.abc import NodeDBAPI
 from ddht.enr import ENR
 from ddht.exceptions import OldSequenceNumber, UnknownIdentityScheme
 from ddht.identity_schemes import IdentitySchemeRegistry
-from ddht.typing import NodeID
 
 
 class NodeDB(NodeDBAPI):

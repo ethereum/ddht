@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 from typing import AsyncContextManager, Collection, NamedTuple, Optional, Tuple
 
 from eth_keys import keys
+from eth_typing import NodeID
 
 from ddht.abc import NodeDBAPI
 from ddht.base_message import AnyInboundMessage, BaseMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.tools.factories.v5_1 import SessionChannels
-from ddht.typing import NodeID
 from ddht.v5_1.abc import (
     ClientAPI,
     DispatcherAPI,

@@ -2,6 +2,7 @@ import logging
 from typing import Dict, List, NamedTuple, Optional
 
 from async_service import LifecycleError, Service, TrioManager
+from eth_typing import NodeID
 from eth_utils import ValidationError, encode_hex
 import trio
 from trio.abc import ReceiveChannel, SendChannel
@@ -11,7 +12,7 @@ from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
 from ddht.exceptions import DecryptionError, HandshakeFailure
-from ddht.typing import NodeID, Nonce, SessionKeys
+from ddht.typing import Nonce, SessionKeys
 from ddht.v5.abc import HandshakeParticipantAPI
 from ddht.v5.channel_services import InboundPacket, OutboundPacket
 from ddht.v5.constants import HANDSHAKE_TIMEOUT

@@ -1,12 +1,12 @@
 import random
 from typing import Tuple
 
+from eth_typing import NodeID
 from eth_utils import big_endian_to_int, int_to_big_endian
 from eth_utils.toolz import reduce
 import factory
 
 from ddht.kademlia import compute_log_distance
-from ddht.typing import NodeID
 
 
 def bytes_to_bits(input_bytes: bytes) -> Tuple[bool, ...]:

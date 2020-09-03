@@ -6,6 +6,7 @@ import time
 from typing import Collection, Iterable, List, Optional, Set, Tuple
 
 from async_service import Service
+from eth_typing import NodeID
 from eth_utils import to_tuple
 from eth_utils.toolz import cons, excepts, first, groupby, take
 import trio
@@ -26,7 +27,6 @@ from ddht.kademlia import (
     compute_log_distance,
     iter_closest_nodes,
 )
-from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, NetworkAPI, PoolAPI
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.messages import FindNodeMessage, PingMessage, PongMessage
