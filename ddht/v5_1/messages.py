@@ -1,7 +1,7 @@
+from eth_enr.sedes import ENRSedes
 from rlp.sedes import Binary, CountableList, big_endian_int, binary
 
 from ddht.base_message import BaseMessage
-from ddht.enr import ENR, ENRSedes
 from ddht.message_registry import MessageTypeRegistry
 from ddht.sedes import ip_address_sedes
 from ddht.v5.constants import TOPIC_HASH_SIZE
@@ -51,7 +51,7 @@ class FoundNodesMessage(BaseMessage):
     fields = (
         ("request_id", big_endian_int),
         ("total", big_endian_int),
-        ("enrs", CountableList(ENR)),
+        ("enrs", CountableList(ENRSedes)),
     )
 
 

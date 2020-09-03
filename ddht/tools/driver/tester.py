@@ -4,19 +4,18 @@ from typing import AsyncIterator, Dict, NamedTuple, Optional, Set, Tuple
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
+from eth_enr import ENRDB, ENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
 
 from ddht._utils import humanize_node_id
-from ddht.abc import NodeDBAPI
 from ddht.endpoint import Endpoint
 from ddht.tools.driver.abc import NodeAPI, SessionPairAPI, TesterAPI
 from ddht.tools.driver.node import Node
 from ddht.tools.driver.session import SessionPair
 from ddht.tools.factories.endpoint import EndpointFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
-from ddht.tools.factories.node_db import NodeDBFactory
 from ddht.tools.factories.v5_1 import SessionChannels
 from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.dispatcher import Dispatcher
@@ -90,7 +89,7 @@ class Tester(TesterAPI):
             pool = Pool(
                 local_private_key=node.private_key,
                 local_node_id=node.enr.node_id,
-                node_db=node.node_db,
+                enr_db=node.enr_db,
                 outbound_envelope_send_channel=channels.outbound_envelope_send_channel,
                 inbound_message_send_channel=channels.inbound_message_send_channel,
                 events=node.events,
@@ -102,17 +101,17 @@ class Tester(TesterAPI):
         self,
         private_key: Optional[keys.PrivateKey] = None,
         endpoint: Optional[Endpoint] = None,
-        node_db: Optional[NodeDBAPI] = None,
+        enr_db: Optional[ENRDatabaseAPI] = None,
         events: Optional[EventsAPI] = None,
     ) -> Node:
         if private_key is None:
             private_key = PrivateKeyFactory()
         if endpoint is None:
             endpoint = EndpointFactory.localhost()
-        if node_db is None:
-            node_db = NodeDBFactory()
+        if enr_db is None:
+            enr_db = ENRDB({})
         return Node(
-            private_key=private_key, endpoint=endpoint, node_db=node_db, events=events
+            private_key=private_key, endpoint=endpoint, enr_db=enr_db, events=events
         )
 
     def session_pair(
@@ -135,7 +134,7 @@ class Tester(TesterAPI):
             recipient.endpoint, recipient.node_id
         )
         # the initiator always needs to have the remote enr present in their database
-        initiator.node_db.set_enr(recipient.enr)
+        initiator.enr_db.set_enr(recipient.enr)
 
         recipient_pool, recipient_channels = self._get_or_create_pool_for_node(
             recipient
@@ -192,7 +191,7 @@ class Tester(TesterAPI):
                     left_inbound_envelope_receive_channel,
                     left_channels.inbound_message_receive_channel,
                     left_pool,
-                    left.node_db,
+                    left.enr_db,
                     events=left.events,
                 )
                 left_managed_dispatcher = ManagedDispatcher(
@@ -220,7 +219,7 @@ class Tester(TesterAPI):
                     right_inbound_envelope_receive_channel,
                     right_channels.inbound_message_receive_channel,
                     right_pool,
-                    right.node_db,
+                    right.enr_db,
                     events=right.events,
                 )
                 right_managed_dispatcher = ManagedDispatcher(

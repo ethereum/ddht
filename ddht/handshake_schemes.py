@@ -1,141 +1,48 @@
-from abc import ABC, abstractmethod
-from collections import UserDict
 from hashlib import sha256
 import secrets
-from typing import TYPE_CHECKING, Tuple, Type
+from typing import Tuple, Type
 
 import coincurve
 from cryptography.hazmat.backends import default_backend as cryptography_default_backend
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from eth_enr.identity_schemes import V4IdentityScheme
 from eth_keys.datatypes import NonRecoverableSignature, PrivateKey, PublicKey
 from eth_keys.exceptions import BadSignature
 from eth_keys.exceptions import ValidationError as EthKeysValidationError
 from eth_typing import NodeID
-from eth_utils import ValidationError, encode_hex, keccak
+from eth_utils import ValidationError, encode_hex
 
+from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI
 from ddht.constants import AES128_KEY_SIZE, HKDF_INFO, ID_NONCE_SIGNATURE_PREFIX
 from ddht.typing import AES128Key, IDNonce, SessionKeys
 
-if TYPE_CHECKING:
-    from ddht.enr import ENR, BaseENR  # noqa: F401
 
-# https://github.com/python/mypy/issues/5264#issuecomment-399407428
-if TYPE_CHECKING:
-    IdentitySchemeRegistryBaseType = UserDict[bytes, Type["IdentityScheme"]]
-else:
-    IdentitySchemeRegistryBaseType = UserDict
-
-
-class IdentitySchemeRegistry(IdentitySchemeRegistryBaseType):
+class HandshakeSchemeRegistry(HandshakeSchemeRegistryAPI):
     def register(
-        self, identity_scheme_class: Type["IdentityScheme"]
-    ) -> Type["IdentityScheme"]:
-        """Class decorator to register identity schemes."""
-        if identity_scheme_class.id is None:
-            raise ValueError("Identity schemes must define ID")
+        self, handshake_scheme_class: Type[HandshakeSchemeAPI]
+    ) -> Type[HandshakeSchemeAPI]:
+        """Class decorator to register handshake schemes."""
+        is_missing_identity_scheme = (
+            not hasattr(handshake_scheme_class, "identity_scheme")
+            or handshake_scheme_class.identity_scheme is None
+        )
+        if is_missing_identity_scheme:
+            raise ValueError("Handshake schemes must define ID")
 
-        if identity_scheme_class.id in self:
+        if handshake_scheme_class.identity_scheme in self:
             raise ValueError(
-                f"Identity scheme with id {identity_scheme_class.id!r} is already registered"
+                f"Handshake scheme with id "
+                f"{handshake_scheme_class.identity_scheme!r} is already "
+                f"registered"
             )
 
-        self[identity_scheme_class.id] = identity_scheme_class
+        self[handshake_scheme_class.identity_scheme] = handshake_scheme_class
 
-        return identity_scheme_class
-
-
-default_identity_scheme_registry = IdentitySchemeRegistry()
-discv4_identity_scheme_registry = IdentitySchemeRegistry()
+        return handshake_scheme_class
 
 
-class IdentityScheme(ABC):
-
-    id: bytes
-
-    #
-    # ENR
-    #
-    @classmethod
-    @abstractmethod
-    def create_enr_signature(cls, enr: "BaseENR", private_key: bytes) -> bytes:
-        """Create and return the signature for an ENR."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def validate_enr_structure(cls, enr: "BaseENR") -> None:
-        """Validate that the data required by the identity scheme is present and valid in an ENR."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def validate_enr_signature(cls, enr: "ENR") -> None:
-        """Validate the signature of an ENR."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def extract_public_key(cls, enr: "BaseENR") -> bytes:
-        """Retrieve the public key from an ENR."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def extract_node_id(cls, enr: "BaseENR") -> NodeID:
-        """Retrieve the node id from an ENR."""
-        ...
-
-    #
-    # Handshake
-    #
-    @classmethod
-    @abstractmethod
-    def create_handshake_key_pair(cls) -> Tuple[bytes, bytes]:
-        """Create a random private/public key pair used for performing a handshake."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def validate_handshake_public_key(cls, public_key: bytes) -> None:
-        """Validate that a public key received during handshake is valid."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def compute_session_keys(
-        cls,
-        *,
-        local_private_key: bytes,
-        remote_public_key: bytes,
-        local_node_id: NodeID,
-        remote_node_id: NodeID,
-        id_nonce: IDNonce,
-        is_locally_initiated: bool,
-    ) -> SessionKeys:
-        """Compute the symmetric session keys."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def create_id_nonce_signature(
-        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes, private_key: bytes
-    ) -> bytes:
-        """Sign an id nonce received during handshake."""
-        ...
-
-    @classmethod
-    @abstractmethod
-    def validate_id_nonce_signature(
-        cls,
-        *,
-        id_nonce: IDNonce,
-        ephemeral_public_key: bytes,
-        signature: bytes,
-        public_key: bytes,
-    ) -> None:
-        """Validate the id nonce signature received from a peer."""
-        ...
+default_handshake_scheme_registry = HandshakeSchemeRegistry()
 
 
 def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
@@ -187,69 +94,22 @@ def hkdf_expand_and_extract(
     return initiator_key, recipient_key, auth_response_key
 
 
-@default_identity_scheme_registry.register
-@discv4_identity_scheme_registry.register
-class V4IdentityScheme(IdentityScheme):
-
-    id = b"v4"
-    public_key_enr_key = b"secp256k1"
-
-    private_key_size = 32
-
-    #
-    # ENR
-    #
-    @classmethod
-    def create_enr_signature(cls, enr: "BaseENR", private_key: bytes) -> bytes:
-        message = enr.get_signing_message()
-        private_key_object = PrivateKey(private_key)
-        signature = private_key_object.sign_msg_non_recoverable(message)
-        return bytes(signature)
-
-    @classmethod
-    def validate_enr_structure(cls, enr: "BaseENR") -> None:
-        if cls.public_key_enr_key not in enr:
-            raise ValidationError(
-                f"ENR is missing required key {cls.public_key_enr_key!r}"
-            )
-
-        public_key = cls.extract_public_key(enr)
-        cls.validate_compressed_public_key(public_key)
-
-    @classmethod
-    def validate_enr_signature(cls, enr: "ENR") -> None:
-        message_hash = keccak(enr.get_signing_message())
-        cls.validate_signature(
-            message_hash=message_hash,
-            signature=enr.signature,
-            public_key=enr.public_key,
-        )
-
-    @classmethod
-    def extract_public_key(cls, enr: "BaseENR") -> bytes:
-        try:
-            return enr[cls.public_key_enr_key]  # type: ignore
-        except KeyError as error:
-            raise KeyError("ENR does not contain public key") from error
-
-    @classmethod
-    def extract_node_id(cls, enr: "BaseENR") -> NodeID:
-        public_key_object = PublicKey.from_compressed_bytes(enr.public_key)
-        uncompressed_bytes = public_key_object.to_bytes()
-        return NodeID(keccak(uncompressed_bytes))
+@default_handshake_scheme_registry.register
+class V4HandshakeScheme(HandshakeSchemeAPI):
+    identity_scheme = V4IdentityScheme
 
     #
     # Handshake
     #
     @classmethod
     def create_handshake_key_pair(cls) -> Tuple[bytes, bytes]:
-        private_key = secrets.token_bytes(cls.private_key_size)
+        private_key = secrets.token_bytes(cls.identity_scheme.private_key_size)
         public_key = PrivateKey(private_key).public_key.to_bytes()
         return private_key, public_key
 
     @classmethod
     def validate_handshake_public_key(cls, public_key: bytes) -> None:
-        cls.validate_uncompressed_public_key(public_key)
+        cls.identity_scheme.validate_uncompressed_public_key(public_key)
 
     @classmethod
     def compute_session_keys(
@@ -307,7 +167,7 @@ class V4IdentityScheme(IdentityScheme):
         signature_input = cls.create_id_nonce_signature_input(
             id_nonce=id_nonce, ephemeral_public_key=ephemeral_public_key
         )
-        cls.validate_signature(
+        cls.identity_scheme.validate_signature(
             message_hash=signature_input, signature=signature, public_key=public_key
         )
 
@@ -357,27 +217,3 @@ class V4IdentityScheme(IdentityScheme):
     ) -> bytes:
         preimage = b"".join((ID_NONCE_SIGNATURE_PREFIX, id_nonce, ephemeral_public_key))
         return sha256(preimage).digest()
-
-
-@default_identity_scheme_registry.register
-@discv4_identity_scheme_registry.register
-class V4CompatIdentityScheme(V4IdentityScheme):
-    """
-    An identity scheme to be used for locally crafted ENRs representing remote nodes that don't
-    support the ENR extension.
-
-    ENRs using this identity scheme have a zero-length signature.
-    """
-
-    # The spec says all nodes should use the v4 id scheme, but the ENRs using this are forged
-    # and meant to be used only internally, so we use a different ID to be able to easily
-    # distinguish them.
-    id = b"v4-compat"
-
-    @classmethod
-    def validate_enr_signature(cls, enr: "ENR") -> None:
-        pass
-
-    @classmethod
-    def create_enr_signature(cls, enr: "BaseENR", private_key: bytes) -> bytes:
-        raise NotImplementedError()

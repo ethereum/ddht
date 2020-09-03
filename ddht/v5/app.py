@@ -2,6 +2,8 @@ import logging
 
 from async_service import Service, run_trio_service
 from eth.db.backends.level import LevelDB
+from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
+from eth_enr.exceptions import OldSequenceNumber
 from eth_keys import keys
 from eth_utils import encode_hex
 import trio
@@ -20,11 +22,7 @@ from ddht.datagram import (
     InboundDatagram,
     OutboundDatagram,
 )
-from ddht.enr_manager import ENRManager
-from ddht.exceptions import OldSequenceNumber
-from ddht.identity_schemes import default_identity_scheme_registry
 from ddht.kademlia import KademliaRoutingTable
-from ddht.node_db import NodeDB
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
 from ddht.v5.channel_services import (
@@ -69,11 +67,11 @@ class Application(Service):
 
         enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
         enr_database_dir.mkdir(exist_ok=True)
-        node_db = NodeDB(identity_scheme_registry, LevelDB(enr_database_dir))
+        enr_db = ENRDB(LevelDB(enr_database_dir), identity_scheme_registry)
 
         local_private_key = get_local_private_key(self._boot_info)
 
-        enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
+        enr_manager = ENRManager(private_key=local_private_key, enr_db=enr_db,)
 
         port = self._boot_info.port
 
@@ -98,7 +96,7 @@ class Application(Service):
 
         for enr in self._boot_info.bootnodes:
             try:
-                node_db.set_enr(enr)
+                enr_db.set_enr(enr)
             except OldSequenceNumber:
                 pass
             routing_table.update(enr.node_id)
@@ -132,7 +130,7 @@ class Application(Service):
         packer = Packer(
             local_private_key=local_private_key.to_bytes(),
             local_node_id=enr_manager.enr.node_id,
-            node_db=node_db,
+            enr_db=enr_db,
             message_type_registry=message_type_registry,
             inbound_packet_receive_channel=inbound_packet_channels[1],
             inbound_message_send_channel=inbound_message_channels[0],
@@ -141,7 +139,7 @@ class Application(Service):
         )
 
         message_dispatcher = MessageDispatcher(
-            node_db=node_db,
+            enr_db=enr_db,
             inbound_message_receive_channel=inbound_message_channels[1],
             outbound_message_send_channel=outbound_message_channels[0],
         )
@@ -149,7 +147,7 @@ class Application(Service):
         endpoint_tracker = EndpointTracker(
             local_private_key=local_private_key.to_bytes(),
             local_node_id=enr_manager.enr.node_id,
-            node_db=node_db,
+            enr_db=enr_db,
             identity_scheme_registry=identity_scheme_registry,
             vote_receive_channel=endpoint_vote_channels[1],
         )
@@ -158,7 +156,7 @@ class Application(Service):
             local_node_id=enr_manager.enr.node_id,
             routing_table=routing_table,
             message_dispatcher=message_dispatcher,
-            node_db=node_db,
+            enr_db=enr_db,
             outbound_message_send_channel=outbound_message_channels[0],
             endpoint_vote_send_channel=endpoint_vote_channels[0],
         )

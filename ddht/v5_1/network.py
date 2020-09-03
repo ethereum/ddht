@@ -2,25 +2,21 @@ import itertools
 import logging
 import operator
 import secrets
-import time
 from typing import Collection, Iterable, List, Optional, Set, Tuple
 
 from async_service import Service
+from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
+from eth_enr.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
+from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
 from eth_utils import to_tuple
-from eth_utils.toolz import cons, excepts, first, groupby, take
+from eth_utils.toolz import cons, first, groupby, take
+from lru import LRU
 import trio
 
 from ddht._utils import every, humanize_node_id
-from ddht.abc import ENRManagerAPI, NodeDBAPI
-from ddht.constants import (
-    IP_V4_ADDRESS_ENR_KEY,
-    ROUTING_TABLE_BUCKET_SIZE,
-    UDP_PORT_ENR_KEY,
-)
+from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
-from ddht.exceptions import OldSequenceNumber
 from ddht.kademlia import (
     KademliaRoutingTable,
     compute_distance,
@@ -35,9 +31,9 @@ from ddht.v5_1.messages import FindNodeMessage, PingMessage, PongMessage
 class Network(Service, NetworkAPI):
     logger = logging.getLogger("ddht.Network")
 
-    _bootnodes: Tuple[ENR, ...]
+    _bootnodes: Tuple[ENRAPI, ...]
 
-    def __init__(self, client: ClientAPI, bootnodes: Collection[ENR],) -> None:
+    def __init__(self, client: ClientAPI, bootnodes: Collection[ENRAPI],) -> None:
         self.client = client
 
         self._bootnodes = tuple(bootnodes)
@@ -45,6 +41,7 @@ class Network(Service, NetworkAPI):
             self.client.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
         self._routing_table_ready = trio.Event()
+        self._last_pong_at = LRU(2048)
 
     #
     # Proxied ClientAPI properties
@@ -70,8 +67,8 @@ class Network(Service, NetworkAPI):
         return self.client.pool
 
     @property
-    def node_db(self) -> NodeDBAPI:
-        return self.client.node_db
+    def enr_db(self) -> ENRDatabaseAPI:
+        return self.client.enr_db
 
     #
     # High Level API
@@ -88,7 +85,7 @@ class Network(Service, NetworkAPI):
             return False
 
         try:
-            enr = self.node_db.get_enr(node_id)
+            enr = self.enr_db.get_enr(node_id)
         except KeyError:
             try:
                 enr = await self.get_enr(node_id, endpoint=endpoint)
@@ -108,7 +105,7 @@ class Network(Service, NetworkAPI):
                         humanize_node_id(node_id),
                     )
                 else:
-                    self.node_db.set_enr(enr)
+                    self.enr_db.set_enr(enr)
 
         self.routing_table.update(enr.node_id)
 
@@ -128,7 +125,7 @@ class Network(Service, NetworkAPI):
 
     async def find_nodes(
         self, node_id: NodeID, *distances: int, endpoint: Optional[Endpoint] = None,
-    ) -> Tuple[ENR, ...]:
+    ) -> Tuple[ENRAPI, ...]:
         if not distances:
             raise TypeError("Must provide at least one distance")
 
@@ -139,19 +136,19 @@ class Network(Service, NetworkAPI):
 
     async def get_enr(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
-    ) -> ENR:
+    ) -> ENRAPI:
         enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
         if not enrs:
             raise Exception("Invalid response")
         # This reduce accounts for
         return _reduce_enrs(enrs)[0]
 
-    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENR, ...]:
+    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         self.logger.debug("Recursive find nodes: %s", humanize_node_id(target))
 
         queried_node_ids = set()
         unresponsive_node_ids = set()
-        received_enrs: List[ENR] = []
+        received_enrs: List[ENRAPI] = []
         received_node_ids: Set[NodeID] = set()
 
         async def do_lookup(node_id: NodeID) -> None:
@@ -167,9 +164,9 @@ class Network(Service, NetworkAPI):
             for enr in enrs:
                 received_node_ids.add(enr.node_id)
                 try:
-                    self.node_db.set_enr(enr)
+                    self.enr_db.set_enr(enr)
                 except OldSequenceNumber:
-                    received_enrs.append(self.node_db.get_enr(enr.node_id))
+                    received_enrs.append(self.enr_db.get_enr(enr.node_id))
                 else:
                     received_enrs.append(enr)
 
@@ -262,14 +259,12 @@ class Network(Service, NetworkAPI):
             else:
                 least_recently_ponged_node_id = min(
                     cons(first_node_id, nodes_iter),
-                    key=excepts(KeyError, self.node_db.get_last_pong_time, lambda _: 0),
+                    key=lambda node_id: self._last_pong_at.get(node_id, 0),
                 )
 
-            too_old_at = time.time() - ROUTING_TABLE_KEEP_ALIVE
+            too_old_at = trio.current_time() - ROUTING_TABLE_KEEP_ALIVE
             try:
-                last_pong_at = self.node_db.get_last_pong_time(
-                    least_recently_ponged_node_id
-                )
+                last_pong_at = self._last_pong_at[least_recently_ponged_node_id]
             except KeyError:
                 pass
             else:
@@ -284,15 +279,13 @@ class Network(Service, NetworkAPI):
     async def _track_last_pong(self) -> None:
         async with self.dispatcher.subscribe(PongMessage) as subscription:
             async for message in subscription:
-                self.node_db.set_last_pong_time(
-                    message.sender_node_id, int(time.time())
-                )
+                self._last_pong_at[message.sender_node_id] = trio.current_time()
 
     async def _manage_routing_table(self) -> None:
         # First load all the bootnode ENRs into our database
         for enr in self._bootnodes:
             try:
-                self.node_db.set_enr(enr)
+                self.enr_db.set_enr(enr)
             except OldSequenceNumber:
                 pass
 
@@ -339,7 +332,7 @@ class Network(Service, NetworkAPI):
     async def _serve_find_nodes(self) -> None:
         async with self.dispatcher.subscribe(FindNodeMessage) as subscription:
             async for request in subscription:
-                response_enrs: List[ENR] = []
+                response_enrs: List[ENRAPI] = []
                 distances = set(request.message.distances)
                 if len(distances) != len(request.message.distances):
                     self.logger.debug(
@@ -374,7 +367,7 @@ class Network(Service, NetworkAPI):
                             distance,
                         )
                         for node_id in node_ids_at_distance:
-                            response_enrs.append(self.node_db.get_enr(node_id))
+                            response_enrs.append(self.enr_db.get_enr(node_id))
                     else:
                         raise Exception("Should be unreachable")
 
@@ -388,7 +381,7 @@ class Network(Service, NetworkAPI):
     #
     # Utility
     #
-    def _endpoint_for_enr(self, enr: ENR) -> Endpoint:
+    def _endpoint_for_enr(self, enr: ENRAPI) -> Endpoint:
         try:
             ip_address = enr[IP_V4_ADDRESS_ENR_KEY]
             port = enr[UDP_PORT_ENR_KEY]
@@ -398,12 +391,12 @@ class Network(Service, NetworkAPI):
         return Endpoint(ip_address, port)
 
     def _endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
-        enr = self.node_db.get_enr(node_id)
+        enr = self.enr_db.get_enr(node_id)
         return self._endpoint_for_enr(enr)
 
 
 @to_tuple
-def _reduce_enrs(enrs: Collection[ENR]) -> Iterable[ENR]:
+def _reduce_enrs(enrs: Collection[ENRAPI]) -> Iterable[ENRAPI]:
     enrs_by_node_id = groupby(operator.attrgetter("node_id"), enrs)
     for _, enr_group in enrs_by_node_id.items():
         if len(enr_group) == 1:

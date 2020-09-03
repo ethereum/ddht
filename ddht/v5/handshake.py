@@ -1,13 +1,14 @@
 import secrets
 from typing import Optional, Type
 
+from eth_enr.abc import ENRAPI, IdentitySchemeAPI
 from eth_keys.datatypes import PublicKey
 from eth_typing import NodeID
 from eth_utils import ValidationError, encode_hex
 
-from ddht.enr import ENR
+from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI
 from ddht.exceptions import DecryptionError, HandshakeFailure
-from ddht.identity_schemes import IdentityScheme
+from ddht.handshake_schemes import default_handshake_scheme_registry
 from ddht.typing import AES128Key, IDNonce, Nonce
 from ddht.v5.abc import HandshakeParticipantAPI
 from ddht.v5.messages import BaseMessage
@@ -25,11 +26,13 @@ from ddht.v5.typing import HandshakeResult, Tag
 
 
 class BaseHandshakeParticipant(HandshakeParticipantAPI):
+    _handshake_scheme_registry: HandshakeSchemeRegistryAPI = default_handshake_scheme_registry
+
     def __init__(
         self,
         is_initiator: bool,
         local_private_key: bytes,
-        local_enr: ENR,
+        local_enr: ENRAPI,
         remote_node_id: NodeID,
     ) -> None:
         self._is_initiator = is_initiator
@@ -47,7 +50,7 @@ class BaseHandshakeParticipant(HandshakeParticipantAPI):
         return self._local_private_key
 
     @property
-    def local_enr(self) -> ENR:
+    def local_enr(self) -> ENRAPI:
         return self._local_enr
 
     @property
@@ -64,14 +67,18 @@ class BaseHandshakeParticipant(HandshakeParticipantAPI):
             source_node_id=self.local_node_id, destination_node_id=self.remote_node_id
         )
 
+    @property
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
+        return self._handshake_scheme_registry[self.identity_scheme]
+
 
 class HandshakeInitiator(BaseHandshakeParticipant):
     def __init__(
         self,
         *,
         local_private_key: bytes,
-        local_enr: ENR,
-        remote_enr: ENR,
+        local_enr: ENRAPI,
+        remote_enr: ENRAPI,
         initial_message: BaseMessage,
     ) -> None:
         super().__init__(
@@ -90,7 +97,7 @@ class HandshakeInitiator(BaseHandshakeParticipant):
         )
 
     @property
-    def identity_scheme(self) -> Type[IdentityScheme]:
+    def identity_scheme(self) -> Type[IdentitySchemeAPI]:
         return self.remote_enr.identity_scheme
 
     @property
@@ -115,13 +122,13 @@ class HandshakeInitiator(BaseHandshakeParticipant):
         (
             ephemeral_private_key,
             ephemeral_public_key,
-        ) = self.identity_scheme.create_handshake_key_pair()
+        ) = self.handshake_scheme.create_handshake_key_pair()
 
         remote_public_key_object = PublicKey.from_compressed_bytes(
             self.remote_enr.public_key
         )
         remote_public_key_uncompressed = remote_public_key_object.to_bytes()
-        session_keys = self.identity_scheme.compute_session_keys(
+        session_keys = self.handshake_scheme.compute_session_keys(
             local_private_key=ephemeral_private_key,
             remote_public_key=remote_public_key_uncompressed,
             local_node_id=self.local_enr.node_id,
@@ -131,13 +138,13 @@ class HandshakeInitiator(BaseHandshakeParticipant):
         )
 
         # prepare response packet
-        id_nonce_signature = self.identity_scheme.create_id_nonce_signature(
+        id_nonce_signature = self.handshake_scheme.create_id_nonce_signature(
             id_nonce=who_are_you_packet.id_nonce,
             ephemeral_public_key=ephemeral_public_key,
             private_key=self.local_private_key,
         )
 
-        enr: Optional[ENR]
+        enr: Optional[ENRAPI]
 
         if who_are_you_packet.enr_sequence_number < self.local_enr.sequence_number:
             enr = self.local_enr
@@ -169,9 +176,9 @@ class HandshakeRecipient(BaseHandshakeParticipant):
         self,
         *,
         local_private_key: bytes,
-        local_enr: ENR,
+        local_enr: ENRAPI,
         remote_node_id: Optional[NodeID],
-        remote_enr: Optional[ENR],
+        remote_enr: Optional[ENRAPI],
         initiating_packet_auth_tag: Nonce,
     ) -> None:
         if remote_enr is None and remote_node_id is None:
@@ -207,7 +214,7 @@ class HandshakeRecipient(BaseHandshakeParticipant):
         )
 
     @property
-    def identity_scheme(self) -> Type[IdentityScheme]:
+    def identity_scheme(self) -> Type[IdentitySchemeAPI]:
         return self.local_enr.identity_scheme
 
     @property
@@ -230,14 +237,14 @@ class HandshakeRecipient(BaseHandshakeParticipant):
 
         ephemeral_public_key = auth_header_packet.auth_header.ephemeral_public_key
         try:
-            self.identity_scheme.validate_handshake_public_key(ephemeral_public_key)
+            self.handshake_scheme.validate_handshake_public_key(ephemeral_public_key)
         except ValidationError as error:
             raise HandshakeFailure(
                 f"AuthHeader packet from contains invalid ephemeral public key "
                 f"{encode_hex(ephemeral_public_key)}"
             ) from error
 
-        session_keys = self.identity_scheme.compute_session_keys(
+        session_keys = self.handshake_scheme.compute_session_keys(
             local_private_key=self.local_private_key,
             remote_public_key=ephemeral_public_key,
             local_node_id=self.local_enr.node_id,
@@ -264,7 +271,7 @@ class HandshakeRecipient(BaseHandshakeParticipant):
         auth_header_packet: AuthHeaderPacket,
         auth_response_key: AES128Key,
         id_nonce: IDNonce,
-    ) -> Optional[ENR]:
+    ) -> Optional[ENRAPI]:
         try:
             id_nonce_signature, enr = auth_header_packet.decrypt_auth_response(
                 auth_response_key
@@ -303,7 +310,7 @@ class HandshakeRecipient(BaseHandshakeParticipant):
             current_remote_enr = enr
 
         try:
-            self.identity_scheme.validate_id_nonce_signature(
+            self.handshake_scheme.validate_id_nonce_signature(
                 signature=id_nonce_signature,
                 id_nonce=id_nonce,
                 ephemeral_public_key=auth_header_packet.auth_header.ephemeral_public_key,

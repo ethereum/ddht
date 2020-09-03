@@ -1,15 +1,13 @@
 from async_service import background_trio_service
-from eth.db.backends.memory import MemoryDB
+from eth_enr import ENRDB
+from eth_enr.tools.factories import ENRFactory
 import pytest
 import pytest_trio
 import trio
 
 from ddht.base_message import InboundMessage
-from ddht.identity_schemes import default_identity_scheme_registry
-from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import PingMessageFactory
 from ddht.tools.factories.endpoint import EndpointFactory
-from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.messages import FindNodeMessage, NodesMessage, PingMessage
@@ -55,8 +53,8 @@ def remote_enr(remote_private_key, remote_endpoint):
 
 
 @pytest_trio.trio_fixture
-async def node_db(enr, remote_enr):
-    db = NodeDB(default_identity_scheme_registry, MemoryDB())
+async def enr_db(enr, remote_enr):
+    db = ENRDB({})
     db.set_enr(enr)
     db.set_enr(remote_enr)
     return db
@@ -74,10 +72,10 @@ def outbound_message_channels():
 
 @pytest_trio.trio_fixture
 async def message_dispatcher(
-    node_db, inbound_message_channels, outbound_message_channels
+    enr_db, inbound_message_channels, outbound_message_channels
 ):
     message_dispatcher = MessageDispatcher(
-        node_db=node_db,
+        enr_db=enr_db,
         inbound_message_receive_channel=inbound_message_channels[1],
         outbound_message_send_channel=outbound_message_channels[0],
     )

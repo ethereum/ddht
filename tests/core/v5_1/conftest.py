@@ -11,7 +11,7 @@ def tester():
 @pytest.fixture
 async def alice(tester, bob):
     node = tester.node()
-    node.node_db.set_enr(bob.enr)
+    node.enr_db.set_enr(bob.enr)
     return node
 
 

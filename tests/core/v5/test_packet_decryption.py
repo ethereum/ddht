@@ -1,9 +1,9 @@
+from eth_enr import ENR
 from eth_keys.datatypes import PrivateKey
 from hypothesis import given
 import pytest
 
 from ddht.constants import AES128_KEY_SIZE
-from ddht.enr import ENR
 from ddht.exceptions import DecryptionError
 from ddht.tools.v5_strategies import (
     id_nonce_st,

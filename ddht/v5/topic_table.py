@@ -3,14 +3,14 @@ import math
 import operator
 from typing import DefaultDict, Deque, NamedTuple, Tuple
 
+from eth_enr.abc import ENRAPI
 from eth_utils import encode_hex, toolz
 
-from ddht.enr import ENR
 from ddht.v5.typing import Topic
 
 
 class Ad(NamedTuple):
-    enr: ENR
+    enr: ENRAPI
     registration_time: float
 
 
@@ -38,7 +38,7 @@ class TopicTable:
     def is_queue_full(self, topic: Topic) -> bool:
         return len(self.topic_queues[topic]) >= self.max_queue_size
 
-    def get_enrs_for_topic(self, topic: Topic) -> Tuple[ENR, ...]:
+    def get_enrs_for_topic(self, topic: Topic) -> Tuple[ENRAPI, ...]:
         """
         Get all ENRs registered for a given topic.
 
@@ -73,7 +73,7 @@ class TopicTable:
         )
         return max(next_registration_time - current_time, 0)
 
-    def register(self, topic: Topic, enr: ENR, current_time: float) -> None:
+    def register(self, topic: Topic, enr: ENRAPI, current_time: float) -> None:
         """
         Register a new ad.
 

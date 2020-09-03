@@ -12,11 +12,12 @@ from typing import (
 import uuid
 
 from async_service import ServiceAPI
+from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI, IdentitySchemeAPI
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
 
-from ddht.abc import ENRManagerAPI, EventAPI, NodeDBAPI, RoutingTableAPI
+from ddht.abc import EventAPI, HandshakeSchemeAPI, RoutingTableAPI
 from ddht.base_message import (
     AnyOutboundMessage,
     InboundMessage,
@@ -24,7 +25,6 @@ from ddht.base_message import (
     TMessage,
 )
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR
 from ddht.typing import SessionKeys
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import (
@@ -60,6 +60,16 @@ class SessionAPI(ABC):
     @property
     @abstractmethod
     def remote_node_id(self) -> NodeID:
+        ...
+
+    @property
+    @abstractmethod
+    def identity_scheme(self) -> Type[IdentitySchemeAPI]:
+        ...
+
+    @property
+    @abstractmethod
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
         ...
 
     @property
@@ -223,7 +233,7 @@ class ClientAPI(ServiceAPI):
     events: EventsAPI
     dispatcher: DispatcherAPI
     pool: PoolAPI
-    node_db: NodeDBAPI
+    enr_db: ENRDatabaseAPI
 
     @property
     @abstractmethod
@@ -263,7 +273,7 @@ class ClientAPI(ServiceAPI):
         endpoint: Endpoint,
         node_id: NodeID,
         *,
-        enrs: Sequence[ENR],
+        enrs: Sequence[ENRAPI],
         request_id: int,
     ) -> int:
         ...
@@ -290,7 +300,7 @@ class ClientAPI(ServiceAPI):
         node_id: NodeID,
         *,
         topic: bytes,
-        enr: ENR,
+        enr: ENRAPI,
         ticket: bytes = b"",
         request_id: Optional[int] = None,
     ) -> int:
@@ -392,7 +402,7 @@ class NetworkAPI(ServiceAPI):
 
     @property
     @abstractmethod
-    def node_db(self) -> NodeDBAPI:
+    def enr_db(self) -> ENRDatabaseAPI:
         ...
 
     #
@@ -410,13 +420,13 @@ class NetworkAPI(ServiceAPI):
 
     async def find_nodes(
         self, node_id: NodeID, *distances: int, endpoint: Optional[Endpoint] = None,
-    ) -> Tuple[ENR, ...]:
+    ) -> Tuple[ENRAPI, ...]:
         ...
 
     async def get_enr(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
-    ) -> ENR:
+    ) -> ENRAPI:
         ...
 
-    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENR, ...]:
+    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         ...

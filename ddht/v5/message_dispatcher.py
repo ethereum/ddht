@@ -14,13 +14,13 @@ from typing import (
 )
 
 from async_service import Service
+from eth_enr import ENRDatabaseAPI
 from eth_typing import NodeID
 from eth_utils import encode_hex
 import trio
 from trio.abc import ReceiveChannel, SendChannel
 from trio.hazmat import checkpoint
 
-from ddht.abc import NodeDBAPI
 from ddht.base_message import (
     AnyInboundMessage,
     AnyOutboundMessage,
@@ -97,11 +97,11 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
 
     def __init__(
         self,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         inbound_message_receive_channel: ReceiveChannel[AnyInboundMessage],
         outbound_message_send_channel: SendChannel[AnyOutboundMessage],
     ) -> None:
-        self.node_db = node_db
+        self.enr_db = enr_db
 
         self.inbound_message_receive_channel = inbound_message_receive_channel
         self.outbound_message_send_channel = outbound_message_send_channel
@@ -256,9 +256,9 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             remove_fn=remove,
         )
 
-    async def get_endpoint_from_node_db(self, receiver_node_id: NodeID) -> Endpoint:
+    async def get_endpoint_from_enr_db(self, receiver_node_id: NodeID) -> Endpoint:
         try:
-            enr = self.node_db.get_enr(receiver_node_id)
+            enr = self.enr_db.get_enr(receiver_node_id)
         except KeyError:
             raise ValueError(f"No ENR for peer {encode_hex(receiver_node_id)} known")
 
@@ -286,7 +286,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         endpoint: Optional[Endpoint] = None,
     ) -> AsyncGenerator[AnyInboundMessageSubscription, None]:
         if endpoint is None:
-            endpoint = await self.get_endpoint_from_node_db(receiver_node_id)
+            endpoint = await self.get_endpoint_from_enr_db(receiver_node_id)
 
         response_channels = trio.open_memory_channel[AnyInboundMessage](0)
         response_send_channel, response_receive_channel = response_channels

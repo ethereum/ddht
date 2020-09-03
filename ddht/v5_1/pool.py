@@ -3,11 +3,11 @@ import logging
 from typing import DefaultDict, Dict, Set, Tuple
 import uuid
 
+from eth_enr import ENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
 
-from ddht.abc import NodeDBAPI
 from ddht.base_message import AnyInboundMessage
 from ddht.endpoint import Endpoint
 from ddht.message_registry import MessageTypeRegistry
@@ -29,7 +29,7 @@ class Pool(PoolAPI):
         self,
         local_private_key: keys.PrivateKey,
         local_node_id: NodeID,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         outbound_envelope_send_channel: trio.abc.SendChannel[OutboundEnvelope],
         inbound_message_send_channel: trio.abc.SendChannel[AnyInboundMessage],
         message_type_registry: MessageTypeRegistry = v51_registry,
@@ -38,7 +38,7 @@ class Pool(PoolAPI):
         self.local_private_key = local_private_key
         self.local_node_id = local_node_id
 
-        self._node_db = node_db
+        self._enr_db = enr_db
         self._message_type_registry = message_type_registry
 
         if events is None:
@@ -77,7 +77,7 @@ class Pool(PoolAPI):
             local_node_id=self.local_node_id,
             remote_endpoint=remote_endpoint,
             remote_node_id=remote_node_id,
-            node_db=self._node_db,
+            enr_db=self._enr_db,
             inbound_message_send_channel=self._inbound_message_send_channel.clone(),  # type: ignore  # noqa: E501
             outbound_envelope_send_channel=self._outbound_packet_send_channel.clone(),  # type: ignore  # noqa: E501
             message_type_registry=self._message_type_registry,
@@ -98,7 +98,7 @@ class Pool(PoolAPI):
             local_private_key=self.local_private_key.to_bytes(),
             local_node_id=self.local_node_id,
             remote_endpoint=remote_endpoint,
-            node_db=self._node_db,
+            enr_db=self._enr_db,
             inbound_message_send_channel=self._inbound_message_send_channel.clone(),  # type: ignore  # noqa: E501
             outbound_envelope_send_channel=self._outbound_packet_send_channel.clone(),  # type: ignore  # noqa: E501
             message_type_registry=self._message_type_registry,

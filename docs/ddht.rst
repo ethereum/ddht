@@ -108,14 +108,6 @@ ddht.main module
     :undoc-members:
     :show-inheritance:
 
-ddht.node\_db module
---------------------
-
-.. automodule:: ddht.node_db
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 ddht.typing module
 ------------------
 

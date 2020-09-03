@@ -1,11 +1,11 @@
+from eth_enr import ENR
 from eth_utils import decode_hex, int_to_big_endian, is_list_like
 from hypothesis import given
 import pytest
 import rlp
 
 from ddht.encryption import aesgcm_decrypt
-from ddht.enr import ENR
-from ddht.identity_schemes import V4IdentityScheme
+from ddht.handshake_schemes import V4HandshakeScheme
 from ddht.tools.v5_strategies import (
     enr_seq_st,
     id_nonce_st,
@@ -205,7 +205,7 @@ def test_auth_tag_packet_preparation(tag, auth_tag, key):
 def test_official_auth_response_encryption(
     secret_key, id_nonce, enr, auth_response_key, ephemeral_public_key, auth_cipher_text
 ):
-    id_nonce_signature = V4IdentityScheme.create_id_nonce_signature(
+    id_nonce_signature = V4HandshakeScheme.create_id_nonce_signature(
         id_nonce=id_nonce,
         private_key=secret_key,
         ephemeral_public_key=ephemeral_public_key,
@@ -326,7 +326,7 @@ def test_official_auth_header_packet_preparation(
     message = rlp.decode(encoded_message[1:], message_type)
     assert message.to_bytes() == encoded_message
 
-    id_nonce_signature = V4IdentityScheme.create_id_nonce_signature(
+    id_nonce_signature = V4HandshakeScheme.create_id_nonce_signature(
         id_nonce=id_nonce,
         ephemeral_public_key=ephemeral_public_key,
         private_key=local_private_key,

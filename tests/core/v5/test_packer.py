@@ -1,19 +1,17 @@
 from async_service import background_trio_service
-from eth.db.backends.memory import MemoryDB
+from eth_enr import ENRDB
+from eth_enr.tools.factories import ENRFactory
 import pytest
 import pytest_trio
 import trio
 
 from ddht.base_message import OutboundMessage
-from ddht.identity_schemes import default_identity_scheme_registry
-from ddht.node_db import NodeDB
 from ddht.tools.factories.discovery import (
     AuthTagPacketFactory,
     HandshakeRecipientFactory,
     PingMessageFactory,
 )
 from ddht.tools.factories.endpoint import EndpointFactory
-from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.v5.channel_services import InboundPacket
 from ddht.v5.messages import v5_registry
@@ -53,11 +51,11 @@ def remote_endpoint():
 
 
 @pytest_trio.trio_fixture
-async def node_db(enr, remote_enr):
-    db = NodeDB(default_identity_scheme_registry, MemoryDB())
-    db.set_enr(enr)
-    db.set_enr(remote_enr)
-    return db
+async def enr_db(enr, remote_enr):
+    enr_db = ENRDB({})
+    enr_db.set_enr(enr)
+    enr_db.set_enr(remote_enr)
+    return enr_db
 
 
 @pytest.fixture
@@ -131,7 +129,7 @@ async def bridged_channels(
 
 @pytest_trio.trio_fixture
 async def peer_packer(
-    node_db,
+    enr_db,
     private_key,
     enr,
     remote_enr,
@@ -144,7 +142,7 @@ async def peer_packer(
         local_private_key=private_key,
         local_node_id=enr.node_id,
         remote_node_id=remote_enr.node_id,
-        node_db=node_db,
+        enr_db=enr_db,
         message_type_registry=v5_registry,
         inbound_packet_receive_channel=inbound_packet_channels[1],
         inbound_message_send_channel=inbound_message_channels[0],
@@ -157,7 +155,7 @@ async def peer_packer(
 
 @pytest_trio.trio_fixture
 async def remote_peer_packer(
-    node_db,
+    enr_db,
     remote_private_key,
     enr,
     remote_enr,
@@ -170,7 +168,7 @@ async def remote_peer_packer(
         local_private_key=remote_private_key,
         local_node_id=remote_enr.node_id,
         remote_node_id=enr.node_id,
-        node_db=node_db,
+        enr_db=enr_db,
         message_type_registry=v5_registry,
         inbound_packet_receive_channel=remote_inbound_packet_channels[1],
         inbound_message_send_channel=remote_inbound_message_channels[0],
@@ -183,7 +181,7 @@ async def remote_peer_packer(
 
 @pytest_trio.trio_fixture
 async def packer(
-    node_db,
+    enr_db,
     private_key,
     enr,
     inbound_packet_channels,
@@ -194,7 +192,7 @@ async def packer(
     packer = Packer(
         local_private_key=private_key,
         local_node_id=enr.node_id,
-        node_db=node_db,
+        enr_db=enr_db,
         message_type_registry=v5_registry,
         inbound_packet_receive_channel=inbound_packet_channels[1],
         inbound_message_send_channel=inbound_message_channels[0],
@@ -207,7 +205,7 @@ async def packer(
 
 @pytest_trio.trio_fixture
 async def remote_packer(
-    node_db,
+    enr_db,
     remote_private_key,
     remote_enr,
     remote_inbound_packet_channels,
@@ -219,7 +217,7 @@ async def remote_packer(
     remote_packer = Packer(
         local_private_key=remote_private_key,
         local_node_id=remote_enr.node_id,
-        node_db=node_db,
+        enr_db=enr_db,
         message_type_registry=v5_registry,
         inbound_packet_receive_channel=remote_inbound_packet_channels[1],
         inbound_message_send_channel=remote_inbound_message_channels[0],

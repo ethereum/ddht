@@ -4,12 +4,12 @@ import socket
 from typing import Collection, ContextManager, Iterator, List, Optional, Sequence, Tuple
 
 from async_service import Service
+from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManager
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import ValidationError
 import trio
 
-from ddht.abc import NodeDBAPI
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, InboundMessage
 from ddht.datagram import (
     DatagramReceiver,
@@ -18,8 +18,7 @@ from ddht.datagram import (
     OutboundDatagram,
 )
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR, partition_enrs
-from ddht.enr_manager import ENRManager
+from ddht.enr import partition_enrs
 from ddht.kademlia import compute_log_distance
 from ddht.message_registry import MessageTypeRegistry
 from ddht.v5_1.abc import ClientAPI, EventsAPI
@@ -55,7 +54,7 @@ class Client(Service, ClientAPI):
         self,
         local_private_key: keys.PrivateKey,
         listen_on: Endpoint,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         events: EventsAPI = None,
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
@@ -64,8 +63,8 @@ class Client(Service, ClientAPI):
         self.listen_on = listen_on
         self._listening = trio.Event()
 
-        self.enr_manager = ENRManager(node_db=node_db, private_key=local_private_key,)
-        self.node_db = node_db
+        self.enr_manager = ENRManager(private_key=local_private_key, enr_db=enr_db,)
+        self.enr_db = enr_db
         self._registry = message_type_registry
 
         # Datagrams
@@ -105,7 +104,7 @@ class Client(Service, ClientAPI):
         self.pool = Pool(
             local_private_key=self._local_private_key,
             local_node_id=self.enr_manager.enr.node_id,
-            node_db=self.node_db,
+            enr_db=self.enr_db,
             outbound_envelope_send_channel=self._outbound_envelope_send_channel,
             inbound_message_send_channel=self._inbound_message_send_channel,
             message_type_registry=self._registry,
@@ -116,7 +115,7 @@ class Client(Service, ClientAPI):
             self._inbound_envelope_receive_channel,
             self._inbound_message_receive_channel,
             self.pool,
-            self.node_db,
+            self.enr_db,
             self._registry,
             self.events,
         )
@@ -238,7 +237,7 @@ class Client(Service, ClientAPI):
         endpoint: Endpoint,
         node_id: NodeID,
         *,
-        enrs: Sequence[ENR],
+        enrs: Sequence[ENRAPI],
         request_id: int,
     ) -> int:
         enr_batches = partition_enrs(
@@ -286,7 +285,7 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         *,
         topic: bytes,
-        enr: ENR,
+        enr: ENRAPI,
         ticket: bytes = b"",
         request_id: Optional[int] = None,
     ) -> int:

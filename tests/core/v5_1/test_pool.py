@@ -35,7 +35,7 @@ async def pool(tester, initiator, events, channels):
     pool = Pool(
         local_private_key=initiator.private_key,
         local_node_id=initiator.enr.node_id,
-        node_db=initiator.node_db,
+        enr_db=initiator.enr_db,
         outbound_envelope_send_channel=channels.outbound_envelope_send_channel,
         inbound_message_send_channel=channels.inbound_message_send_channel,
         events=initiator.events,

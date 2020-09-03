@@ -1,6 +1,6 @@
+from eth_enr.tools.factories import ENRFactory
 import pytest
 
-from ddht.tools.factories.enr import ENRFactory
 from ddht.v5_1.messages import PingMessage
 from ddht.v5_1.packets import (
     HandshakeHeader,

@@ -1,3 +1,4 @@
+from eth_enr.tools.factories import ENRFactory
 from eth_utils import keccak
 
 from ddht.tools.factories.discovery import (
@@ -7,7 +8,6 @@ from ddht.tools.factories.discovery import (
     PingMessageFactory,
     WhoAreYouPacketFactory,
 )
-from ddht.tools.factories.enr import ENRFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 
 

@@ -1,10 +1,10 @@
 from typing import Dict, Tuple
 
+from eth_enr import ENR
 import factory
 
 from ddht.boot_info import BootInfo
 from ddht.constants import DEFAULT_PORT, ProtocolVersion
-from ddht.enr import ENR
 from ddht.v5.constants import DEFAULT_BOOTNODES as DEFAULT_V5_BOOTNODES
 from ddht.v5_1.constants import DEFAULT_BOOTNODES as DEFAULT_V51_BOOTNODES
 from ddht.xdg import get_xdg_ddht_root

@@ -4,12 +4,13 @@ import pathlib
 import tempfile
 from typing import Optional, Sequence, Tuple, TypedDict
 
+from eth_enr import ENR
+from eth_enr.abc import ENRAPI
 from eth_keys import keys
 from eth_utils import decode_hex
 
 from ddht._utils import get_open_port
 from ddht.constants import DEFAULT_PORT, ProtocolVersion
-from ddht.enr import ENR
 from ddht.typing import AnyIPAddress
 from ddht.v5.constants import DEFAULT_BOOTNODES as DEFAULT_V5_BOOTNODES
 from ddht.v5_1.constants import DEFAULT_BOOTNODES as DEFAULT_V51_BOOTNODES
@@ -21,7 +22,7 @@ class BootInfoKwargs(TypedDict, total=False):
     base_dir: pathlib.Path
     port: int
     listen_on: Optional[AnyIPAddress]
-    bootnodes: Tuple[ENR, ...]
+    bootnodes: Tuple[ENRAPI, ...]
     private_key: Optional[keys.PrivateKey]
     is_ephemeral: bool
     is_upnp_enabled: bool
@@ -93,7 +94,7 @@ class BootInfo:
     base_dir: pathlib.Path
     port: int
     listen_on: Optional[AnyIPAddress]
-    bootnodes: Tuple[ENR, ...]
+    bootnodes: Tuple[ENRAPI, ...]
     private_key: Optional[keys.PrivateKey]
     is_ephemeral: bool
     is_upnp_enabled: bool

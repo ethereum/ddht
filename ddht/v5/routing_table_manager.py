@@ -5,6 +5,8 @@ import time
 from typing import List, Optional, Tuple
 
 from async_service import Service
+from eth_enr import ENRAPI, ENRDatabaseAPI
+from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
 from eth_utils import encode_hex
 from eth_utils.toolz import take
@@ -13,7 +15,6 @@ import trio
 from trio.abc import SendChannel
 
 from ddht._utils import every
-from ddht.abc import NodeDBAPI
 from ddht.base_message import (
     AnyInboundMessage,
     AnyOutboundMessage,
@@ -21,8 +22,8 @@ from ddht.base_message import (
     OutboundMessage,
 )
 from ddht.endpoint import Endpoint
-from ddht.enr import ENR, partition_enrs
-from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
+from ddht.enr import partition_enrs
+from ddht.exceptions import UnexpectedMessage
 from ddht.kademlia import KademliaRoutingTable, compute_log_distance, iter_closest_nodes
 from ddht.v5.abc import MessageDispatcherAPI
 from ddht.v5.constants import (
@@ -50,12 +51,12 @@ class BaseRoutingTableManagerComponent(Service):
         local_node_id: NodeID,
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
     ) -> None:
         self.local_node_id = local_node_id
         self.routing_table = routing_table
         self.message_dispatcher = message_dispatcher
-        self.node_db = node_db
+        self.enr_db = enr_db
 
     def update_routing_table(self, node_id: NodeID) -> None:
         """
@@ -66,10 +67,10 @@ class BaseRoutingTableManagerComponent(Service):
         self.logger.debug("Updating %s in routing table", encode_hex(node_id))
         self.routing_table.update(node_id)
 
-    def get_local_enr(self) -> ENR:
+    def get_local_enr(self) -> ENRAPI:
         """Get the local enr from the ENR DB."""
         try:
-            local_enr = self.node_db.get_enr(self.local_node_id)
+            local_enr = self.enr_db.get_enr(self.local_node_id)
         except KeyError:
             raise ValueError(
                 f"Local ENR with node id {encode_hex(self.local_node_id)} not "
@@ -89,7 +90,7 @@ class BaseRoutingTableManagerComponent(Service):
             )
 
         try:
-            remote_enr = self.node_db.get_enr(inbound_message.sender_node_id)
+            remote_enr = self.enr_db.get_enr(inbound_message.sender_node_id)
         except KeyError:
             self.logger.warning(
                 "No ENR of %s present in the database even though it should post handshake. "
@@ -186,7 +187,7 @@ class BaseRoutingTableManagerComponent(Service):
                     encode_hex(sender_node_id),
                     encode_hex(response.message.enrs[0].node_id),
                 )
-            self.node_db.set_enr(enr)
+            self.enr_db.set_enr(enr)
 
 
 class PingHandlerService(BaseRoutingTableManagerComponent):
@@ -199,10 +200,10 @@ class PingHandlerService(BaseRoutingTableManagerComponent):
         local_node_id: NodeID,
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         outbound_message_send_channel: SendChannel[OutboundMessage[PongMessage]],
     ) -> None:
-        super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
+        super().__init__(local_node_id, routing_table, message_dispatcher, enr_db)
         self.outbound_message_send_channel = outbound_message_send_channel
 
     async def run(self) -> None:
@@ -254,10 +255,10 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         local_node_id: NodeID,
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         outbound_message_send_channel: SendChannel[OutboundMessage[NodesMessage]],
     ) -> None:
-        super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
+        super().__init__(local_node_id, routing_table, message_dispatcher, enr_db)
         self.outbound_message_send_channel = outbound_message_send_channel
 
     async def run(self) -> None:
@@ -306,7 +307,7 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
         enrs = []
         for node_id in node_ids:
             try:
-                enr = self.node_db.get_enr(node_id)
+                enr = self.enr_db.get_enr(node_id)
             except KeyError:
                 self.logger.warning("Missing ENR for node %s", encode_hex(node_id))
             else:
@@ -340,10 +341,10 @@ class PingSenderService(BaseRoutingTableManagerComponent):
         local_node_id: NodeID,
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         endpoint_vote_send_channel: SendChannel[EndpointVote],
     ) -> None:
-        super().__init__(local_node_id, routing_table, message_dispatcher, node_db)
+        super().__init__(local_node_id, routing_table, message_dispatcher, enr_db)
         self.endpoint_vote_send_channel = endpoint_vote_send_channel
 
     async def run(self) -> None:
@@ -414,7 +415,7 @@ class LookupService(BaseRoutingTableManagerComponent):
 
         queried_node_ids = set()
         unresponsive_node_ids = set()
-        received_enrs: List[ENR] = []
+        received_enrs: List[ENRAPI] = []
         received_node_ids: List[NodeID] = []
 
         async def lookup_and_store_response(peer: NodeID) -> None:
@@ -425,9 +426,9 @@ class LookupService(BaseRoutingTableManagerComponent):
                     received_node_ids.append(enr.node_id)
 
                     try:
-                        self.node_db.set_enr(enr)
+                        self.enr_db.set_enr(enr)
                     except OldSequenceNumber:
-                        received_enrs.append(self.node_db.get_enr(enr.node_id))
+                        received_enrs.append(self.enr_db.get_enr(enr.node_id))
                     else:
                         received_enrs.append(enr)
             else:
@@ -471,7 +472,7 @@ class LookupService(BaseRoutingTableManagerComponent):
 
     async def lookup_at_peer(
         self, peer: NodeID, target: NodeID
-    ) -> Optional[Tuple[ENR, ...]]:
+    ) -> Optional[Tuple[ENRAPI, ...]]:
         self.logger.debug(
             "Looking up %s at node %s", encode_hex(target), encode_hex(peer)
         )
@@ -499,7 +500,7 @@ class LookupService(BaseRoutingTableManagerComponent):
 
     async def request_nodes(
         self, peer: NodeID, target: NodeID, distance: int
-    ) -> Optional[Tuple[ENR, ...]]:
+    ) -> Optional[Tuple[ENRAPI, ...]]:
         """
         Send a FindNode request to the given peer and return the ENRs in the response.
 
@@ -542,6 +543,17 @@ class LookupService(BaseRoutingTableManagerComponent):
             return enrs
 
 
+SharedComponentKwargType = TypedDict(
+    "SharedComponentKwargType",
+    {
+        "local_node_id": NodeID,
+        "routing_table": KademliaRoutingTable,
+        "message_dispatcher": MessageDispatcherAPI,
+        "enr_db": ENRDatabaseAPI,
+    },
+)
+
+
 class RoutingTableManager(Service):
     """Manages the routing table. The actual work is delegated to a few sub components."""
 
@@ -550,25 +562,16 @@ class RoutingTableManager(Service):
         local_node_id: NodeID,
         routing_table: KademliaRoutingTable,
         message_dispatcher: MessageDispatcherAPI,
-        node_db: NodeDBAPI,
+        enr_db: ENRDatabaseAPI,
         outbound_message_send_channel: SendChannel[AnyOutboundMessage],
         endpoint_vote_send_channel: SendChannel[EndpointVote],
     ) -> None:
-        SharedComponentKwargType = TypedDict(
-            "SharedComponentKwargType",
-            {
-                "local_node_id": NodeID,
-                "routing_table": KademliaRoutingTable,
-                "message_dispatcher": MessageDispatcherAPI,
-                "node_db": NodeDBAPI,
-            },
-        )
         shared_component_kwargs = SharedComponentKwargType(
             {
                 "local_node_id": local_node_id,
                 "routing_table": routing_table,
                 "message_dispatcher": message_dispatcher,
-                "node_db": node_db,
+                "enr_db": enr_db,
             }
         )
 

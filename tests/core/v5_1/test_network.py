@@ -1,13 +1,12 @@
 import collections
 from contextlib import AsyncExitStack
 import secrets
-import time
 
+from eth_enr.tools.factories import ENRFactory
 import pytest
 import trio
 
 from ddht.kademlia import compute_log_distance
-from ddht.tools.factories.enr import ENRFactory
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.messages import FoundNodesMessage
 
@@ -32,7 +31,7 @@ async def test_network_responds_to_find_node_requests(alice, bob):
         async with bob.network() as bob_network:
             for _ in range(200):
                 enr = ENRFactory()
-                bob.node_db.set_enr(enr)
+                bob.enr_db.set_enr(enr)
                 bob_network.routing_table.update(enr.node_id)
                 distances.add(compute_log_distance(enr.node_id, bob.node_id))
                 if distances.issuperset({0, 256, 255}):
@@ -80,7 +79,7 @@ async def test_network_find_nodes_api(alice, bob):
         async with bob.network() as bob_network:
             for _ in range(200):
                 enr = ENRFactory()
-                bob.node_db.set_enr(enr)
+                bob.enr_db.set_enr(enr)
                 bob_network.routing_table.update(enr.node_id)
                 distances.add(compute_log_distance(enr.node_id, bob.node_id))
                 if distances.issuperset({0, 256, 255}):
@@ -154,9 +153,9 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
         carol_network = await stack.enter_async_context(carol.network())
 
         # populate the routing table and ENR database
-        alice.node_db.set_enr(bob.enr)
-        alice.node_db.set_enr(carol.enr)
-        alice.node_db.set_enr(dylan.enr)
+        alice.enr_db.set_enr(bob.enr)
+        alice.enr_db.set_enr(carol.enr)
+        alice.enr_db.set_enr(dylan.enr)
 
         async with AsyncExitStack() as handshakes_done:
             await handshakes_done.enter_async_context(
@@ -179,6 +178,7 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
 
         # run through a few checkpoints which should remove dylan from the routing table
         await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+        await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
 
         assert alice_network.routing_table._contains(bob.node_id, False)
         assert alice_network.routing_table._contains(carol.node_id, False)
@@ -186,8 +186,8 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
 
         # now take carol offline and let her be removed
         carol_network.get_manager().cancel()
-        alice.node_db.set_last_pong_time(
-            carol.node_id, int(time.time() - ROUTING_TABLE_KEEP_ALIVE - 1)
+        alice_network._last_pong_at[carol.node_id] = (
+            trio.current_time() - ROUTING_TABLE_KEEP_ALIVE - 1
         )
         await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
 
@@ -197,8 +197,8 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
 
         # now take bob offline and let her be removed
         bob_network.get_manager().cancel()
-        alice.node_db.set_last_pong_time(
-            bob.node_id, int(time.time() - ROUTING_TABLE_KEEP_ALIVE - 1)
+        alice_network._last_pong_at[bob.node_id] = (
+            trio.current_time() - ROUTING_TABLE_KEEP_ALIVE - 1
         )
         await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
 
