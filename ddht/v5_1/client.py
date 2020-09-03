@@ -5,6 +5,7 @@ from typing import Collection, ContextManager, Iterator, List, Optional, Sequenc
 
 from async_service import Service
 from eth_keys import keys
+from eth_typing import NodeID
 from eth_utils import ValidationError
 import trio
 
@@ -21,7 +22,6 @@ from ddht.enr import ENR, partition_enrs
 from ddht.enr_manager import ENRManager
 from ddht.kademlia import compute_log_distance
 from ddht.message_registry import MessageTypeRegistry
-from ddht.typing import NodeID
 from ddht.v5_1.abc import ClientAPI, EventsAPI
 from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.dispatcher import Dispatcher

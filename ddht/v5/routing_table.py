@@ -3,9 +3,8 @@ import logging
 import secrets
 from typing import Any, Collection, Deque, Iterator
 
+from eth_typing import NodeID
 from eth_utils import encode_hex
-
-from ddht.typing import NodeID
 
 
 class FlatRoutingTable(Collection[NodeID]):

@@ -16,10 +16,9 @@ from typing import (
 )
 
 from eth_keys import keys
+from eth_typing import NodeID
 from eth_utils import humanize_hash
 import trio
-
-from ddht.typing import NodeID
 
 
 def humanize_node_id(node_id: NodeID) -> str:

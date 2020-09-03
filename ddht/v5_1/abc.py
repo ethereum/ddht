@@ -13,6 +13,7 @@ import uuid
 
 from async_service import ServiceAPI
 from eth_keys import keys
+from eth_typing import NodeID
 import trio
 
 from ddht.abc import ENRManagerAPI, EventAPI, NodeDBAPI, RoutingTableAPI
@@ -24,7 +25,7 @@ from ddht.base_message import (
 )
 from ddht.endpoint import Endpoint
 from ddht.enr import ENR
-from ddht.typing import NodeID, SessionKeys
+from ddht.typing import SessionKeys
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import (
     FindNodeMessage,

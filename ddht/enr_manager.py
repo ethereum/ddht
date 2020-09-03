@@ -2,6 +2,7 @@ import logging
 from typing import Mapping, Optional
 
 from eth_keys import keys
+from eth_typing import NodeID
 from eth_utils.toolz import merge
 import trio
 
@@ -11,7 +12,7 @@ from ddht.identity_schemes import (
     IdentitySchemeRegistry,
     default_identity_scheme_registry,
 )
-from ddht.typing import ENR_KV, NodeID
+from ddht.typing import ENR_KV
 
 
 class ENRManager(ENRManagerAPI):

@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
+from eth_typing import NodeID
 from eth_utils import int_to_big_endian
 import rlp
 
 from ddht.endpoint import Endpoint
-from ddht.typing import NodeID
 
 
 class BaseMessage(rlp.Serializable):  # type: ignore

@@ -4,13 +4,13 @@ from typing import DefaultDict, Dict, Set, Tuple
 import uuid
 
 from eth_keys import keys
+from eth_typing import NodeID
 import trio
 
 from ddht.abc import NodeDBAPI
 from ddht.base_message import AnyInboundMessage
 from ddht.endpoint import Endpoint
 from ddht.message_registry import MessageTypeRegistry
-from ddht.typing import NodeID
 from ddht.v5_1.abc import EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.envelope import OutboundEnvelope
 from ddht.v5_1.events import Events

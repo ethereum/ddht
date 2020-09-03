@@ -1,11 +1,12 @@
 import secrets
 from typing import NamedTuple, Optional
 
+from eth_typing import NodeID
 import factory
 import trio
 
 from ddht.base_message import AnyInboundMessage, BaseMessage
-from ddht.typing import AES128Key, NodeID, Nonce
+from ddht.typing import AES128Key, Nonce
 from ddht.v5_1.envelope import OutboundEnvelope
 from ddht.v5_1.packets import (
     PROTOCOL_ID,

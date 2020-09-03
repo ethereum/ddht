@@ -15,12 +15,13 @@ from typing import (
     TypeVar,
 )
 
+from eth_typing import NodeID
 import trio
 
 from ddht.base_message import BaseMessage
 from ddht.enr import ENR
 from ddht.identity_schemes import IdentitySchemeRegistry
-from ddht.typing import ENR_KV, NodeID
+from ddht.typing import ENR_KV
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
 

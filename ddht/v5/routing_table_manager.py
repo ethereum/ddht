@@ -5,6 +5,7 @@ import time
 from typing import List, Optional, Tuple
 
 from async_service import Service
+from eth_typing import NodeID
 from eth_utils import encode_hex
 from eth_utils.toolz import take
 from mypy_extensions import TypedDict
@@ -23,7 +24,6 @@ from ddht.endpoint import Endpoint
 from ddht.enr import ENR, partition_enrs
 from ddht.exceptions import OldSequenceNumber, UnexpectedMessage
 from ddht.kademlia import KademliaRoutingTable, compute_log_distance, iter_closest_nodes
-from ddht.typing import NodeID
 from ddht.v5.abc import MessageDispatcherAPI
 from ddht.v5.constants import (
     FIND_NODE_RESPONSE_TIMEOUT,

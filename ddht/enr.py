@@ -14,6 +14,7 @@ from typing import (
     ValuesView,
 )
 
+from eth_typing import NodeID
 from eth_utils import ValidationError, to_dict
 from eth_utils.toolz import cons, interleave
 import rlp
@@ -25,7 +26,6 @@ from ddht.identity_schemes import (
     default_identity_scheme_registry as default_id_scheme_registry,
 )
 from ddht.identity_schemes import IdentityScheme, IdentitySchemeRegistry
-from ddht.typing import NodeID
 
 
 class ENRContentSedes:

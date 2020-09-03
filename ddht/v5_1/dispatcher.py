@@ -16,6 +16,7 @@ from typing import (
 
 from async_generator import asynccontextmanager
 from async_service import Service
+from eth_typing import NodeID
 import trio
 
 from ddht._utils import humanize_node_id
@@ -29,7 +30,6 @@ from ddht.base_message import (
 )
 from ddht.endpoint import Endpoint
 from ddht.message_registry import MessageTypeRegistry
-from ddht.typing import NodeID
 from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope
