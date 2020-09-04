@@ -1,4 +1,7 @@
-from typing import Callable, Mapping, NamedTuple, Tuple
+import ipaddress
+from typing import Any, Callable, List, Mapping, NamedTuple, Tuple, Union
+
+from eth_utils import add_0x_prefix, encode_hex, remove_0x_prefix
 
 try:
     import web3  # noqa: F401
@@ -7,7 +10,7 @@ except ImportError:
 
 
 from eth_enr import ENR, ENRAPI
-from eth_typing import NodeID
+from eth_typing import HexStr, NodeID
 from eth_utils import decode_hex
 from web3.method import Method
 from web3.module import ModuleV2
@@ -15,6 +18,8 @@ from web3.types import RPCEndpoint
 
 from ddht.rpc_handlers import BucketInfo as BucketInfoDict
 from ddht.rpc_handlers import NodeInfoResponse, TableInfoResponse
+from ddht.typing import AnyIPAddress
+from ddht.v5_1.rpc_handlers import PongResponse
 
 
 class NodeInfo(NamedTuple):
@@ -69,17 +74,77 @@ class TableInfo(NamedTuple):
         )
 
 
+class PongPayload(NamedTuple):
+    enr_seq: int
+    packet_ip: AnyIPAddress
+    packet_port: int
+
+    @classmethod
+    def from_rpc_response(cls, response: PongResponse) -> "PongPayload":
+        return cls(
+            enr_seq=response["enr_seq"],
+            packet_ip=ipaddress.ip_address(response["packet_ip"]),
+            packet_port=response["packet_port"],
+        )
+
+
 class RPC:
     nodeInfo = RPCEndpoint("discv5_nodeInfo")
     routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
 
+    ping = RPCEndpoint("discv5_ping")
+
+
+def ping_munger(
+    module: Any, identifier: Union[ENRAPI, str, bytes, NodeID, HexStr]
+) -> List[str]:
+    """
+    Normalizes the any of the following inputs into the appropriate payload for
+    the ``discv5_ping` JSON-RPC API endpoint.
+
+    - An ENR object
+    - The string representation of an ENR
+    - A NodeID in the form of a bytestring
+    - A NodeID in the form of a hex string
+    - An ENode URI
+
+    Throws a ``ValueError`` if the input cannot be matched to one of these
+    formats.
+    """
+    if isinstance(identifier, ENRAPI):
+        return [repr(identifier)]
+    elif isinstance(identifier, bytes):
+        if len(identifier) == 32:
+            return [encode_hex(identifier)]
+        raise ValueError(f"Unrecognized node identifier: {identifier!r}")
+    elif isinstance(identifier, str):
+        if identifier.startswith("enode://") or identifier.startswith("enr:"):
+            return [identifier]
+        elif len(remove_0x_prefix(HexStr(identifier))) == 64:
+            return [add_0x_prefix(HexStr(identifier))]
+        else:
+            raise ValueError(f"Unrecognized node identifier: {identifier}")
+    else:
+        raise ValueError(f"Unrecognized node identifier: {identifier}")
+
 
 # TODO: why does mypy think ModuleV2 is of `Any` type?
 class DiscoveryV5Module(ModuleV2):  # type: ignore
+    """
+    A web3.py module that exposes high level APIs for interacting with the
+    discovery v5 network.
+    """
+
     get_node_info: Method[Callable[[], NodeInfo]] = Method(
         RPC.nodeInfo, result_formatters=lambda method: NodeInfo.from_rpc_response,
     )
     get_routing_table_info: Method[Callable[[], TableInfo]] = Method(
         RPC.routingTableInfo,
         result_formatters=lambda method: TableInfo.from_rpc_response,
+    )
+
+    ping: Method[Callable[[Union[NodeID, ENRAPI, HexStr, str]], PongPayload]] = Method(
+        RPC.ping,
+        result_formatters=lambda method: PongPayload.from_rpc_response,
+        mungers=[ping_munger],
     )

@@ -6,7 +6,6 @@ from typing import Collection, Iterable, List, Optional, Set, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
-from eth_enr.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
 from eth_utils import to_tuple
@@ -295,7 +294,7 @@ class Network(Service, NetworkAPI):
                 for enr in self._bootnodes:
                     if enr.node_id == self.local_node_id:
                         continue
-                    endpoint = self._endpoint_for_enr(enr)
+                    endpoint = Endpoint.from_enr(enr)
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
 
                 with trio.move_on_after(10):
@@ -312,7 +311,7 @@ class Network(Service, NetworkAPI):
                 target_node_id = NodeID(secrets.token_bytes(32))
                 found_enrs = await self.recursive_find_nodes(target_node_id)
                 for enr in found_enrs:
-                    endpoint = self._endpoint_for_enr(enr)
+                    endpoint = Endpoint.from_enr(enr)
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
 
     async def _pong_when_pinged(self) -> None:
@@ -381,18 +380,9 @@ class Network(Service, NetworkAPI):
     #
     # Utility
     #
-    def _endpoint_for_enr(self, enr: ENRAPI) -> Endpoint:
-        try:
-            ip_address = enr[IP_V4_ADDRESS_ENR_KEY]
-            port = enr[UDP_PORT_ENR_KEY]
-        except KeyError:
-            raise Exception("Missing endpoint address information: ")
-
-        return Endpoint(ip_address, port)
-
     def _endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
         enr = self.enr_db.get_enr(node_id)
-        return self._endpoint_for_enr(enr)
+        return Endpoint.from_enr(enr)
 
 
 @to_tuple

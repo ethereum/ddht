@@ -2,6 +2,7 @@ from eth.db.backends.level import LevelDB
 from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
 from eth_keys import keys
 from eth_utils import encode_hex
+from eth_utils.toolz import merge
 import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
@@ -17,6 +18,7 @@ from ddht.v5_1.client import Client
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import v51_registry
 from ddht.v5_1.network import Network
+from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
 ENR_DATABASE_DIR_NAME = "enr-db"
 
@@ -94,7 +96,10 @@ class Application(BaseApplication):
         network = Network(client=client, bootnodes=bootnodes,)
 
         if self._boot_info.is_rpc_enabled:
-            handlers = get_core_rpc_handlers(network.routing_table)
+            handlers = merge(
+                get_core_rpc_handlers(network.routing_table),
+                get_v51_rpc_handlers(network),
+            )
             rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
             self.manager.run_daemon_child_service(rpc_server)
 
