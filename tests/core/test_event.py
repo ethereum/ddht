@@ -118,9 +118,9 @@ async def test_event_wait_without_explicit_subscription():
 
         nursery.start_soon(wait_for_it)
         # give the wait_for_it task a moment to initiate the subscription
-        await trio.hazmat.checkpoint()
-        await trio.hazmat.checkpoint()
-        await trio.hazmat.checkpoint()
+        await trio.lowlevel.checkpoint()
+        await trio.lowlevel.checkpoint()
+        await trio.lowlevel.checkpoint()
         # trigger a few times just in case the subscription isn't setup yet....
         await event.trigger(1234)
         await event.trigger(1234)

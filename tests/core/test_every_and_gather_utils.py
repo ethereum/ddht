@@ -26,7 +26,7 @@ async def test_gather_sorted(autojump_clock):
 @pytest.mark.trio
 async def test_gather_args():
     async def return_args(*args):
-        await trio.hazmat.checkpoint()
+        await trio.lowlevel.checkpoint()
         return args
 
     results = await gather(return_args, (return_args,), (return_args, 1, 2, 3))

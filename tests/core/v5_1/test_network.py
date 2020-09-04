@@ -114,7 +114,7 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
         # give the the network some time to interconnect.
         with trio.fail_after(5):
             for _ in range(1000):
-                await trio.hazmat.checkpoint()
+                await trio.lowlevel.checkpoint()
 
         alice_network = await stack.enter_async_context(
             alice.network(bootnodes=bootnodes)
@@ -123,7 +123,7 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
         # give alice a little time to connect to the network as well
         with trio.fail_after(5):
             for _ in range(1000):
-                await trio.hazmat.checkpoint()
+                await trio.lowlevel.checkpoint()
 
         target_node_id = secrets.token_bytes(32)
         node_ids_by_distance = tuple(

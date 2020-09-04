@@ -19,7 +19,6 @@ from eth_typing import NodeID
 from eth_utils import encode_hex
 import trio
 from trio.abc import ReceiveChannel, SendChannel
-from trio.hazmat import checkpoint
 
 from ddht.base_message import (
     AnyInboundMessage,
@@ -147,7 +146,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
                 request_id,
                 message_type,
             )
-            await checkpoint()
+            await trio.lowlevel.checkpoint()
 
         if is_request:
             self.logger.debug(

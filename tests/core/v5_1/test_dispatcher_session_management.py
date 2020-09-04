@@ -132,7 +132,7 @@ async def test_dispatcher_detects_duplicate_handshakes(alice, bob, autojump_cloc
                 new_full_session = await subscription.receive()
 
             for _ in range(10):
-                await trio.hazmat.checkpoint()
+                await trio.lowlevel.checkpoint()
 
             alice_sessions_with_bob = alice_client.pool.get_sessions_for_endpoint(
                 bob.endpoint
