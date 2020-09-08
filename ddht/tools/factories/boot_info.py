@@ -30,3 +30,5 @@ class BootInfoFactory(factory.Factory):  # type: ignore
     bootnodes = factory.LazyAttribute(lambda o: BOOTNODES[o.protocol_version])
     is_ephemeral = False
     is_upnp_enabled = True
+    is_rpc_enabled = True
+    ipc_path = factory.LazyAttribute(lambda o: o.base_dir / "jsonrpc.ipc")

@@ -26,6 +26,8 @@ class BootInfoKwargs(TypedDict, total=False):
     private_key: Optional[keys.PrivateKey]
     is_ephemeral: bool
     is_upnp_enabled: bool
+    is_rpc_enabled: bool
+    ipc_path: pathlib.Path
 
 
 def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
@@ -76,6 +78,15 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
     else:
         private_key = None
 
+    ipc_path: pathlib.Path
+
+    if args.ipc_path is not None:
+        ipc_path = args.ipc_path
+    else:
+        ipc_path = base_dir / "jsonrpc.ipc"
+
+    is_rpc_enabled = args.disable_jsonrpc is not True
+
     return BootInfoKwargs(
         protocol_version=protocol_version,
         base_dir=base_dir,
@@ -85,6 +96,8 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
         private_key=private_key,
         is_ephemeral=is_ephemeral,
         is_upnp_enabled=is_upnp_enabled,
+        is_rpc_enabled=is_rpc_enabled,
+        ipc_path=ipc_path,
     )
 
 
@@ -98,6 +111,8 @@ class BootInfo:
     private_key: Optional[keys.PrivateKey]
     is_ephemeral: bool
     is_upnp_enabled: bool
+    is_rpc_enabled: bool
+    ipc_path: pathlib.Path
 
     @classmethod
     def from_cli_args(cls, args: Sequence[str]) -> "BootInfo":

@@ -1,5 +1,5 @@
 import ipaddress
-from typing import NamedTuple, NewType, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, NewType, Tuple, Union
 
 AES128Key = NewType("AES128Key", bytes)
 Nonce = NewType("Nonce", bytes)
@@ -16,3 +16,5 @@ class SessionKeys(NamedTuple):
 AnyIPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 
 ENR_KV = Tuple[bytes, Union[int, bytes]]
+
+JSON = Union[Dict[Any, Any], str, int, List[Any]]
