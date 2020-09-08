@@ -31,6 +31,7 @@ extras_require = {
         "twine",
         "ipython",
     ],
+    "web3": ["web3>=5.12.1,<6"],
 }
 
 extras_require["dev"] = (
