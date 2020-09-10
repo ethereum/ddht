@@ -49,7 +49,7 @@ async def PacketDecoder(
                     f"Successfully decoded {packet.__class__.__name__} from {endpoint}"
                 )
             except ValidationError:
-                logger.warning(
+                logger.debug(
                     f"Failed to decode a packet from {endpoint}", exc_info=True
                 )
             else:
