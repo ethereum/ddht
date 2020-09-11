@@ -129,7 +129,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
         ) in self.response_handler_send_channels
 
         if is_request and is_response:
-            self.logger.warning(
+            self.logger.debug(
                 "%s from %s is both a response to an earlier request (id %d) and a request a "
                 "handler is present for (message type %d). Message will be handled twice.",
                 inbound_message,
@@ -138,7 +138,7 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
                 message_type,
             )
         if not is_request and not is_response:
-            self.logger.warning(
+            self.logger.debug(
                 "Dropping %s from %s (request id %d, message type %d) as neither a request nor a "
                 "response handler is present",
                 inbound_message,

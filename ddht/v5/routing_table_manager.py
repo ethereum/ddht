@@ -118,7 +118,7 @@ class BaseRoutingTableManagerComponent(Service):
                 )
                 request_update = False
             elif current_sequence_number > advertized_sequence_number:
-                self.logger.warning(
+                self.logger.debug(
                     "Peer %s advertizes apparently outdated ENR (sequence number %d < %d)",
                     encode_hex(inbound_message.sender_node_id),
                     advertized_sequence_number,
@@ -151,7 +151,7 @@ class BaseRoutingTableManagerComponent(Service):
                     endpoint=inbound_message.sender_endpoint,
                 )
         except trio.TooSlowError:
-            self.logger.warning(
+            self.logger.debug(
                 "FindNode request to %s has timed out",
                 encode_hex(inbound_message.sender_node_id),
             )
@@ -161,7 +161,7 @@ class BaseRoutingTableManagerComponent(Service):
         self.update_routing_table(sender_node_id)
 
         if not isinstance(response.message, NodesMessage):
-            self.logger.warning(
+            self.logger.debug(
                 "Peer %s responded to FindNode with %s instead of Nodes message",
                 encode_hex(sender_node_id),
                 response.message.__class__.__name__,
@@ -170,19 +170,19 @@ class BaseRoutingTableManagerComponent(Service):
         self.logger.debug("Received Nodes message from %s", encode_hex(sender_node_id))
 
         if len(response.message.enrs) == 0:
-            self.logger.warning(
+            self.logger.debug(
                 "Peer %s responded to FindNode with an empty Nodes message",
                 encode_hex(sender_node_id),
             )
         elif len(response.message.enrs) > 1:
-            self.logger.warning(
+            self.logger.debug(
                 "Peer %s responded to FindNode with more than one ENR",
                 encode_hex(inbound_message.sender_node_id),
             )
 
         for enr in response.message.enrs:
             if enr.node_id != sender_node_id:
-                self.logger.warning(
+                self.logger.debug(
                     "Peer %s responded to FindNode with ENR from %s",
                     encode_hex(sender_node_id),
                     encode_hex(response.message.enrs[0].node_id),
@@ -309,7 +309,7 @@ class FindNodeHandlerService(BaseRoutingTableManagerComponent):
             try:
                 enr = self.enr_db.get_enr(node_id)
             except KeyError:
-                self.logger.warning("Missing ENR for node %s", encode_hex(node_id))
+                self.logger.debug("Missing ENR for node %s", encode_hex(node_id))
             else:
                 enrs.append(enr)
 
@@ -358,7 +358,7 @@ class PingSenderService(BaseRoutingTableManagerComponent):
                 self.logger.debug("Pinging %s", encode_hex(node_id))
                 await self.ping(node_id)
             else:
-                self.logger.warning("Routing table is empty, no one to ping")
+                self.logger.debug("Routing table is empty, no one to ping")
 
     async def ping(self, node_id: NodeID) -> None:
         local_enr = self.get_local_enr()
@@ -371,14 +371,14 @@ class PingSenderService(BaseRoutingTableManagerComponent):
             with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
                 inbound_message = await self.message_dispatcher.request(node_id, ping)
         except ValueError as value_error:
-            self.logger.warning(
+            self.logger.debug(
                 "Failed to send ping to %s: %s", encode_hex(node_id), value_error
             )
         except trio.TooSlowError:
-            self.logger.warning("Ping to %s timed out", encode_hex(node_id))
+            self.logger.debug("Ping to %s timed out", encode_hex(node_id))
         else:
             if not isinstance(inbound_message.message, PongMessage):
-                self.logger.warning(
+                self.logger.debug(
                     "Peer %s responded to Ping with %s instead of Pong",
                     encode_hex(node_id),
                     inbound_message.message.__class__.__name__,
@@ -411,7 +411,7 @@ class LookupService(BaseRoutingTableManagerComponent):
             await self.lookup(target)
 
     async def lookup(self, target: NodeID) -> None:
-        self.logger.info("Looking up %s", encode_hex(target))
+        self.logger.debug("Looking up %s", encode_hex(target))
 
         queried_node_ids = set()
         unresponsive_node_ids = set()
@@ -517,19 +517,19 @@ class LookupService(BaseRoutingTableManagerComponent):
                     peer, request
                 )
         except ValueError as value_error:
-            self.logger.warning(
+            self.logger.debug(
                 "Failed to send FindNode to %s: %s", encode_hex(peer), value_error
             )
             return None
         except UnexpectedMessage as unexpected_message_error:
-            self.logger.warning(
+            self.logger.debug(
                 "Peer %s sent unexpected message to FindNode request: %s",
                 encode_hex(peer),
                 unexpected_message_error,
             )
             return None
         except trio.TooSlowError:
-            self.logger.warning(
+            self.logger.debug(
                 "Peer %s did not respond in time to FindNode request", encode_hex(peer)
             )
             return None

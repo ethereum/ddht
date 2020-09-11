@@ -68,6 +68,7 @@ class Application(Service):
         enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
         enr_database_dir.mkdir(exist_ok=True)
         enr_db = ENRDB(LevelDB(enr_database_dir), identity_scheme_registry)
+        self.enr_db = enr_db
 
         local_private_key = get_local_private_key(self._boot_info)
 
@@ -93,6 +94,7 @@ class Application(Service):
         routing_table = KademliaRoutingTable(
             enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE
         )
+        self.routing_table = routing_table
 
         for enr in self._boot_info.bootnodes:
             try:

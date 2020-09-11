@@ -163,14 +163,14 @@ class PeerPacker(Service):
         try:
             handshake_result = self.handshake_participant.complete_handshake(packet)
         except HandshakeFailure as handshake_failure:
-            self.logger.warning(
+            self.logger.debug(
                 "Handshake with %s has failed: %s",
                 encode_hex(self.remote_node_id),
                 handshake_failure,
             )
             raise  # let the service fail
         else:
-            self.logger.info(
+            self.logger.debug(
                 "Handshake with %s was successful", encode_hex(self.remote_node_id)
             )
             self.handshake_successful_event.set()
@@ -228,7 +228,7 @@ class PeerPacker(Service):
                     self.session_keys.decryption_key, self.message_type_registry
                 )
             except DecryptionError:
-                self.logger.info(
+                self.logger.debug(
                     "Failed to decrypt message from peer, starting another handshake as recipient"
                 )
                 self.reset_handshake_state()
@@ -272,7 +272,7 @@ class PeerPacker(Service):
             )
             raise HandshakeFailure()
 
-        self.logger.info("Initiating handshake to send %s", outbound_message)
+        self.logger.debug("Initiating handshake to send %s", outbound_message)
         self.start_handshake_as_initiator(
             local_enr=local_enr, remote_enr=remote_enr, message=outbound_message.message
         )
@@ -369,7 +369,7 @@ class PeerPacker(Service):
                 # handshake will make the service as a whole fail.
                 await handshake_successful_event.wait()
         except trio.TooSlowError:
-            self.logger.warning(
+            self.logger.debug(
                 "Handshake with %s has timed out", encode_hex(self.remote_node_id)
             )
             self.manager.cancel()
@@ -476,7 +476,7 @@ class Packer(Service):
                 )
             )
             if len(expecting_managed_peer_packers) >= 2:
-                self.logger.warning(
+                self.logger.debug(
                     "Multiple peer packers are expecting %s: %s",
                     inbound_packet,
                     ", ".join(
@@ -497,7 +497,7 @@ class Packer(Service):
                             inbound_packet
                         )
                     except trio.BrokenResourceError:
-                        self.logger.warning(
+                        self.logger.debug(
                             "Dropping packet as channel to %s is closed"
                             % managed_peer_packer.peer_packer
                         )
@@ -507,7 +507,7 @@ class Packer(Service):
                 remote_node_id = recover_source_id_from_tag(tag, self.local_node_id)
 
                 if not self.is_peer_packer_registered(remote_node_id):
-                    self.logger.info(
+                    self.logger.debug(
                         "Launching peer packer for %s to handle %s",
                         encode_hex(remote_node_id),
                         inbound_packet,
@@ -526,13 +526,13 @@ class Packer(Service):
                         inbound_packet
                     )
                 except trio.BrokenResourceError:
-                    self.logger.warning(
+                    self.logger.debug(
                         "Dropping packet as channel to %s is closed"
                         % managed_peer_packer.peer_packer
                     )
 
             else:
-                self.logger.warning(
+                self.logger.debug(
                     "Dropping unprompted handshake packet %s", inbound_packet
                 )
 
@@ -540,7 +540,7 @@ class Packer(Service):
         async for outbound_message in self.outbound_message_receive_channel:
             remote_node_id = outbound_message.receiver_node_id
             if not self.is_peer_packer_registered(remote_node_id):
-                self.logger.info(
+                self.logger.debug(
                     "Launching peer packer for %s to handle %s",
                     encode_hex(remote_node_id),
                     outbound_message,
@@ -638,7 +638,7 @@ class Packer(Service):
                 encode_hex(remote_node_id),
             )
         finally:
-            self.logger.info(
+            self.logger.debug(
                 "Deregistering peer packer %s", managed_peer_packer.peer_packer
             )
             self.deregister_peer_packer(remote_node_id)
