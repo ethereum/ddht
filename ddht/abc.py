@@ -22,7 +22,7 @@ import trio
 
 from ddht.base_message import BaseMessage
 from ddht.boot_info import BootInfo
-from ddht.typing import JSON, IDNonce, SessionKeys
+from ddht.typing import JSON, SessionKeys
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
 
@@ -177,8 +177,12 @@ class RoutingTableAPI(ABC):
         ...
 
 
-class HandshakeSchemeAPI(ABC):
+TSignatureInputs = TypeVar("TSignatureInputs")
+
+
+class HandshakeSchemeAPI(ABC, Generic[TSignatureInputs]):
     identity_scheme: Type[IdentitySchemeAPI]
+    signature_inputs_cls: Type[TSignatureInputs]
 
     #
     # Handshake
@@ -204,7 +208,7 @@ class HandshakeSchemeAPI(ABC):
         remote_public_key: bytes,
         local_node_id: NodeID,
         remote_node_id: NodeID,
-        id_nonce: IDNonce,
+        salt: bytes,
         is_locally_initiated: bool,
     ) -> SessionKeys:
         """Compute the symmetric session keys."""
@@ -213,7 +217,7 @@ class HandshakeSchemeAPI(ABC):
     @classmethod
     @abstractmethod
     def create_id_nonce_signature(
-        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes, private_key: bytes
+        cls, *, signature_inputs: TSignatureInputs, private_key: bytes,
     ) -> bytes:
         """Sign an id nonce received during handshake."""
         ...
@@ -221,12 +225,7 @@ class HandshakeSchemeAPI(ABC):
     @classmethod
     @abstractmethod
     def validate_id_nonce_signature(
-        cls,
-        *,
-        id_nonce: IDNonce,
-        ephemeral_public_key: bytes,
-        signature: bytes,
-        public_key: bytes,
+        cls, *, signature_inputs: TSignatureInputs, signature: bytes, public_key: bytes,
     ) -> None:
         """Validate the id nonce signature received from a peer."""
         ...
@@ -235,7 +234,7 @@ class HandshakeSchemeAPI(ABC):
 # https://github.com/python/mypy/issues/5264#issuecomment-399407428
 if TYPE_CHECKING:
     HandshakeSchemeRegistryBaseType = UserDict[
-        Type[IdentitySchemeAPI], Type[HandshakeSchemeAPI]
+        Type[IdentitySchemeAPI], Type[HandshakeSchemeAPI[Any]]
     ]
 else:
     HandshakeSchemeRegistryBaseType = UserDict
@@ -244,8 +243,8 @@ else:
 class HandshakeSchemeRegistryAPI(HandshakeSchemeRegistryBaseType):
     @abstractmethod
     def register(
-        self, handshake_scheme_class: Type[HandshakeSchemeAPI]
-    ) -> Type[HandshakeSchemeAPI]:
+        self, handshake_scheme_class: Type[HandshakeSchemeAPI[TSignatureInputs]]
+    ) -> Type[HandshakeSchemeAPI[TSignatureInputs]]:
         ...
 
 

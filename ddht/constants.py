@@ -17,7 +17,6 @@ DISCOVERY_DATAGRAM_BUFFER_SIZE = DISCOVERY_MAX_PACKET_SIZE * 2
 NEIGHBOURS_RESPONSE_ITEMS = 16
 AES128_KEY_SIZE = 16  # size of an AES218 key
 HKDF_INFO = b"discovery v5 key agreement"
-ID_NONCE_SIGNATURE_PREFIX = b"discovery-id-nonce"
 ENR_REPR_PREFIX = "enr:"  # prefix used when printing an ENR
 MAX_ENR_SIZE = 300  # maximum allowed size of an ENR
 IP_V4_ADDRESS_ENR_KEY = b"ip"

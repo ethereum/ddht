@@ -5,7 +5,6 @@ import pytest
 import rlp
 
 from ddht.encryption import aesgcm_decrypt
-from ddht.handshake_schemes import V4HandshakeScheme
 from ddht.tools.v5_strategies import (
     enr_seq_st,
     id_nonce_st,
@@ -22,6 +21,7 @@ from ddht.v5.constants import (
     MAGIC_SIZE,
     ZERO_NONCE,
 )
+from ddht.v5.handshake_schemes import SignatureInputs, V4HandshakeScheme
 from ddht.v5.messages import PingMessage, v5_registry
 from ddht.v5.packets import (
     AuthHeader,
@@ -206,9 +206,8 @@ def test_official_auth_response_encryption(
     secret_key, id_nonce, enr, auth_response_key, ephemeral_public_key, auth_cipher_text
 ):
     id_nonce_signature = V4HandshakeScheme.create_id_nonce_signature(
-        id_nonce=id_nonce,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         private_key=secret_key,
-        ephemeral_public_key=ephemeral_public_key,
     )
     assert (
         compute_encrypted_auth_response(
@@ -327,8 +326,7 @@ def test_official_auth_header_packet_preparation(
     assert message.to_bytes() == encoded_message
 
     id_nonce_signature = V4HandshakeScheme.create_id_nonce_signature(
-        id_nonce=id_nonce,
-        ephemeral_public_key=ephemeral_public_key,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         private_key=local_private_key,
     )
 

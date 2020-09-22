@@ -18,6 +18,7 @@ from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRDatabaseAPI
 from eth_typing import NodeID
+from eth_utils import int_to_big_endian
 import trio
 
 from ddht._utils import humanize_node_id
@@ -57,8 +58,8 @@ class _Subcription(NamedTuple):
     filter_by_node_id: Optional[NodeID]
 
 
-def get_random_request_id() -> int:
-    return secrets.randbits(32)
+def get_random_request_id() -> bytes:
+    return int_to_big_endian(secrets.randbits(32))
 
 
 MAX_REQUEST_ID_ATTEMPTS = 3
@@ -127,8 +128,8 @@ class Dispatcher(Service, DispatcherAPI):
 
     _subscriptions: DefaultDict[int, Set[_Subcription]]
 
-    _reserved_request_ids: Set[Tuple[NodeID, int]]
-    _active_request_ids: Set[Tuple[NodeID, int]]
+    _reserved_request_ids: Set[Tuple[NodeID, bytes]]
+    _active_request_ids: Set[Tuple[NodeID, bytes]]
 
     def __init__(
         self,
@@ -341,7 +342,18 @@ class Dispatcher(Service, DispatcherAPI):
             )
             if (
                 not session.is_after_handshake
-                or session.remote_node_id == envelope.packet.header.source_node_id
+                or (
+                    (
+                        envelope.packet.is_message
+                        and session.remote_node_id
+                        == envelope.packet.auth_data.source_node_id  # type: ignore  # noqa: E501
+                    )
+                    or (
+                        envelope.packet.is_handshake
+                        and session.remote_node_id
+                        == envelope.packet.auth_data.auth_data_head.source_node_id  # type: ignore
+                    )
+                )
             )
         )
 
@@ -385,9 +397,10 @@ class Dispatcher(Service, DispatcherAPI):
     #
     # Utility
     #
-    def get_free_request_id(self, node_id: NodeID) -> int:
+    def get_free_request_id(self, node_id: NodeID) -> bytes:
         for _ in range(MAX_REQUEST_ID_ATTEMPTS):
             request_id = get_random_request_id()
+
             if (node_id, request_id) in self._reserved_request_ids:
                 continue
             elif (node_id, request_id) in self._active_request_ids:
@@ -404,7 +417,7 @@ class Dispatcher(Service, DispatcherAPI):
             )
 
     @contextmanager
-    def reserve_request_id(self, node_id: NodeID) -> Iterator[int]:
+    def reserve_request_id(self, node_id: NodeID) -> Iterator[bytes]:
         request_id = self.get_free_request_id(node_id)
         try:
             self._reserved_request_ids.add((node_id, request_id))
@@ -450,7 +463,7 @@ class Dispatcher(Service, DispatcherAPI):
         request_id = request.message.request_id
 
         self.logger.debug(
-            "Sending request: %s with request id %d", request, request_id,
+            "Sending request: %s with request id %s", request, request_id.hex(),
         )
 
         send_channel, receive_channel = trio.open_memory_channel[TMessage](256)
@@ -489,7 +502,7 @@ class Dispatcher(Service, DispatcherAPI):
             )
             async with subscription_ctx as subscription:
                 self.logger.debug(
-                    "Sending request with request id %d", request_id,
+                    "Sending request with request id %s", request_id.hex(),
                 )
                 # Send the request
                 await self.send_message(request)

@@ -15,7 +15,7 @@ async def test_dispatcher_handles_incoming_envelopes(tester, driver, alice, bob)
     ):
         with trio.fail_after(1):
             async with alice.events.ping_received.subscribe_and_wait():
-                await driver.recipient.send_ping(1234)
+                await driver.recipient.send_ping(b"\x12")
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ async def test_dispatcher_bidirectional_communication(
                 async with bob.events.ping_received.subscribe_and_wait():
                     await alice_dispatcher.send_message(
                         OutboundMessage(
-                            PingMessage(1234, alice.enr.sequence_number),
+                            PingMessage(b"\x12", alice.enr.sequence_number),
                             bob.endpoint,
                             bob.node_id,
                         )
@@ -59,7 +59,7 @@ async def test_dispatcher_handles_incoming_envelopes_with_multiple_sessions(
     with trio.fail_after(2):
         async with driver_a.initiator.events.packet_discarded.subscribe_and_wait():
             async with alice.events.ping_received.subscribe_and_wait():
-                await driver_b.initiator.send_ping(1234)
+                await driver_b.initiator.send_ping(b"\x12")
 
 
 @pytest.mark.trio
@@ -71,14 +71,18 @@ async def test_dispatcher_send_message_with_existing_session(
     async with bob.events.ping_received.subscribe_and_wait():
         await alice_dispatcher.send_message(
             OutboundMessage(
-                PingMessage(1234, alice.enr.sequence_number), bob.endpoint, bob.node_id,
+                PingMessage(b"\x12", alice.enr.sequence_number),
+                bob.endpoint,
+                bob.node_id,
             )
         )
 
     async with bob.events.ping_received.subscribe_and_wait():
         await alice_dispatcher.send_message(
             OutboundMessage(
-                PingMessage(4321, alice.enr.sequence_number), bob.endpoint, bob.node_id,
+                PingMessage(b"\x34", alice.enr.sequence_number),
+                bob.endpoint,
+                bob.node_id,
             )
         )
 
@@ -93,7 +97,7 @@ async def test_dispatcher_send_message_creates_session(
     async with alice.events.session_created.subscribe_and_wait():
         await alice_dispatcher.send_message(
             OutboundMessage(
-                PingMessage(1234, alice.enr.sequence_number),
+                PingMessage(b"\x12", alice.enr.sequence_number),
                 carol.endpoint,
                 carol.node_id,
             )
@@ -112,10 +116,10 @@ async def test_dispatcher_subscribe_to_message_type(tester, alice, bob):
     async with tester.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
         async with tester.dispatcher_pair(alice, carol):
             async with alice_dispatcher.subscribe(PingMessage) as ping_subscription:
-                await driver_a.recipient.send_ping(1234)
-                await driver_a.initiator.send_pong(1234)
-                await driver_b.initiator.send_ping(4321)
-                await driver_b.recipient.send_pong(4321)
+                await driver_a.recipient.send_ping(b"\x12")
+                await driver_a.initiator.send_pong(b"\x12")
+                await driver_b.initiator.send_ping(b"\x34")
+                await driver_b.recipient.send_pong(b"\x34")
 
                 with trio.fail_after(1):
                     ping_message_a = await ping_subscription.receive()
@@ -141,15 +145,15 @@ async def test_dispatcher_subscribe_to_message_type_with_endpoint_filter(
             async with alice_dispatcher.subscribe(
                 PingMessage, endpoint=carol.endpoint
             ) as ping_subscription:
-                await driver_a.recipient.send_ping(1234)
-                await driver_a.initiator.send_pong(1234)
-                await driver_b.initiator.send_ping(4321)
-                await driver_b.recipient.send_pong(4321)
+                await driver_a.recipient.send_ping(b"\x12")
+                await driver_a.initiator.send_pong(b"\x12")
+                await driver_b.initiator.send_ping(b"\x34")
+                await driver_b.recipient.send_pong(b"\x34")
 
                 with trio.fail_after(1):
                     ping_message_a = await ping_subscription.receive()
 
-    assert ping_message_a.message.request_id == 4321
+    assert ping_message_a.message.request_id == b"\x34"
     assert ping_message_a.sender_node_id == carol.node_id
 
 
@@ -169,15 +173,15 @@ async def test_dispatcher_subscribe_to_message_type_with_node_id_filter(
             async with alice_dispatcher.subscribe(
                 PingMessage, node_id=carol.node_id
             ) as ping_subscription:
-                await driver_a.recipient.send_ping(1234)
-                await driver_a.initiator.send_pong(1234)
-                await driver_b.initiator.send_ping(4321)
-                await driver_b.recipient.send_pong(4321)
+                await driver_a.recipient.send_ping(b"\x12")
+                await driver_a.initiator.send_pong(b"\x12")
+                await driver_b.initiator.send_ping(b"\x34")
+                await driver_b.recipient.send_pong(b"\x34")
 
                 with trio.fail_after(1):
                     ping_message_a = await ping_subscription.receive()
 
-    assert ping_message_a.message.request_id == 4321
+    assert ping_message_a.message.request_id == b"\x34"
     assert ping_message_a.sender_node_id == carol.node_id
 
 
@@ -193,18 +197,20 @@ async def test_dispatcher_subscribe_request_response(tester, alice, bob):
     async with tester.dispatcher_pair(alice, bob) as (alice_dispatcher, _):
         async with tester.dispatcher_pair(alice, carol):
             request = OutboundMessage(
-                PingMessage(1234, alice.enr.sequence_number), bob.endpoint, bob.node_id,
+                PingMessage(b"\x12", alice.enr.sequence_number),
+                bob.endpoint,
+                bob.node_id,
             )
             async with alice_dispatcher.subscribe_request(
                 request, PongMessage
             ) as subscription:
-                await driver_a.initiator.send_ping(1234)
-                await driver_b.initiator.send_ping(4321)
-                await driver_b.recipient.send_pong(4321)
-                await driver_a.recipient.send_pong(1234)
+                await driver_a.initiator.send_ping(b"\x12")
+                await driver_b.initiator.send_ping(b"\x34")
+                await driver_b.recipient.send_pong(b"\x34")
+                await driver_a.recipient.send_pong(b"\x12")
 
                 with trio.fail_after(1):
                     response = await subscription.receive()
 
     assert response.sender_node_id == bob.node_id
-    assert response.message.request_id == 1234
+    assert response.message.request_id == b"\x12"

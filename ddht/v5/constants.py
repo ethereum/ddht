@@ -50,3 +50,5 @@ LOOKUP_RETRY_THRESHOLD = (
 LOOKUP_PARALLELIZATION_FACTOR = 3  # number of parallel lookup requests (aka alpha)
 
 MAX_NODES_MESSAGE_TOTAL = 8  # max allowed total value for nodes messages
+
+ID_NONCE_SIGNATURE_PREFIX = b"discovery-id-nonce"

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import (
+    Any,
     AsyncContextManager,
     AsyncIterable,
     Generic,
@@ -60,7 +61,7 @@ class HandshakeParticipantAPI(ABC):
 
     @property
     @abstractmethod
-    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI[Any]]:
         """
         The handshake scheme used during the handshake.
 

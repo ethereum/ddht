@@ -2,6 +2,7 @@ import secrets
 from typing import AsyncIterator, List, Optional
 
 from async_generator import asynccontextmanager
+from eth_utils import int_to_big_endian
 import trio
 
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
@@ -51,17 +52,17 @@ class SessionDriver(SessionDriverAPI):
         return await self.channels.inbound_message_receive_channel.receive()
 
     @no_hang
-    async def send_ping(self, request_id: Optional[int] = None) -> PingMessage:
+    async def send_ping(self, request_id: Optional[bytes] = None) -> PingMessage:
         if request_id is None:
-            request_id = secrets.randbits(32)
+            request_id = int_to_big_endian(secrets.randbits(32))
         message = PingMessage(request_id, self.node.enr.sequence_number)
         await self.send_message(message)
         return message
 
     @no_hang
-    async def send_pong(self, request_id: Optional[int] = None) -> PongMessage:
+    async def send_pong(self, request_id: Optional[bytes] = None) -> PongMessage:
         if request_id is None:
-            request_id = secrets.randbits(32)
+            request_id = int_to_big_endian(secrets.randbits(32))
         message = PongMessage(
             request_id,
             self.node.enr.sequence_number,
@@ -133,22 +134,20 @@ class SessionPair(SessionPairAPI):
 
     @no_hang
     async def send_packet(self, packet: AnyPacket) -> None:
-        if packet.header.source_node_id == self.initiator.node.node_id:
-            await self.recipient.session.handle_inbound_envelope(
-                InboundEnvelope(
-                    packet=packet, sender_endpoint=self.initiator.node.endpoint,
-                )
-            )
-        elif packet.header.source_node_id == self.recipient.node.node_id:
+        if packet.dest_node_id == self.initiator.node.node_id:
             await self.initiator.session.handle_inbound_envelope(
                 InboundEnvelope(
                     packet=packet, sender_endpoint=self.recipient.node.endpoint,
                 )
             )
-        else:
-            raise Exception(
-                f"No matching node-id: {packet.header.source_node_id.hex()}"
+        elif packet.dest_node_id == self.recipient.node.node_id:
+            await self.recipient.session.handle_inbound_envelope(
+                InboundEnvelope(
+                    packet=packet, sender_endpoint=self.initiator.node.endpoint,
+                )
             )
+        else:
+            raise Exception(f"No matching node-id: {packet.dest_node_id.hex()}")
 
     @no_hang
     async def handshake(self) -> None:

@@ -6,12 +6,14 @@ import factory
 import trio
 
 from ddht.base_message import AnyInboundMessage, BaseMessage
+from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.typing import AES128Key, Nonce
+from ddht.v5_1.constants import MESSAGE_PACKET_SIZE, PACKET_VERSION_1, PROTOCOL_ID
 from ddht.v5_1.envelope import OutboundEnvelope
 from ddht.v5_1.packets import (
-    PROTOCOL_ID,
     HandshakeHeader,
     HandshakePacket,
+    Header,
     MessagePacket,
     Packet,
     TAuthData,
@@ -24,7 +26,6 @@ class WhoAreYouPacketFactory(factory.Factory):  # type: ignore
     class Meta:
         model = WhoAreYouPacket
 
-    request_nonce = factory.LazyFunction(lambda: secrets.token_bytes(12))
     id_nonce = factory.LazyFunction(lambda: secrets.token_bytes(32))
     enr_sequence_number = 0
 
@@ -33,7 +34,7 @@ class HandshakeHeaderFactory(factory.Factory):  # type: ignore
     class Meta:
         model = HandshakeHeader
 
-    version = 1
+    source_node_id = factory.SubFactory(NodeIDFactory)
     signature_size = 64
     ephemeral_key_size = 33
 
@@ -48,36 +49,42 @@ class HandshakePacketFactory(factory.Factory):  # type: ignore
     record = None
 
 
+class HeaderFactory(factory.Factory):  # type: ignore
+    protocol_id = PROTOCOL_ID
+    version = PACKET_VERSION_1
+    flag = MessagePacket.flag
+    aes_gcm_nonce: Nonce = factory.LazyFunction(lambda: secrets.token_bytes(12))
+    auth_data_size = MESSAGE_PACKET_SIZE
+
+    class Meta:
+        model = Header
+
+
 class PacketFactory:
     @staticmethod
     def _prepare(
         *,
-        nonce: Optional[Nonce] = None,
+        aes_gcm_nonce: Optional[Nonce] = None,
         initiator_key: Optional[AES128Key] = None,
         message: BaseMessage,
         auth_data: TAuthData,
-        source_node_id: Optional[NodeID] = None,
         dest_node_id: Optional[NodeID] = None,
         protocol_id: bytes = PROTOCOL_ID
     ) -> Packet[TAuthData]:
-        if nonce is None:
-            nonce = Nonce(secrets.token_bytes(12))
+        if aes_gcm_nonce is None:
+            aes_gcm_nonce = Nonce(secrets.token_bytes(12))
 
         if initiator_key is None:
             initiator_key = AES128Key(secrets.token_bytes(16))
-
-        if source_node_id is None:
-            source_node_id = NodeID(secrets.token_bytes(32))
 
         if dest_node_id is None:
             dest_node_id = NodeID(secrets.token_bytes(32))
 
         return Packet.prepare(
-            nonce=nonce,
+            aes_gcm_nonce=aes_gcm_nonce,
             initiator_key=initiator_key,
             message=message,
             auth_data=auth_data,
-            source_node_id=source_node_id,
             dest_node_id=dest_node_id,
             protocol_id=protocol_id,
         )
@@ -86,27 +93,29 @@ class PacketFactory:
     def message(
         cls,
         *,
-        nonce: Optional[Nonce] = None,
+        aes_gcm_nonce: Optional[Nonce] = None,
         initiator_key: Optional[AES128Key] = None,
         message: Optional[BaseMessage] = None,
         source_node_id: Optional[NodeID] = None,
         dest_node_id: Optional[NodeID] = None,
         protocol_id: bytes = PROTOCOL_ID
     ) -> Packet[MessagePacket]:
-        if nonce is None:
-            nonce = Nonce(secrets.token_bytes(12))
+        if aes_gcm_nonce is None:
+            aes_gcm_nonce = Nonce(secrets.token_bytes(12))
 
-        auth_data = MessagePacket(nonce)
+        if source_node_id is None:
+            source_node_id = NodeIDFactory()
+
+        auth_data = MessagePacket(source_node_id)
 
         if message is None:
             message = RandomMessage()
 
         return cls._prepare(
-            nonce=nonce,
+            aes_gcm_nonce=aes_gcm_nonce,
             initiator_key=initiator_key,
             message=message,
             auth_data=auth_data,
-            source_node_id=source_node_id,
             dest_node_id=dest_node_id,
             protocol_id=protocol_id,
         )
@@ -115,10 +124,9 @@ class PacketFactory:
     def who_are_you(
         cls,
         *,
-        nonce: Optional[Nonce] = None,
+        aes_gcm_nonce: Optional[Nonce] = None,
         initiator_key: Optional[AES128Key] = None,
         message: Optional[BaseMessage] = None,
-        source_node_id: Optional[NodeID] = None,
         dest_node_id: Optional[NodeID] = None,
         protocol_id: bytes = PROTOCOL_ID
     ) -> Packet[MessagePacket]:
@@ -126,11 +134,10 @@ class PacketFactory:
         message = EmptyMessage()
 
         return cls._prepare(
-            nonce=nonce,
+            aes_gcm_nonce=aes_gcm_nonce,
             initiator_key=initiator_key,
             message=message,
             auth_data=auth_data,
-            source_node_id=source_node_id,
             dest_node_id=dest_node_id,
             protocol_id=protocol_id,
         )
@@ -139,24 +146,28 @@ class PacketFactory:
     def handshake(
         cls,
         *,
-        nonce: Optional[Nonce] = None,
+        aes_gcm_nonce: Optional[Nonce] = None,
         initiator_key: Optional[AES128Key] = None,
         message: Optional[BaseMessage] = None,
         source_node_id: Optional[NodeID] = None,
         dest_node_id: Optional[NodeID] = None,
         protocol_id: bytes = PROTOCOL_ID
     ) -> Packet[MessagePacket]:
-        auth_data = HandshakePacketFactory()
+        if source_node_id is None:
+            source_node_id = NodeIDFactory()
+
+        auth_data = HandshakePacketFactory(
+            auth_data_head__source_node_id=source_node_id
+        )
 
         if message is None:
             message = EmptyMessage()
 
         return cls._prepare(
-            nonce=nonce,
+            aes_gcm_nonce=aes_gcm_nonce,
             initiator_key=initiator_key,
             message=message,
             auth_data=auth_data,
-            source_node_id=source_node_id,
             dest_node_id=dest_node_id,
             protocol_id=protocol_id,
         )

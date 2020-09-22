@@ -97,7 +97,7 @@ class Application(BaseApplication):
 
         if self._boot_info.is_rpc_enabled:
             handlers = merge(
-                get_core_rpc_handlers(network.routing_table),
+                get_core_rpc_handlers(enr_manager.enr, network.routing_table),
                 get_v51_rpc_handlers(network),
             )
             rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
@@ -106,11 +106,12 @@ class Application(BaseApplication):
         self.logger.info("Protocol-Version: %s", self._boot_info.protocol_version.value)
         self.logger.info("DDHT base dir: %s", self._boot_info.base_dir)
         self.logger.info("Starting discovery service...")
-        self.logger.info("Listening on %s:%d", listen_on, port)
+        self.logger.info("Listening on %s", listen_on)
         self.logger.info("Local Node ID: %s", encode_hex(enr_manager.enr.node_id))
         self.logger.info(
             "Local ENR: seq=%d enr=%s", enr_manager.enr.sequence_number, enr_manager.enr
         )
 
         self.manager.run_daemon_child_service(network)
-        self.manager.run_daemon_child_service(rpc_server)
+
+        await self.manager.wait_finished()

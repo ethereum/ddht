@@ -24,7 +24,7 @@ def validate_nonce(nonce: bytes) -> None:
 
 
 def aesgcm_encrypt(
-    key: AES128Key, nonce: Nonce, plain_text: bytes, authenticated_data: bytes
+    key: AES128Key, nonce: Nonce, plain_text: bytes, authenticated_data: bytes,
 ) -> bytes:
     validate_aes128_key(key)
     validate_nonce(nonce)
@@ -35,7 +35,7 @@ def aesgcm_encrypt(
 
 
 def aesgcm_decrypt(
-    key: AES128Key, nonce: Nonce, cipher_text: bytes, authenticated_data: bytes
+    key: AES128Key, nonce: Nonce, cipher_text: bytes, authenticated_data: bytes,
 ) -> bytes:
     validate_aes128_key(key)
     validate_nonce(nonce)
@@ -44,7 +44,7 @@ def aesgcm_decrypt(
     try:
         plain_text = aesgcm.decrypt(nonce, cipher_text, authenticated_data)
     except InvalidTag as error:
-        raise DecryptionError() from error
+        raise DecryptionError(str(error)) from error
     else:
         return plain_text
 

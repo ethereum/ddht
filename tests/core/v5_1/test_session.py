@@ -3,7 +3,7 @@ import secrets
 from eth_utils import int_to_big_endian
 import pytest
 from rlp.exceptions import DecodingError, DeserializationError
-from rlp.sedes import big_endian_int
+from rlp.sedes import binary
 import trio
 
 from ddht.base_message import BaseMessage
@@ -65,11 +65,11 @@ async def test_session_message_sending_during_handshake(driver):
     assert driver.recipient.session.is_before_handshake
 
     # initiate the handshake
-    await driver.initiator.send_ping(0)
+    await driver.initiator.send_ping(b"\x00")
 
     # send first message before initiation packet is transmitted
     # we cannot send a message from the recipient until they have the remote node id
-    await driver.initiator.send_ping(1)
+    await driver.initiator.send_ping(b"\x01")
 
     assert driver.initiator.session.is_during_handshake
     assert driver.recipient.session.is_before_handshake
@@ -81,8 +81,8 @@ async def test_session_message_sending_during_handshake(driver):
     assert driver.recipient.session.is_during_handshake
 
     # send second message after initiation packet is transmitted
-    await driver.initiator.send_ping(2)
-    await driver.recipient.send_ping(3)
+    await driver.initiator.send_ping(b"\x02")
+    await driver.recipient.send_ping(b"\x03")
 
     # step the handshake forward
     await driver.transmit_one(driver.recipient)
@@ -91,8 +91,8 @@ async def test_session_message_sending_during_handshake(driver):
     assert driver.recipient.session.is_during_handshake
 
     # send third message after initiation packet is transmitted
-    await driver.initiator.send_ping(4)
-    await driver.recipient.send_ping(5)
+    await driver.initiator.send_ping(b"\x04")
+    await driver.recipient.send_ping(b"\x05")
 
     # step the handshake forward
     await driver.transmit_one(driver.initiator)
@@ -110,13 +110,13 @@ async def test_session_message_sending_during_handshake(driver):
         ping_3 = await driver.initiator.next_message()
         ping_5 = await driver.initiator.next_message()
 
-    assert ping_0.message.request_id == 0
-    assert ping_1.message.request_id == 1
-    assert ping_2.message.request_id == 2
-    assert ping_4.message.request_id == 4
+    assert ping_0.message.request_id == b"\x00"
+    assert ping_1.message.request_id == b"\x01"
+    assert ping_2.message.request_id == b"\x02"
+    assert ping_4.message.request_id == b"\x04"
 
-    assert ping_3.message.request_id == 3
-    assert ping_5.message.request_id == 5
+    assert ping_3.message.request_id == b"\x03"
+    assert ping_5.message.request_id == b"\x05"
 
 
 @pytest.mark.trio
@@ -124,13 +124,13 @@ async def test_session_message_sending_after_handshake(driver):
     await driver.handshake()
 
     async with driver.transmit():
-        await driver.initiator.send_ping(1234)
+        await driver.initiator.send_ping(b"\x12")
         ping_message = await driver.recipient.next_message()
-        assert ping_message.message.request_id == 1234
+        assert ping_message.message.request_id == b"\x12"
 
-        await driver.recipient.send_pong(1234)
+        await driver.recipient.send_pong(b"\x12")
         pong_message = await driver.initiator.next_message()
-        assert pong_message.message.request_id == 1234
+        assert pong_message.message.request_id == b"\x12"
 
 
 @pytest.mark.trio
@@ -142,7 +142,7 @@ async def test_session_unexpected_packets(driver):
     assert driver.recipient.session.is_before_handshake
 
     # initiate the handshake
-    await driver.initiator.send_ping(1234)
+    await driver.initiator.send_ping(b"\x12")
 
     assert driver.initiator.session.is_during_handshake
     assert driver.recipient.session.is_before_handshake
@@ -153,9 +153,7 @@ async def test_session_unexpected_packets(driver):
         # since the recipient has not yet sent the `WhoAreYouPacket`
         async with driver.recipient.events.packet_discarded.subscribe_and_wait():
             await driver.send_packet(
-                PacketFactory.who_are_you(
-                    source_node_id=initiator.node_id, dest_node_id=recipient.node_id,
-                )
+                PacketFactory.who_are_you(dest_node_id=recipient.node_id,)
             )
         async with driver.recipient.events.packet_discarded.subscribe_and_wait():
             await driver.send_packet(
@@ -191,9 +189,7 @@ async def test_session_unexpected_packets(driver):
         # reason for the initiator to send such a packet.
         async with driver.recipient.events.packet_discarded.subscribe_and_wait():
             await driver.send_packet(
-                PacketFactory.who_are_you(
-                    source_node_id=initiator.node_id, dest_node_id=recipient.node_id,
-                )
+                PacketFactory.who_are_you(dest_node_id=recipient.node_id,)
             )
 
         # The initiator should discard a HandshakePacket since there is no
@@ -216,9 +212,7 @@ async def test_session_unexpected_packets(driver):
         # reason for the initiator to send such a packet.
         async with driver.recipient.events.packet_discarded.subscribe_and_wait():
             await driver.send_packet(
-                PacketFactory.who_are_you(
-                    source_node_id=initiator.node_id, dest_node_id=recipient.node_id,
-                )
+                PacketFactory.who_are_you(dest_node_id=recipient.node_id,)
             )
 
         # The recipient should buffer any message packets it receives at this
@@ -226,9 +220,9 @@ async def test_session_unexpected_packets(driver):
         # the initiator can now have valid session keys.
         await driver.send_packet(
             PacketFactory.message(
-                nonce=driver.initiator.session.get_encryption_nonce(),
+                aes_gcm_nonce=driver.initiator.session.get_encryption_nonce(),
                 initiator_key=driver.initiator.session.keys.encryption_key,
-                message=PingMessage(4321, initiator.enr.sequence_number),
+                message=PingMessage(b"\x34", initiator.enr.sequence_number),
                 source_node_id=initiator.node_id,
                 dest_node_id=recipient.node_id,
             )
@@ -254,16 +248,16 @@ async def test_session_unexpected_packets(driver):
         initiation_ping = await driver.recipient.next_message()
         out_of_order_ping = await driver.recipient.next_message()
 
-    assert initiation_ping.message.request_id == 1234
-    assert out_of_order_ping.message.request_id == 4321
+    assert initiation_ping.message.request_id == b"\x12"
+    assert out_of_order_ping.message.request_id == b"\x34"
 
 
 class BadMessage(BaseMessage):
-    fields = (("request_id", big_endian_int),)
+    fields = (("request_id", binary),)
 
     def __init__(self, message_type, request_id=None):
         if request_id is None:
-            request_id = secrets.randbits(32)
+            request_id = int_to_big_endian(secrets.randbits(32))
         self.message_type = message_type
         super().__init__(request_id=request_id)
 
@@ -276,7 +270,7 @@ async def test_session_message_mismatched_rlp(driver):
     with pytest.raises(DeserializationError):
         await driver.send_packet(
             PacketFactory.message(
-                nonce=driver.initiator.session.get_encryption_nonce(),
+                aes_gcm_nonce=driver.initiator.session.get_encryption_nonce(),
                 initiator_key=driver.initiator.session.keys.encryption_key,
                 message=BadMessage(1),
                 source_node_id=driver.initiator.node.node_id,
@@ -293,7 +287,7 @@ async def test_session_message_unknown_message_type(driver):
     with pytest.raises(KeyError):
         await driver.send_packet(
             PacketFactory.message(
-                nonce=driver.initiator.session.get_encryption_nonce(),
+                aes_gcm_nonce=driver.initiator.session.get_encryption_nonce(),
                 initiator_key=driver.initiator.session.keys.encryption_key,
                 message=BadMessage(255),
                 source_node_id=driver.initiator.node.node_id,
@@ -303,7 +297,7 @@ async def test_session_message_unknown_message_type(driver):
 
 
 class GarbledMessage(BaseMessage):
-    fields = (("request_id", big_endian_int),)
+    fields = (("request_id", binary),)
 
     def __init__(self, message_type, message_bytes):
         self.message_type = message_type
@@ -321,7 +315,7 @@ async def test_session_invalid_rlp(driver):
     with pytest.raises(DecodingError):
         await driver.send_packet(
             PacketFactory.message(
-                nonce=driver.initiator.session.get_encryption_nonce(),
+                aes_gcm_nonce=driver.initiator.session.get_encryption_nonce(),
                 initiator_key=driver.initiator.session.keys.encryption_key,
                 message=GarbledMessage(1, b"\xff\xff\xff"),
                 source_node_id=driver.initiator.node.node_id,
@@ -379,9 +373,7 @@ async def test_session_last_message_received_at(driver, autojump_clock):
         recipient_node_id = driver.recipient.node.node_id
 
         await driver.send_packet(
-            PacketFactory.who_are_you(
-                source_node_id=initiator_node_id, dest_node_id=recipient_node_id,
-            )
+            PacketFactory.who_are_you(dest_node_id=recipient_node_id,)
         )
         await trio.sleep(0.01)  # let the packet process
 
@@ -389,9 +381,7 @@ async def test_session_last_message_received_at(driver, autojump_clock):
         assert recipient.last_message_received_at < anchor
 
         await driver.send_packet(
-            PacketFactory.who_are_you(
-                source_node_id=recipient_node_id, dest_node_id=initiator_node_id,
-            )
+            PacketFactory.who_are_you(dest_node_id=initiator_node_id,)
         )
         await trio.sleep(0.01)  # let the packet process
 

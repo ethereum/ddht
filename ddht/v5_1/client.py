@@ -174,9 +174,9 @@ class Client(Service, ClientAPI):
     #
     @contextmanager
     def _get_request_id(
-        self, node_id: NodeID, request_id: Optional[int] = None
-    ) -> Iterator[int]:
-        request_id_context: ContextManager[int]
+        self, node_id: NodeID, request_id: Optional[bytes] = None
+    ) -> Iterator[bytes]:
+        request_id_context: ContextManager[bytes]
 
         if request_id is None:
             request_id_context = self.dispatcher.reserve_request_id(node_id)
@@ -187,8 +187,12 @@ class Client(Service, ClientAPI):
             yield message_request_id
 
     async def send_ping(
-        self, endpoint: Endpoint, node_id: NodeID, *, request_id: Optional[int] = None,
-    ) -> int:
+        self,
+        endpoint: Endpoint,
+        node_id: NodeID,
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 PingMessage(message_request_id, self.enr_manager.enr.sequence_number),
@@ -200,7 +204,7 @@ class Client(Service, ClientAPI):
         return message_request_id
 
     async def send_pong(
-        self, endpoint: Endpoint, node_id: NodeID, *, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             PongMessage(
@@ -220,8 +224,8 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         *,
         distances: Collection[int],
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 FindNodeMessage(message_request_id, tuple(distances)),
@@ -238,7 +242,7 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         *,
         enrs: Sequence[ENRAPI],
-        request_id: int,
+        request_id: bytes,
     ) -> int:
         enr_batches = partition_enrs(
             enrs, max_payload_size=FOUND_NODES_MAX_PAYLOAD_SIZE
@@ -259,8 +263,8 @@ class Client(Service, ClientAPI):
         *,
         protocol: bytes,
         payload: bytes,
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 TalkRequestMessage(message_request_id, protocol, payload),
@@ -272,7 +276,7 @@ class Client(Service, ClientAPI):
         return message_request_id
 
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             TalkResponseMessage(request_id, payload), endpoint, node_id,
@@ -287,8 +291,8 @@ class Client(Service, ClientAPI):
         topic: bytes,
         enr: ENRAPI,
         ticket: bytes = b"",
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 RegisterTopicMessage(message_request_id, topic, enr, ticket),
@@ -306,7 +310,7 @@ class Client(Service, ClientAPI):
         *,
         ticket: bytes,
         wait_time: int,
-        request_id: int,
+        request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             TicketMessage(request_id, ticket, wait_time), endpoint, node_id,
@@ -314,7 +318,7 @@ class Client(Service, ClientAPI):
         await self.dispatcher.send_message(message)
 
     async def send_registration_confirmation(
-        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             RegistrationConfirmationMessage(request_id, topic), endpoint, node_id,
@@ -327,8 +331,8 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         *,
         topic: bytes,
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
                 TopicQueryMessage(message_request_id, topic), endpoint, node_id,
@@ -343,6 +347,7 @@ class Client(Service, ClientAPI):
         self, endpoint: Endpoint, node_id: NodeID
     ) -> InboundMessage[PongMessage]:
         with self._get_request_id(node_id) as request_id:
+            assert isinstance(request_id, bytes)
             request = AnyOutboundMessage(
                 PingMessage(request_id, self.enr_manager.enr.sequence_number),
                 endpoint,
