@@ -46,7 +46,7 @@ class RoutingTableInfoHandler(RPCHandler[None, TableInfoResponse]):
             self._routing_table.buckets, self._routing_table.replacement_caches,
         )
         for idx, (bucket, replacement_cache) in enumerate(
-            buckets_and_replacement_caches, 1
+            buckets_and_replacement_caches, start=1
         ):
             if bucket:
                 yield (

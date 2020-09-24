@@ -4,13 +4,14 @@ import io
 import json
 import logging
 import pathlib
-from typing import Any, Dict, Generic, Mapping, Optional, Tuple, TypeVar, cast
+from typing import Any, Dict, Generic, Mapping, Tuple, TypeVar, cast
 
 from async_service import Service
 from eth_utils import ValidationError
 import trio
 
 from ddht.abc import RPCHandlerAPI, RPCRequest, RPCResponse
+from ddht.exceptions import DecodingError
 from ddht.typing import JSON
 
 NEW_LINE = "\n"
@@ -28,6 +29,9 @@ logger = logging.getLogger("ddht.rpc")
 decoder = json.JSONDecoder()
 
 
+MAXIMUM_RPC_PAYLOAD_SIZE = 1024 * 1024  # 1 MB
+
+
 async def read_json(
     socket: trio.socket.SocketType,
     buffer: io.StringIO,
@@ -43,7 +47,15 @@ async def read_json(
         if bad_prefix:
             logger.info("Client started request with non json data: %r", bad_prefix)
             await write_error(socket, f"Cannot parse json: {bad_prefix}")
-            continue
+            raise DecodingError(f"Invalid JSON payload: prefix={bad_prefix}")
+
+        if len(raw_request) > MAXIMUM_RPC_PAYLOAD_SIZE:
+            error_msg = (
+                f"RPC payload exceeds maximum size: {len(raw_request)} "
+                f"> {MAXIMUM_RPC_PAYLOAD_SIZE}"
+            )
+            await write_error(socket, error_msg)
+            raise DecodingError(error_msg)
 
         try:
             request, offset = decoder.raw_decode(raw_request)
@@ -57,9 +69,6 @@ async def read_json(
                 await trio.sleep(0.01)
             continue
 
-        # TODO: more efficient algorithm can be used here by
-        # manipulating the buffer such that we can seek back to the
-        # correct position for *new* data to come in.
         buffer.seek(0)
         buffer.write(raw_request[offset:])
         buffer.truncate()
@@ -87,28 +96,24 @@ def validate_request(request: Mapping[Any, Any]) -> None:
         raise ValidationError("Missing 'method' key")
     if "params" in request:
         if not isinstance(request["params"], list):
-            raise ValidationError("Missing 'method' key")
+            raise ValidationError(
+                f"The `params` value must be a list.  Got: {type(request['params'])}"
+            )
 
 
-def generate_response(
-    request: RPCRequest, result: Any, error: Optional[str]
-) -> RPCResponse:
+def generate_error_response(request: RPCRequest, error: str) -> RPCResponse:
     response = RPCResponse(
-        id=request.get("id", -1), jsonrpc=request.get("jsonrpc", "2.0"),
+        id=request.get("id", -1),
+        jsonrpc=request.get("jsonrpc", "2.0"),
+        error=str(error),
     )
+    return response
 
-    if result is None and error is None:
-        raise TypeError("Must supply either result or error for JSON-RPC response")
-    if result is not None and error is not None:
-        raise TypeError(
-            "Must not supply both a result and an error for JSON-RPC response"
-        )
-    elif result is not None:
-        response["result"] = result
-    elif error is not None:
-        response["error"] = str(error)
-    else:
-        raise Exception("Unreachable code path")
+
+def generate_success_response(request: RPCRequest, result: Any,) -> RPCResponse:
+    response = RPCResponse(
+        id=request.get("id", -1), jsonrpc=request.get("jsonrpc", "2.0"), result=result,
+    )
 
     return response
 
@@ -122,35 +127,38 @@ class RPCError(Exception):
 
 
 class RPCHandler(RPCHandlerAPI, Generic[TParams, TResult]):
+    """
+    Class to simplify some boilerplate when writing an RPCHandlerAPI
+    implementation.
+    """
+
     async def __call__(self, request: RPCRequest) -> RPCResponse:
         try:
             params = self.extract_params(request)
             result = await self.do_call(params)
         except RPCError as err:
-            return self.generate_error_response(request, str(err))
+            return generate_error_response(request, str(err))
         else:
-            return self.generate_success_response(request, result)
+            return generate_success_response(request, result)
 
     @abstractmethod
     async def do_call(self, params: TParams) -> TResult:
+        """
+        The return value of this function will be used as the `result` key in a
+        success response.  To return an error response, raise an
+        :class:`ddht.rpc.RPCError` which will be used as the `error` key in the
+        response.
+        """
         ...
 
     def extract_params(self, request: RPCRequest) -> TParams:
         return request.get("params", [])  # type: ignore
 
-    def generate_success_response(
-        self, request: RPCRequest, result: Any
-    ) -> RPCResponse:
-        return generate_response(request, result, None)
-
-    def generate_error_response(self, request: RPCRequest, error: str) -> RPCResponse:
-        return generate_response(request, None, error)
-
 
 class UnknownMethodHandler(RPCHandlerAPI):
     async def __call__(self, request: RPCRequest) -> RPCResponse:
-        return generate_response(
-            request, None, f"Unknown RPC method: {request['method']}"
+        return generate_error_response(
+            request, f"Unknown RPC method: {request['method']}"
         )
 
 
@@ -176,7 +184,7 @@ class RPCServer(Service):
         try:
             await self.manager.wait_finished()
         finally:
-            self.ipc_path.unlink()
+            self.ipc_path.unlink(missing_ok=True)
 
     async def execute_rpc(self, request: RPCRequest) -> str:
         method = request["method"]
@@ -189,7 +197,7 @@ class RPCServer(Service):
         except Exception as err:
             self.logger.error("Error handling request: %s  error: %s", request, err)
             self.logger.debug("Error handling request: %s", request, exc_info=True)
-            response = generate_response(request, None, f"Unexpected Error: {err}")
+            response = generate_error_response(request, f"Unexpected Error: {err}")
         finally:
             return json.dumps(response)
 
@@ -197,14 +205,8 @@ class RPCServer(Service):
         self.logger.info("Starting RPC server over IPC socket: %s", ipc_path)
 
         with trio.socket.socket(trio.socket.AF_UNIX, trio.socket.SOCK_STREAM) as sock:
-            # TODO: unclear if the following stuff is necessary:
-            # ###################################################
-            # These options help fix an issue with the socket reporting itself
-            # already being used since it accepts many client connection.
-            # https://stackoverflow.com/questions/6380057/python-binding-socket-address-already-in-use
-            # sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            # ###################################################
             await sock.bind(str(ipc_path))
+
             # Allow up to 10 pending connections.
             sock.listen(10)
 
@@ -220,7 +222,11 @@ class RPCServer(Service):
 
         with socket:
             while True:
-                request = await read_json(socket, buffer)
+                try:
+                    request = await read_json(socket, buffer)
+                except DecodingError:
+                    # If the connection receives bad JSON, close the connection.
+                    return
 
                 if not isinstance(request, collections.abc.Mapping):
                     logger.debug("Invalid payload: %s", type(request))
@@ -248,6 +254,6 @@ class RPCServer(Service):
                         result += NEW_LINE
 
                     try:
-                        await socket.send(result.encode())
+                        await socket.send(result.encode("utf8"))
                     except BrokenPipeError:
                         break
