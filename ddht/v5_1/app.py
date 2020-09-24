@@ -1,6 +1,3 @@
-import logging
-
-from async_service import Service, run_trio_service
 from eth.db.backends.level import LevelDB
 from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
 from eth_keys import keys
@@ -8,18 +5,18 @@ from eth_utils import encode_hex
 import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
+from ddht.app import BaseApplication
 from ddht.boot_info import BootInfo
 from ddht.constants import DEFAULT_LISTEN, IP_V4_ADDRESS_ENR_KEY
 from ddht.endpoint import Endpoint
+from ddht.rpc import RPCServer
+from ddht.rpc_handlers import get_core_rpc_handlers
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
 from ddht.v5_1.client import Client
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import v51_registry
 from ddht.v5_1.network import Network
-
-logger = logging.getLogger("ddht.DDHT")
-
 
 ENR_DATABASE_DIR_NAME = "enr-db"
 
@@ -35,13 +32,7 @@ def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
         return boot_info.private_key
 
 
-class Application(Service):
-    logger = logger
-    _boot_info: BootInfo
-
-    def __init__(self, boot_info: BootInfo) -> None:
-        self._boot_info = boot_info
-
+class Application(BaseApplication):
     async def _update_enr_ip_from_upnp(
         self, enr_manager: ENRManager, upnp_service: UPnPService
     ) -> None:
@@ -102,13 +93,19 @@ class Application(Service):
         )
         network = Network(client=client, bootnodes=bootnodes,)
 
-        logger.info("Protocol-Version: %s", self._boot_info.protocol_version.value)
-        logger.info("DDHT base dir: %s", self._boot_info.base_dir)
-        logger.info("Starting discovery service...")
-        logger.info("Listening on %s:%d", listen_on, port)
-        logger.info("Local Node ID: %s", encode_hex(enr_manager.enr.node_id))
-        logger.info(
+        if self._boot_info.is_rpc_enabled:
+            handlers = get_core_rpc_handlers(network.routing_table)
+            rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
+            self.manager.run_daemon_child_service(rpc_server)
+
+        self.logger.info("Protocol-Version: %s", self._boot_info.protocol_version.value)
+        self.logger.info("DDHT base dir: %s", self._boot_info.base_dir)
+        self.logger.info("Starting discovery service...")
+        self.logger.info("Listening on %s:%d", listen_on, port)
+        self.logger.info("Local Node ID: %s", encode_hex(enr_manager.enr.node_id))
+        self.logger.info(
             "Local ENR: seq=%d enr=%s", enr_manager.enr.sequence_number, enr_manager.enr
         )
 
-        await run_trio_service(network)
+        self.manager.run_daemon_child_service(network)
+        self.manager.run_daemon_child_service(rpc_server)

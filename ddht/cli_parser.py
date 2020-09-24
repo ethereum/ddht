@@ -25,6 +25,7 @@ subparser = parser.add_subparsers(dest="subcommand")
 ddht_parser = parser.add_argument_group("core")
 logging_parser = parser.add_argument_group("logging")
 network_parser = parser.add_argument_group("network")
+jsonrpc_parser = parser.add_argument_group("jsonrpc")
 
 
 #
@@ -108,4 +109,17 @@ network_parser.add_argument(
     action=NormalizeAndAppendENR,
     help="IP address to listen on",
     dest="bootnodes",
+)
+
+
+#
+# JSON-RPC
+#
+jsonrpc_parser.add_argument(
+    "--disable-jsonrpc", help="Disable the JSON-RPC server",
+)
+jsonrpc_parser.add_argument(
+    "--ipc-path",
+    type=pathlib.Path,
+    help="Path where the IPC socket will be opened for serving JSON-RPC",
 )

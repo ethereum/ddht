@@ -11,15 +11,18 @@ from typing import (
     Optional,
     Tuple,
     Type,
+    TypedDict,
     TypeVar,
 )
 
+from async_service import ServiceAPI
 from eth_enr.abc import IdentitySchemeAPI
 from eth_typing import NodeID
 import trio
 
 from ddht.base_message import BaseMessage
-from ddht.typing import IDNonce, SessionKeys
+from ddht.boot_info import BootInfo
+from ddht.typing import JSON, IDNonce, SessionKeys
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
 
@@ -243,4 +246,30 @@ class HandshakeSchemeRegistryAPI(HandshakeSchemeRegistryBaseType):
     def register(
         self, handshake_scheme_class: Type[HandshakeSchemeAPI]
     ) -> Type[HandshakeSchemeAPI]:
+        ...
+
+
+class RPCRequest(TypedDict, total=False):
+    jsonrpc: str
+    method: str
+    params: List[Any]
+    id: int
+
+
+class RPCResponse(TypedDict, total=False):
+    id: int
+    jsonrpc: str
+    result: JSON
+    error: str
+
+
+class RPCHandlerAPI(ABC):
+    @abstractmethod
+    async def __call__(self, request: RPCRequest) -> RPCResponse:
+        ...
+
+
+class ApplicationAPI(ServiceAPI):
+    @abstractmethod
+    def __init__(self, boot_info: BootInfo) -> None:
         ...

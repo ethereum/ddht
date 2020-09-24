@@ -13,6 +13,11 @@ def xdg_home(monkeypatch):
         yield pathlib.Path(temp_xdg)
 
 
+@pytest.fixture
+def ipc_path(xdg_home):
+    return xdg_home / "jsonrpc.ipc"
+
+
 @pytest_trio.trio_fixture
 async def socket_pair():
     sending_socket = trio.socket.socket(

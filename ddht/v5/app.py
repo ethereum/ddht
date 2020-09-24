@@ -1,6 +1,3 @@
-import logging
-
-from async_service import Service, run_trio_service
 from eth.db.backends.level import LevelDB
 from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
@@ -9,6 +6,7 @@ from eth_utils import encode_hex
 import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
+from ddht.app import BaseApplication
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.boot_info import BootInfo
 from ddht.constants import (
@@ -37,9 +35,6 @@ from ddht.v5.messages import v5_registry
 from ddht.v5.packer import Packer
 from ddht.v5.routing_table_manager import RoutingTableManager
 
-logger = logging.getLogger("ddht.DDHT")
-
-
 ENR_DATABASE_DIR_NAME = "enr-db"
 
 
@@ -54,13 +49,7 @@ def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
         return boot_info.private_key
 
 
-class Application(Service):
-    logger = logger
-    _boot_info: BootInfo
-
-    def __init__(self, boot_info: BootInfo) -> None:
-        self._boot_info = boot_info
-
+class Application(BaseApplication):
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
         message_type_registry = v5_registry
@@ -163,11 +152,11 @@ class Application(Service):
             endpoint_vote_send_channel=endpoint_vote_channels[0],
         )
 
-        logger.info(f"DDHT base dir: {self._boot_info.base_dir}")
-        logger.info("Starting discovery service...")
-        logger.info(f"Listening on {listen_on}:{port}")
-        logger.info(f"Local Node ID: {encode_hex(enr_manager.enr.node_id)}")
-        logger.info(f"Local ENR: {enr_manager.enr}")
+        self.logger.info(f"DDHT base dir: {self._boot_info.base_dir}")
+        self.logger.info("Starting discovery service...")
+        self.logger.info(f"Listening on {listen_on}:{port}")
+        self.logger.info(f"Local Node ID: {encode_hex(enr_manager.enr.node_id)}")
+        self.logger.info(f"Local ENR: {enr_manager.enr}")
 
         services = (
             datagram_sender,
@@ -181,6 +170,6 @@ class Application(Service):
         )
         await sock.bind((str(listen_on), port))
         with sock:
-            async with trio.open_nursery() as nursery:
-                for service in services:
-                    nursery.start_soon(run_trio_service, service)
+            for service in services:
+                self.manager.run_daemon_child_service(service)
+            await self.manager.wait_finished()

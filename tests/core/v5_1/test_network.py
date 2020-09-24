@@ -190,6 +190,7 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
             trio.current_time() - ROUTING_TABLE_KEEP_ALIVE - 1
         )
         await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+        await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
 
         assert alice_network.routing_table._contains(bob.node_id, False)
         assert not alice_network.routing_table._contains(carol.node_id, False)
@@ -200,6 +201,7 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
         alice_network._last_pong_at[bob.node_id] = (
             trio.current_time() - ROUTING_TABLE_KEEP_ALIVE - 1
         )
+        await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
         await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
 
         assert not alice_network.routing_table._contains(bob.node_id, False)
