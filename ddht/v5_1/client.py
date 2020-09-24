@@ -258,12 +258,12 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         *,
         protocol: bytes,
-        request: bytes,
+        payload: bytes,
         request_id: Optional[int] = None,
     ) -> int:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
-                TalkRequestMessage(message_request_id, protocol, request),
+                TalkRequestMessage(message_request_id, protocol, payload),
                 endpoint,
                 node_id,
             )
@@ -272,10 +272,10 @@ class Client(Service, ClientAPI):
         return message_request_id
 
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, response: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: int,
     ) -> None:
         message = AnyOutboundMessage(
-            TalkResponseMessage(request_id, response,), endpoint, node_id,
+            TalkResponseMessage(request_id, payload), endpoint, node_id,
         )
         await self.dispatcher.send_message(message)
 
@@ -400,9 +400,17 @@ class Client(Service, ClientAPI):
                 return responses
 
     async def talk(
-        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, request: bytes
+        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, payload: bytes
     ) -> InboundMessage[TalkResponseMessage]:
-        raise NotImplementedError
+        with self._get_request_id(node_id) as request_id:
+            request = AnyOutboundMessage(
+                TalkRequestMessage(request_id, protocol, payload), endpoint, node_id,
+            )
+            async with self.dispatcher.subscribe_request(
+                request, TalkResponseMessage
+            ) as subscription:
+                with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
+                    return await subscription.receive()
 
     async def register_topic(
         self,

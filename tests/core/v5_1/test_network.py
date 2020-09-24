@@ -8,7 +8,7 @@ import trio
 
 from ddht.kademlia import compute_log_distance
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
-from ddht.v5_1.messages import FoundNodesMessage
+from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
 
 
 @pytest.mark.trio
@@ -207,3 +207,28 @@ async def test_network_pings_oldest_routing_table(tester, alice, bob, autojump_c
         assert not alice_network.routing_table._contains(bob.node_id, False)
         assert not alice_network.routing_table._contains(carol.node_id, False)
         assert not alice_network.routing_table._contains(dylan.node_id, False)
+
+
+@pytest.mark.trio
+async def test_network_talk_api(alice, bob):
+    async def _do_talk_response(network):
+        async with network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+            request = await subscription.receive()
+            await network.client.send_talk_response(
+                request.sender_endpoint,
+                request.sender_node_id,
+                payload=b"test-response-payload",
+                request_id=request.message.request_id,
+            )
+
+    async with alice.network() as alice_network:
+        async with bob.network() as bob_network:
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(_do_talk_response, bob_network)
+
+                with trio.fail_after(2):
+                    response = await alice_network.talk(
+                        bob.node_id, protocol=b"test", payload=b"test-payload",
+                    )
+
+    assert response == b"test-response-payload"

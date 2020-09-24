@@ -220,6 +220,7 @@ class DispatcherAPI(ServiceAPI):
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
         ...
 
+    @abstractmethod
     def subscribe_request(
         self, request: AnyOutboundMessage, response_payload_type: Type[TMessage],
     ) -> AsyncContextManager[
@@ -253,11 +254,13 @@ class ClientAPI(ServiceAPI):
     #
     # Message Sending API
     #
+    @abstractmethod
     async def send_pong(
         self, endpoint: Endpoint, node_id: NodeID, *, request_id: int,
     ) -> None:
         ...
 
+    @abstractmethod
     async def send_find_nodes(
         self,
         endpoint: Endpoint,
@@ -268,6 +271,7 @@ class ClientAPI(ServiceAPI):
     ) -> int:
         ...
 
+    @abstractmethod
     async def send_found_nodes(
         self,
         endpoint: Endpoint,
@@ -278,22 +282,25 @@ class ClientAPI(ServiceAPI):
     ) -> int:
         ...
 
+    @abstractmethod
     async def send_talk_request(
         self,
         endpoint: Endpoint,
         node_id: NodeID,
         *,
         protocol: bytes,
-        request: bytes,
+        payload: bytes,
         request_id: Optional[int] = None,
     ) -> int:
         ...
 
+    @abstractmethod
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, response: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: int,
     ) -> None:
         ...
 
+    @abstractmethod
     async def send_register_topic(
         self,
         endpoint: Endpoint,
@@ -306,6 +313,7 @@ class ClientAPI(ServiceAPI):
     ) -> int:
         ...
 
+    @abstractmethod
     async def send_ticket(
         self,
         endpoint: Endpoint,
@@ -317,11 +325,13 @@ class ClientAPI(ServiceAPI):
     ) -> None:
         ...
 
+    @abstractmethod
     async def send_registration_confirmation(
         self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: int,
     ) -> None:
         ...
 
+    @abstractmethod
     async def send_topic_query(
         self,
         endpoint: Endpoint,
@@ -335,21 +345,25 @@ class ClientAPI(ServiceAPI):
     #
     # Request/Response API
     #
+    @abstractmethod
     async def ping(
         self, endpoint: Endpoint, node_id: NodeID
     ) -> InboundMessage[PongMessage]:
         ...
 
+    @abstractmethod
     async def find_nodes(
         self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int]
     ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
         ...
 
-    async def talk_request(
-        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, request: bytes
+    @abstractmethod
+    async def talk(
+        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, payload: bytes
     ) -> InboundMessage[TalkResponseMessage]:
         ...
 
+    @abstractmethod
     async def register_topic(
         self,
         endpoint: Endpoint,
@@ -362,6 +376,7 @@ class ClientAPI(ServiceAPI):
     ]:
         ...
 
+    @abstractmethod
     async def topic_query(
         self, endpoint: Endpoint, node_id: NodeID, topic: bytes
     ) -> InboundMessage[FoundNodesMessage]:
@@ -408,25 +423,41 @@ class NetworkAPI(ServiceAPI):
     #
     # High Level API
     #
+    @abstractmethod
     async def bond(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> bool:
         ...
 
+    @abstractmethod
     async def ping(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> PongMessage:
         ...
 
+    @abstractmethod
     async def find_nodes(
         self, node_id: NodeID, *distances: int, endpoint: Optional[Endpoint] = None,
     ) -> Tuple[ENRAPI, ...]:
         ...
 
+    @abstractmethod
+    async def talk(
+        self,
+        node_id: NodeID,
+        *,
+        protocol: bytes,
+        payload: bytes,
+        endpoint: Optional[Endpoint] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
     async def get_enr(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
         ...
 
+    @abstractmethod
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         ...

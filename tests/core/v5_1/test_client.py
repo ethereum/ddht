@@ -1,3 +1,4 @@
+from contextlib import AsyncExitStack
 import itertools
 
 from eth_enr.tools.factories import ENRFactory
@@ -8,6 +9,7 @@ import trio
 
 from ddht.datagram import OutboundDatagram
 from ddht.kademlia import KademliaRoutingTable
+from ddht.v5_1.messages import TalkRequestMessage
 
 
 @pytest.fixture
@@ -92,7 +94,7 @@ async def test_client_send_talk_request(alice, bob, alice_client, bob_client):
                     bob.endpoint,
                     bob.node_id,
                     protocol=b"test",
-                    request=b"test-request",
+                    payload=b"test-request",
                 )
 
 
@@ -104,7 +106,7 @@ async def test_client_send_talk_response(alice, bob, alice_client, bob_client):
                 await alice_client.send_talk_response(
                     bob.endpoint,
                     bob.node_id,
-                    response=b"test-response",
+                    payload=b"test-response",
                     request_id=1234,
                 )
 
@@ -235,6 +237,43 @@ async def test_client_request_response_find_nodes_found_nodes(
                     assert found_node_ids == expected_node_ids
 
     assert len(checked_bucket_indexes) > 4
+
+
+@pytest.mark.trio
+async def test_client_talk_request_response(alice, bob, alice_client, bob_client):
+    async def _do_talk_response(client):
+        async with client.dispatcher.subscribe(TalkRequestMessage) as subscription:
+            request = await subscription.receive()
+            await client.send_talk_response(
+                request.sender_endpoint,
+                request.sender_node_id,
+                payload=b"talk-response",
+                request_id=request.message.request_id,
+            )
+
+    with trio.fail_after(2):
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(
+                alice.events.talk_request_sent.subscribe_and_wait()
+            )
+            await stack.enter_async_context(
+                alice.events.talk_response_received.subscribe_and_wait()
+            )
+            await stack.enter_async_context(
+                bob.events.talk_request_received.subscribe_and_wait()
+            )
+            await stack.enter_async_context(
+                bob.events.talk_response_sent.subscribe_and_wait()
+            )
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(_do_talk_response, bob_client)
+                response = await alice_client.talk(
+                    bob.endpoint,
+                    bob.node_id,
+                    protocol=b"test-talk-proto",
+                    payload=b"test-request",
+                )
+            assert response.message.payload == b"talk-response"
 
 
 @given(datagram_bytes=st.binary(max_size=1024))
