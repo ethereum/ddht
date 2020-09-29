@@ -23,3 +23,7 @@ async def do_main(boot_info: BootInfo) -> None:
     logger.info("Started main process (pid=%d)", os.getpid())
     async with background_trio_service(app) as manager:
         await manager.wait_finished()
+
+
+async def do_crawl(boot_info: BootInfo) -> None:
+    logger.info("Crawling!")

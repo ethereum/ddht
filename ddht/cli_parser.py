@@ -6,7 +6,7 @@ from typing import Any
 from eth_enr import ENR
 
 from ddht import __version__
-from ddht.cli_commands import do_main
+from ddht.cli_commands import do_crawl, do_main
 from ddht.constants import ProtocolVersion
 
 parser = argparse.ArgumentParser(description="Discovery V5 DHT")
@@ -132,3 +132,13 @@ jsonrpc_parser.add_argument(
     type=pathlib.Path,
     help="Path where the IPC socket will be opened for serving JSON-RPC",
 )
+
+
+#
+# Crawl Subcommand
+#
+crawl_parser = subparser.add_parser(
+    'crawl',
+    help='Attempts to bond with as many nodes as possible and dumps all found ENRs',
+)
+crawl_parser.set_defaults(func=do_crawl)
