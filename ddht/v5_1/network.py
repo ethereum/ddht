@@ -78,7 +78,7 @@ class Network(Service, NetworkAPI):
     ) -> bool:
         try:
             pong = await self.ping(node_id, endpoint=endpoint)
-        except trio.TooSlowError:
+        except trio.EndOfChannel:
             self.logger.debug(
                 "Bonding with %s timed out during ping", humanize_node_id(node_id)
             )
@@ -89,7 +89,7 @@ class Network(Service, NetworkAPI):
         except KeyError:
             try:
                 enr = await self.get_enr(node_id, endpoint=endpoint)
-            except trio.TooSlowError:
+            except trio.EndOfChannel:
                 self.logger.debug(
                     "Bonding with %s timed out during ENR retrieval",
                     humanize_node_id(node_id),
@@ -99,7 +99,7 @@ class Network(Service, NetworkAPI):
             if pong.enr_seq > enr.sequence_number:
                 try:
                     enr = await self.get_enr(node_id, endpoint=endpoint)
-                except trio.TooSlowError:
+                except trio.EndOfChannel:
                     self.logger.debug(
                         "Bonding with %s timed out during ENR retrieval",
                         humanize_node_id(node_id),
@@ -170,7 +170,7 @@ class Network(Service, NetworkAPI):
             distance = compute_log_distance(node_id, target)
             try:
                 enrs = await self.find_nodes(node_id, distance)
-            except trio.TooSlowError:
+            except trio.EndOfChannel:
                 unresponsive_node_ids.add(node_id)
                 return
 

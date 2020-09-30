@@ -192,6 +192,13 @@ async def test_client_request_response_ping_pong(alice, bob, alice_client, bob_c
 
 
 @pytest.mark.trio
+async def test_client_ping_timeout(alice, bob_client, autojump_clock):
+    with trio.fail_after(60):
+        with pytest.raises(trio.EndOfChannel):
+            await bob_client.ping(alice.endpoint, alice.node_id)
+
+
+@pytest.mark.trio
 async def test_client_request_response_find_nodes_found_nodes(
     alice, bob, alice_client, bob_client
 ):
@@ -274,6 +281,18 @@ async def test_client_talk_request_response(alice, bob, alice_client, bob_client
                     payload=b"test-request",
                 )
             assert response.message.payload == b"talk-response"
+
+
+@pytest.mark.trio
+async def test_client_talk_request_response_timeout(alice, bob_client, autojump_clock):
+    with trio.fail_after(60):
+        with pytest.raises(trio.EndOfChannel):
+            await bob_client.talk(
+                alice.endpoint,
+                alice.node_id,
+                protocol=b"test",
+                payload=b"test-request",
+            )
 
 
 @given(datagram_bytes=st.binary(max_size=1024))
