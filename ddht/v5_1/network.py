@@ -77,7 +77,7 @@ class Network(Service, NetworkAPI):
     ) -> bool:
         try:
             pong = await self.ping(node_id, endpoint=endpoint)
-        except trio.TooSlowError:
+        except trio.EndOfChannel:
             self.logger.debug(
                 "Bonding with %s timed out during ping", humanize_node_id(node_id)
             )
@@ -88,7 +88,7 @@ class Network(Service, NetworkAPI):
         except KeyError:
             try:
                 enr = await self.get_enr(node_id, endpoint=endpoint)
-            except trio.TooSlowError:
+            except trio.EndOfChannel:
                 self.logger.debug(
                     "Bonding with %s timed out during ENR retrieval",
                     humanize_node_id(node_id),
@@ -98,7 +98,7 @@ class Network(Service, NetworkAPI):
             if pong.enr_seq > enr.sequence_number:
                 try:
                     enr = await self.get_enr(node_id, endpoint=endpoint)
-                except trio.TooSlowError:
+                except trio.EndOfChannel:
                     self.logger.debug(
                         "Bonding with %s timed out during ENR retrieval",
                         humanize_node_id(node_id),
@@ -133,6 +133,19 @@ class Network(Service, NetworkAPI):
         responses = await self.client.find_nodes(endpoint, node_id, distances=distances)
         return tuple(enr for response in responses for enr in response.message.enrs)
 
+    async def talk(
+        self,
+        node_id: NodeID,
+        *,
+        protocol: bytes,
+        payload: bytes,
+        endpoint: Optional[Endpoint] = None,
+    ) -> bytes:
+        if endpoint is None:
+            endpoint = self._endpoint_for_node_id(node_id)
+        response = await self.client.talk(endpoint, node_id, protocol, payload)
+        return response.message.payload
+
     async def get_enr(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
@@ -156,7 +169,7 @@ class Network(Service, NetworkAPI):
             distance = compute_log_distance(node_id, target)
             try:
                 enrs = await self.find_nodes(node_id, distance)
-            except trio.TooSlowError:
+            except trio.EndOfChannel:
                 unresponsive_node_ids.add(node_id)
                 return
 

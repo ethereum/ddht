@@ -22,7 +22,7 @@ from ddht.enr import partition_enrs
 from ddht.kademlia import compute_log_distance
 from ddht.message_registry import MessageTypeRegistry
 from ddht.v5_1.abc import ClientAPI, EventsAPI
-from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
+from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE
 from ddht.v5_1.dispatcher import Dispatcher
 from ddht.v5_1.envelope import (
     EnvelopeDecoder,
@@ -258,12 +258,12 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         *,
         protocol: bytes,
-        request: bytes,
+        payload: bytes,
         request_id: Optional[int] = None,
     ) -> int:
         with self._get_request_id(node_id, request_id) as message_request_id:
             message = AnyOutboundMessage(
-                TalkRequestMessage(message_request_id, protocol, request),
+                TalkRequestMessage(message_request_id, protocol, payload),
                 endpoint,
                 node_id,
             )
@@ -272,10 +272,10 @@ class Client(Service, ClientAPI):
         return message_request_id
 
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, response: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: int,
     ) -> None:
         message = AnyOutboundMessage(
-            TalkResponseMessage(request_id, response,), endpoint, node_id,
+            TalkResponseMessage(request_id, payload), endpoint, node_id,
         )
         await self.dispatcher.send_message(message)
 
@@ -351,8 +351,7 @@ class Client(Service, ClientAPI):
             async with self.dispatcher.subscribe_request(
                 request, PongMessage
             ) as subscription:
-                with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
-                    return await subscription.receive()
+                return await subscription.receive()
 
     async def find_nodes(
         self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int],
@@ -364,22 +363,21 @@ class Client(Service, ClientAPI):
             async with self.dispatcher.subscribe_request(
                 request, FoundNodesMessage
             ) as subscription:
-                with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
-                    head_response = await subscription.receive()
-                    total = head_response.message.total
-                    responses: Tuple[InboundMessage[FoundNodesMessage], ...]
-                    if total == 1:
-                        responses = (head_response,)
-                    elif total > 1:
-                        tail_responses: List[InboundMessage[FoundNodesMessage]] = []
-                        for _ in range(total - 1):
-                            tail_responses.append(await subscription.receive())
-                        responses = (head_response,) + tuple(tail_responses)
-                    else:
-                        # TODO: this code path needs to be excercised and
-                        # probably replaced with some sort of
-                        # `SessionTerminated` exception.
-                        raise Exception("Invalid `total` counter in response")
+                head_response = await subscription.receive()
+                total = head_response.message.total
+                responses: Tuple[InboundMessage[FoundNodesMessage], ...]
+                if total == 1:
+                    responses = (head_response,)
+                elif total > 1:
+                    tail_responses: List[InboundMessage[FoundNodesMessage]] = []
+                    for _ in range(total - 1):
+                        tail_responses.append(await subscription.receive())
+                    responses = (head_response,) + tuple(tail_responses)
+                else:
+                    # TODO: this code path needs to be excercised and
+                    # probably replaced with some sort of
+                    # `SessionTerminated` exception.
+                    raise Exception("Invalid `total` counter in response")
 
                 # Validate that all responses are indeed at one of the
                 # specified distances.
@@ -400,9 +398,16 @@ class Client(Service, ClientAPI):
                 return responses
 
     async def talk(
-        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, request: bytes
+        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, payload: bytes
     ) -> InboundMessage[TalkResponseMessage]:
-        raise NotImplementedError
+        with self._get_request_id(node_id) as request_id:
+            request = AnyOutboundMessage(
+                TalkRequestMessage(request_id, protocol, payload), endpoint, node_id,
+            )
+            async with self.dispatcher.subscribe_request(
+                request, TalkResponseMessage
+            ) as subscription:
+                return await subscription.receive()
 
     async def register_topic(
         self,

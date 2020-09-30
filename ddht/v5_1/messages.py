@@ -59,14 +59,16 @@ class FoundNodesMessage(BaseMessage):
 class TalkRequestMessage(BaseMessage):
     message_type = 5
 
-    fields = (("request_id", big_endian_int), ("protocol", binary), ("request", binary))
+    fields = (("request_id", big_endian_int), ("protocol", binary), ("payload", binary))
 
 
 @v51_registry.register
 class TalkResponseMessage(BaseMessage):
     message_type = 6
 
-    fields = (("request_id", big_endian_int), ("response", binary))
+    payload: bytes
+
+    fields = (("request_id", big_endian_int), ("payload", binary))
 
 
 @v51_registry.register
