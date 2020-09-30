@@ -54,6 +54,12 @@ async def DatagramReceiver(
                 return
 
 
+async def send_datagram(sock, datagram, endpoint):
+    logger = logging.getLogger("ddht.DatagramSender")
+    logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
+    await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
+
+
 @as_service
 async def DatagramSender(
     manager: ManagerAPI,
@@ -61,9 +67,7 @@ async def DatagramSender(
     sock: SocketType,
 ) -> None:
     """Take datagrams from a channel and send them via a socket to their designated receivers."""
-    logger = logging.getLogger("ddht.DatagramSender")
 
     async with outbound_datagram_receive_channel:
         async for datagram, endpoint in outbound_datagram_receive_channel:
-            logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
-            await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
+            await send_datagram(sock, datagram, endpoint)
