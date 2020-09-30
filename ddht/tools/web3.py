@@ -99,6 +99,8 @@ def ping_munger(
     module: Any, identifier: Union[ENRAPI, str, bytes, NodeID, HexStr]
 ) -> List[str]:
     """
+    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
+
     Normalizes the any of the following inputs into the appropriate payload for
     the ``discv5_ping` JSON-RPC API endpoint.
 
