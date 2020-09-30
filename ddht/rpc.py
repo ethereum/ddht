@@ -198,8 +198,8 @@ class RPCServer(Service):
             self.logger.error("Error handling request: %s  error: %s", request, err)
             self.logger.debug("Error handling request: %s", request, exc_info=True)
             response = generate_error_response(request, f"Unexpected Error: {err}")
-        finally:
-            return json.dumps(response)
+
+        return json.dumps(response)
 
     async def serve(self, ipc_path: pathlib.Path) -> None:
         self.logger.info("Starting RPC server over IPC socket: %s", ipc_path)
