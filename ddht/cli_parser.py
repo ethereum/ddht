@@ -104,10 +104,19 @@ network_parser.add_argument(
 network_parser.add_argument(
     "--listen-address", type=ipaddress.ip_address, help="IP address to listen on"
 )
-network_parser.add_argument(
+
+bootnodes_parser_group = network_parser.add_mutually_exclusive_group()
+bootnodes_parser_group.add_argument(
     "--bootnode",
     action=NormalizeAndAppendENR,
-    help="IP address to listen on",
+    help="ENR for custom bootnode",
+    dest="bootnodes",
+)
+bootnodes_parser_group.add_argument(
+    "--no-bootstrap",
+    help="Start without any bootnodes",
+    action="store_const",
+    const=(),
     dest="bootnodes",
 )
 
