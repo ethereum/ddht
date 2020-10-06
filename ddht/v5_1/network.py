@@ -195,7 +195,7 @@ class Network(Service, NetworkAPI):
             closest_k_unqueried_candidates = (
                 candidate
                 for candidate in closest_k_candidates
-                if candidate not in queried_node_ids
+                if candidate not in queried_node_ids and candidate != self.local_node_id
             )
             nodes_to_query = tuple(take(3, closest_k_unqueried_candidates))
 
