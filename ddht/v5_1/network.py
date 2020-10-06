@@ -324,6 +324,8 @@ class Network(Service, NetworkAPI):
                 target_node_id = NodeID(secrets.token_bytes(32))
                 found_enrs = await self.recursive_find_nodes(target_node_id)
                 for enr in found_enrs:
+                    if enr.node_id == self.local_node_id:
+                        continue
                     endpoint = Endpoint.from_enr(enr)
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
 
