@@ -5,13 +5,10 @@ from eth_utils import ValidationError, decode_hex, keccak
 from hypothesis import given
 import pytest
 
-from ddht.constants import ID_NONCE_SIGNATURE_PREFIX
-from ddht.handshake_schemes import (
-    V4HandshakeScheme,
-    ecdh_agree,
-    hkdf_expand_and_extract,
-)
+from ddht.handshake_schemes import ecdh_agree, hkdf_expand_and_extract
 from ddht.tools.v5_strategies import id_nonce_st, private_key_st
+from ddht.v5.constants import ID_NONCE_SIGNATURE_PREFIX
+from ddht.v5.handshake_schemes import SignatureInputs, V4HandshakeScheme
 
 
 def test_handshake_key_generation():
@@ -39,9 +36,8 @@ def test_handshake_public_key_validation_invalid(public_key):
 def test_id_nonce_signing(private_key, id_nonce, ephemeral_key):
     ephemeral_public_key = PrivateKey(ephemeral_key).public_key.to_bytes()
     signature = V4HandshakeScheme.create_id_nonce_signature(
-        id_nonce=id_nonce,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         private_key=private_key,
-        ephemeral_public_key=ephemeral_public_key,
     )
     signature_object = NonRecoverableSignature(signature)
     message_hash = sha256(
@@ -56,14 +52,12 @@ def test_id_nonce_signing(private_key, id_nonce, ephemeral_key):
 def test_valid_id_nonce_signature_validation(private_key, id_nonce, ephemeral_key):
     ephemeral_public_key = PrivateKey(ephemeral_key).public_key.to_bytes()
     signature = V4HandshakeScheme.create_id_nonce_signature(
-        id_nonce=id_nonce,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         private_key=private_key,
-        ephemeral_public_key=ephemeral_public_key,
     )
     public_key = PrivateKey(private_key).public_key.to_compressed_bytes()
     V4HandshakeScheme.validate_id_nonce_signature(
-        id_nonce=id_nonce,
-        ephemeral_public_key=ephemeral_public_key,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         signature=signature,
         public_key=public_key,
     )
@@ -74,8 +68,7 @@ def test_invalid_id_nonce_signature_validation():
     private_key = b"\x11" * 32
     ephemeral_public_key = b"\x22" * 64
     signature = V4HandshakeScheme.create_id_nonce_signature(
-        id_nonce=id_nonce,
-        ephemeral_public_key=ephemeral_public_key,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         private_key=private_key,
     )
 
@@ -85,27 +78,25 @@ def test_invalid_id_nonce_signature_validation():
     different_ephemeral_public_key = b"\x00" * 64
     assert different_public_key != public_key
     assert different_id_nonce != id_nonce
+    assert different_ephemeral_public_key != ephemeral_public_key
 
     with pytest.raises(ValidationError):
         V4HandshakeScheme.validate_id_nonce_signature(
-            id_nonce=id_nonce,
-            ephemeral_public_key=ephemeral_public_key,
+            signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
             signature=signature,
             public_key=different_public_key,
         )
 
     with pytest.raises(ValidationError):
         V4HandshakeScheme.validate_id_nonce_signature(
-            id_nonce=different_id_nonce,
-            ephemeral_public_key=ephemeral_public_key,
+            signature_inputs=SignatureInputs(different_id_nonce, ephemeral_public_key),
             signature=signature,
             public_key=public_key,
         )
 
     with pytest.raises(ValidationError):
         V4HandshakeScheme.validate_id_nonce_signature(
-            id_nonce=id_nonce,
-            ephemeral_public_key=different_ephemeral_public_key,
+            signature_inputs=SignatureInputs(id_nonce, different_ephemeral_public_key),
             signature=signature,
             public_key=public_key,
         )
@@ -131,7 +122,7 @@ def test_session_key_derivation(initiator_private_key, recipient_private_key, id
         remote_public_key=recipient_public_key,
         local_node_id=initiator_node_id,
         remote_node_id=recipient_node_id,
-        id_nonce=id_nonce,
+        salt=id_nonce,
         is_locally_initiated=True,
     )
     recipient_session_keys = V4HandshakeScheme.compute_session_keys(
@@ -139,7 +130,7 @@ def test_session_key_derivation(initiator_private_key, recipient_private_key, id
         remote_public_key=initiator_public_key,
         local_node_id=recipient_node_id,
         remote_node_id=initiator_node_id,
-        id_nonce=id_nonce,
+        salt=id_nonce,
         is_locally_initiated=False,
     )
 
@@ -248,8 +239,7 @@ def test_official_id_nonce_signature(
     id_nonce, ephemeral_public_key, local_secret_key, id_nonce_signature
 ):
     created_signature = V4HandshakeScheme.create_id_nonce_signature(
-        id_nonce=id_nonce,
-        ephemeral_public_key=ephemeral_public_key,
+        signature_inputs=SignatureInputs(id_nonce, ephemeral_public_key),
         private_key=local_secret_key,
     )
     assert created_signature == id_nonce_signature

@@ -14,89 +14,83 @@ from ddht.base_message import BaseMessage
 from ddht.encryption import aesctr_decrypt_stream, aesctr_encrypt, aesgcm_encrypt
 from ddht.exceptions import DecodingError
 from ddht.typing import AES128Key, IDNonce, Nonce
-
-PROTOCOL_ID = b"discv5  "
-
+from ddht.v5_1.constants import (
+    HANDSHAKE_HEADER_PACKET_SIZE,
+    HEADER_PACKET_SIZE,
+    MESSAGE_PACKET_SIZE,
+    PACKET_VERSION_1,
+    PROTOCOL_ID,
+    WHO_ARE_YOU_PACKET_SIZE,
+)
 
 UINT8_TO_BYTES = {v: bytes([v]) for v in range(256)}
 
 
 @dataclass(frozen=True)
 class MessagePacket:
-    aes_gcm_nonce: Nonce  # 96 bit AES/GCM nonce
+    source_node_id: NodeID
 
     flag: int = field(init=False, repr=False, default=0)
 
     def to_wire_bytes(self) -> bytes:
-        return self.aes_gcm_nonce
+        return self.source_node_id
 
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "MessagePacket":
-        if len(data) != 12:
+        if len(data) != MESSAGE_PACKET_SIZE:
             raise DecodingError(
                 f"Invalid length for MessagePacket: length={len(data)}  data={data.hex()}"
             )
-        return cls(cast(Nonce, data))
+        return cls(NodeID(data))
 
 
 @dataclass(frozen=True)
 class WhoAreYouPacket:
-    request_nonce: Nonce  # uint96
-    id_nonce: IDNonce  # uint256
+    id_nonce: IDNonce  # uint128
     enr_sequence_number: int  # uint64
 
     flag: int = field(init=False, repr=False, default=1)
 
     def to_wire_bytes(self) -> bytes:
-        return b"".join(
-            (
-                self.request_nonce,
-                self.id_nonce,
-                struct.pack(">Q", self.enr_sequence_number),
-            )
-        )
+        return b"".join((self.id_nonce, struct.pack(">Q", self.enr_sequence_number),))
 
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "WhoAreYouPacket":
-        if len(data) != 52:
+        if len(data) != WHO_ARE_YOU_PACKET_SIZE:
             raise DecodingError(
                 f"Invalid length for WhoAreYouPacket: length={len(data)}  data={data.hex()}"
             )
         stream = BytesIO(data)
-        request_nonce = cast(Nonce, stream.read(12))
-        id_nonce = cast(IDNonce, stream.read(32))
+        id_nonce = cast(IDNonce, stream.read(16))
         enr_sequence_number = int.from_bytes(stream.read(8), "big")
-        return cls(request_nonce, id_nonce, enr_sequence_number)
+        return cls(id_nonce, enr_sequence_number)
 
 
 class HandshakeHeader(NamedTuple):
-    version: int  # uint8  (1 for v4)
+    source_node_id: NodeID  # bytes32
     signature_size: int  # uint8  (64 for v4)
     ephemeral_key_size: int  # uint8 (33 for v4)
 
     def to_wire_bytes(self) -> bytes:
         return b"".join(
             (
-                UINT8_TO_BYTES[self.version],
+                self.source_node_id,
                 UINT8_TO_BYTES[self.signature_size],
                 UINT8_TO_BYTES[self.ephemeral_key_size],
             )
         )
 
     @classmethod
-    def v4_header(cls) -> "HandshakeHeader":
-        return cls(1, 64, 33)
-
-    @classmethod
     def from_wire_bytes(cls, data: bytes) -> "HandshakeHeader":
-        if len(data) != 3:
+        if len(data) != HANDSHAKE_HEADER_PACKET_SIZE:
             raise DecodingError(
                 f"Invalid length for HandshakeHeader: length={len(data)}  data={data.hex()}"
             )
-        version = data[0]
-        signature_size = data[1]
-        ephemeral_key_size = data[2]
-        return cls(version, signature_size, ephemeral_key_size)
+        stream = BytesIO(data)
+        source_node_id = NodeID(stream.read(32))
+        signature_size = stream.read(1)[0]
+        ephemeral_key_size = stream.read(1)[0]
+        return cls(source_node_id, signature_size, ephemeral_key_size)
 
 
 @dataclass(frozen=True)
@@ -121,9 +115,13 @@ class HandshakePacket:
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "HandshakePacket":
         stream = BytesIO(data)
-        auth_data_head = HandshakeHeader.from_wire_bytes(stream.read(3))
+        auth_data_head = HandshakeHeader.from_wire_bytes(
+            stream.read(HANDSHAKE_HEADER_PACKET_SIZE)
+        )
         expected_length = (
-            3 + auth_data_head.signature_size + auth_data_head.ephemeral_key_size
+            HANDSHAKE_HEADER_PACKET_SIZE
+            + auth_data_head.signature_size
+            + auth_data_head.ephemeral_key_size
         )
         if len(data) < expected_length:
             raise DecodingError(
@@ -148,32 +146,41 @@ class HandshakePacket:
 
 
 class Header(NamedTuple):
-    protocol_id: bytes
-    source_node_id: NodeID
+    protocol_id: bytes  # bytes6
+    version: bytes  # bytes2
     flag: int  # uint8
+    aes_gcm_nonce: Nonce  # uint96
     auth_data_size: int  # uint16
 
     def to_wire_bytes(self) -> bytes:
         return b"".join(
             (
                 self.protocol_id,
-                self.source_node_id,
+                self.version,
                 UINT8_TO_BYTES[self.flag],
+                self.aes_gcm_nonce,
                 self.auth_data_size.to_bytes(2, "big"),
             )
         )
 
     @classmethod
     def from_wire_bytes(cls, data: bytes) -> "Header":
-        if len(data) != 43:
+        if len(data) != HEADER_PACKET_SIZE:
             raise DecodingError(
-                f"Invalid length for Header: length={len(data)}  data={data.hex()}"
+                f"Invalid length for Header: actual={len(data)}  "
+                f"expected={HEADER_PACKET_SIZE}  data={data.hex()}"
             )
-        protocol_id = data[:8]
-        remote_node_id = cast(NodeID, data[8:40])
-        flag = data[40]
-        auth_data_size = int.from_bytes(data[41:43], "big")
-        return cls(protocol_id, remote_node_id, flag, auth_data_size)
+        stream = BytesIO(data)
+        protocol_id = stream.read(6)
+        if protocol_id != PROTOCOL_ID:
+            raise DecodingError(f"Invalid protocol: {protocol_id!r}")
+        version = stream.read(2)
+        if version != b"\x00\x01":
+            raise DecodingError(f"Unsupported version: {version!r}")
+        flag = stream.read(1)[0]
+        aes_gcm_nonce = Nonce(stream.read(12))
+        auth_data_size = int.from_bytes(stream.read(2), "big")
+        return cls(protocol_id, version, flag, aes_gcm_nonce, auth_data_size)
 
 
 AuthData = Union[MessagePacket, WhoAreYouPacket, HandshakePacket]
@@ -182,6 +189,7 @@ TAuthData = TypeVar("TAuthData", bound=AuthData)
 
 @dataclass(frozen=True)
 class Packet(Generic[TAuthData]):
+    iv: bytes
     header: Header
     auth_data: TAuthData
     message_cipher_text: bytes
@@ -190,8 +198,9 @@ class Packet(Generic[TAuthData]):
     def __str__(self) -> str:
         return (
             f"Packet[{self.auth_data.__class__.__name__}]"
-            f"(header={self.header}, auth_data={self.auth_data}, "
-            f"message_cipher_text={self.message_cipher_text!r})"
+            f"(iv={self.iv!r}, header={self.header}, auth_data={self.auth_data}, "
+            f"message_cipher_text={self.message_cipher_text!r}, "
+            f"dest_node_id={self.dest_node_id!r})"
         )
 
     @property
@@ -206,28 +215,44 @@ class Packet(Generic[TAuthData]):
     def is_handshake(self) -> bool:
         return type(self.auth_data) is HandshakePacket
 
+    @property
+    def challenge_data(self) -> bytes:
+        return b"".join(
+            (self.iv, self.header.to_wire_bytes(), self.auth_data.to_wire_bytes(),)
+        )
+
     @classmethod
     def prepare(
         cls,
         *,
-        nonce: Nonce,
+        aes_gcm_nonce: Nonce,
         initiator_key: AES128Key,
         message: BaseMessage,
         auth_data: TAuthData,
-        source_node_id: NodeID,
         dest_node_id: NodeID,
         protocol_id: bytes = PROTOCOL_ID,
+        iv: Optional[bytes] = None,
     ) -> "Packet[TAuthData]":
+        if iv is None:
+            iv = secrets.token_bytes(16)
         auth_data_bytes = auth_data.to_wire_bytes()
         auth_data_size = len(auth_data_bytes)
-        header = Header(protocol_id, source_node_id, auth_data.flag, auth_data_size,)
+        header = Header(
+            protocol_id,
+            PACKET_VERSION_1,
+            auth_data.flag,
+            aes_gcm_nonce,
+            auth_data_size,
+        )
+        authenticated_data = b"".join((iv, header.to_wire_bytes(), auth_data_bytes,))
         message_cipher_text = aesgcm_encrypt(
             key=initiator_key,
-            nonce=nonce,
+            nonce=aes_gcm_nonce,
             plain_text=message.to_bytes(),
-            authenticated_data=header.to_wire_bytes() + auth_data.to_wire_bytes(),
+            authenticated_data=authenticated_data,
         )
         return cls(
+            iv=iv,
             header=header,
             auth_data=auth_data,
             message_cipher_text=message_cipher_text,
@@ -237,11 +262,10 @@ class Packet(Generic[TAuthData]):
     def to_wire_bytes(self) -> bytes:
         auth_data_bytes = self.auth_data.to_wire_bytes()
         header_wire_bytes = self.header.to_wire_bytes()
-        plain_header = header_wire_bytes + auth_data_bytes
-        masking_key = cast(AES128Key, self.dest_node_id[:16])
-        masking_iv = secrets.token_bytes(16)
-        masked_header = aesctr_encrypt(masking_key, masking_iv, plain_header)
-        return b"".join((masking_iv, masked_header, self.message_cipher_text,))
+        header_plaintext = header_wire_bytes + auth_data_bytes
+        masking_key = AES128Key(self.dest_node_id[:16])
+        masked_header = aesctr_encrypt(masking_key, self.iv, header_plaintext)
+        return b"".join((self.iv, masked_header, self.message_cipher_text,))
 
 
 AnyPacket = Union[
@@ -255,7 +279,7 @@ def decode_packet(data: bytes, local_node_id: NodeID,) -> AnyPacket:
     cipher_text_stream = aesctr_decrypt_stream(masking_key, iv, data[16:])
 
     # Decode the header
-    header_bytes = bytes(take(43, cipher_text_stream))
+    header_bytes = bytes(take(HEADER_PACKET_SIZE, cipher_text_stream))
     header = Header.from_wire_bytes(header_bytes)
 
     auth_data_bytes = bytes(take(header.auth_data_size, cipher_text_stream))
@@ -269,9 +293,9 @@ def decode_packet(data: bytes, local_node_id: NodeID,) -> AnyPacket:
     else:
         raise DecodingError(f"Unable to decode datagram: {data.hex()}", data)
 
-    message_cipher_text = data[16 + 43 + header.auth_data_size :]
+    message_cipher_text = data[16 + HEADER_PACKET_SIZE + header.auth_data_size :]
 
     return cast(
         AnyPacket,
-        Packet(header, auth_data, message_cipher_text, dest_node_id=local_node_id),
+        Packet(iv, header, auth_data, message_cipher_text, dest_node_id=local_node_id),
     )

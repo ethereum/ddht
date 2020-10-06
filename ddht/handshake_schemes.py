@@ -1,4 +1,3 @@
-from hashlib import sha256
 import secrets
 from typing import Tuple, Type
 
@@ -13,15 +12,15 @@ from eth_keys.exceptions import ValidationError as EthKeysValidationError
 from eth_typing import NodeID
 from eth_utils import ValidationError, encode_hex
 
-from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI
-from ddht.constants import AES128_KEY_SIZE, HKDF_INFO, ID_NONCE_SIGNATURE_PREFIX
-from ddht.typing import AES128Key, IDNonce, SessionKeys
+from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI, TSignatureInputs
+from ddht.constants import AES128_KEY_SIZE, HKDF_INFO
+from ddht.typing import AES128Key, SessionKeys
 
 
 class HandshakeSchemeRegistry(HandshakeSchemeRegistryAPI):
     def register(
-        self, handshake_scheme_class: Type[HandshakeSchemeAPI]
-    ) -> Type[HandshakeSchemeAPI]:
+        self, handshake_scheme_class: Type[HandshakeSchemeAPI[TSignatureInputs]]
+    ) -> Type[HandshakeSchemeAPI[TSignatureInputs]]:
         """Class decorator to register handshake schemes."""
         is_missing_identity_scheme = (
             not hasattr(handshake_scheme_class, "identity_scheme")
@@ -40,9 +39,6 @@ class HandshakeSchemeRegistry(HandshakeSchemeRegistryAPI):
         self[handshake_scheme_class.identity_scheme] = handshake_scheme_class
 
         return handshake_scheme_class
-
-
-default_handshake_scheme_registry = HandshakeSchemeRegistry()
 
 
 def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
@@ -66,17 +62,14 @@ def ecdh_agree(private_key: bytes, public_key: bytes) -> bytes:
 
 
 def hkdf_expand_and_extract(
-    secret: bytes,
-    initiator_node_id: NodeID,
-    recipient_node_id: NodeID,
-    id_nonce: IDNonce,
+    secret: bytes, initiator_node_id: NodeID, recipient_node_id: NodeID, salt: bytes,
 ) -> Tuple[bytes, bytes, bytes]:
     info = b"".join((HKDF_INFO, initiator_node_id, recipient_node_id))
 
     hkdf = HKDF(
         algorithm=SHA256(),
         length=3 * AES128_KEY_SIZE,
-        salt=id_nonce,
+        salt=salt,
         info=info,
         backend=cryptography_default_backend(),
     )
@@ -94,8 +87,7 @@ def hkdf_expand_and_extract(
     return initiator_key, recipient_key, auth_response_key
 
 
-@default_handshake_scheme_registry.register
-class V4HandshakeScheme(HandshakeSchemeAPI):
+class BaseV4HandshakeScheme(HandshakeSchemeAPI[TSignatureInputs]):
     identity_scheme = V4IdentityScheme
 
     #
@@ -119,7 +111,7 @@ class V4HandshakeScheme(HandshakeSchemeAPI):
         remote_public_key: bytes,
         local_node_id: NodeID,
         remote_node_id: NodeID,
-        id_nonce: IDNonce,
+        salt: bytes,
         is_locally_initiated: bool,
     ) -> SessionKeys:
         secret = ecdh_agree(local_private_key, remote_public_key)
@@ -130,7 +122,7 @@ class V4HandshakeScheme(HandshakeSchemeAPI):
             initiator_node_id, recipient_node_id = remote_node_id, local_node_id
 
         initiator_key, recipient_key, auth_response_key = hkdf_expand_and_extract(
-            secret, initiator_node_id, recipient_node_id, id_nonce
+            secret, initiator_node_id, recipient_node_id, salt,
         )
 
         if is_locally_initiated:
@@ -142,33 +134,6 @@ class V4HandshakeScheme(HandshakeSchemeAPI):
             encryption_key=AES128Key(encryption_key),
             decryption_key=AES128Key(decryption_key),
             auth_response_key=AES128Key(auth_response_key),
-        )
-
-    @classmethod
-    def create_id_nonce_signature(
-        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes, private_key: bytes
-    ) -> bytes:
-        private_key_object = PrivateKey(private_key)
-        signature_input = cls.create_id_nonce_signature_input(
-            id_nonce=id_nonce, ephemeral_public_key=ephemeral_public_key
-        )
-        signature = private_key_object.sign_msg_hash_non_recoverable(signature_input)
-        return bytes(signature)
-
-    @classmethod
-    def validate_id_nonce_signature(
-        cls,
-        *,
-        id_nonce: IDNonce,
-        ephemeral_public_key: bytes,
-        signature: bytes,
-        public_key: bytes,
-    ) -> None:
-        signature_input = cls.create_id_nonce_signature_input(
-            id_nonce=id_nonce, ephemeral_public_key=ephemeral_public_key
-        )
-        cls.identity_scheme.validate_signature(
-            message_hash=signature_input, signature=signature, public_key=public_key
         )
 
     #
@@ -210,10 +175,3 @@ class V4HandshakeScheme(HandshakeSchemeAPI):
                 f"Signature {encode_hex(signature)} is not valid for message hash "
                 f"{encode_hex(message_hash)} and public key {encode_hex(public_key)}"
             )
-
-    @classmethod
-    def create_id_nonce_signature_input(
-        cls, *, id_nonce: IDNonce, ephemeral_public_key: bytes
-    ) -> bytes:
-        preimage = b"".join((ID_NONCE_SIGNATURE_PREFIX, id_nonce, ephemeral_public_key))
-        return sha256(preimage).digest()

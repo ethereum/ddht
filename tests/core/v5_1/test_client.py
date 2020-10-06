@@ -39,7 +39,9 @@ async def test_client_send_pong(alice, bob, alice_client, bob_client):
     with trio.fail_after(2):
         async with alice.events.pong_sent.subscribe_and_wait():
             async with bob.events.pong_received.subscribe_and_wait():
-                await alice_client.send_pong(bob.endpoint, bob.node_id, request_id=1234)
+                await alice_client.send_pong(
+                    bob.endpoint, bob.node_id, request_id=b"\x12"
+                )
 
 
 @pytest.mark.trio
@@ -67,7 +69,7 @@ async def test_client_send_found_nodes(alice, bob, alice_client, bob_client, enr
         async with alice.events.found_nodes_sent.subscribe_and_wait():
             async with bob.events.found_nodes_received.subscribe() as subscription:
                 await alice_client.send_found_nodes(
-                    bob.endpoint, bob.node_id, enrs=enrs, request_id=1234,
+                    bob.endpoint, bob.node_id, enrs=enrs, request_id=b"\x12",
                 )
 
                 with trio.fail_after(2):
@@ -107,7 +109,7 @@ async def test_client_send_talk_response(alice, bob, alice_client, bob_client):
                     bob.endpoint,
                     bob.node_id,
                     payload=b"test-response",
-                    request_id=1234,
+                    request_id=b"\x12",
                 )
 
 
@@ -122,7 +124,7 @@ async def test_client_send_register_topic(alice, bob, alice_client, bob_client):
                     topic=b"unicornsrainbowsunicornsrainbows",
                     enr=alice.enr,
                     ticket=b"test-ticket",
-                    request_id=1234,
+                    request_id=b"\x12",
                 )
 
 
@@ -136,7 +138,7 @@ async def test_client_send_ticket(alice, bob, alice_client, bob_client):
                     bob.node_id,
                     ticket=b"test-ticket",
                     wait_time=600,
-                    request_id=1234,
+                    request_id=b"\x12",
                 )
 
 
@@ -151,7 +153,7 @@ async def test_client_send_registration_confirmation(
                     bob.endpoint,
                     bob.node_id,
                     topic=b"unicornsrainbowsunicornsrainbows",
-                    request_id=1234,
+                    request_id=b"\x12",
                 )
 
 
@@ -164,7 +166,7 @@ async def test_client_send_topic_query(alice, bob, alice_client, bob_client):
                     bob.endpoint,
                     bob.node_id,
                     topic=b"unicornsrainbowsunicornsrainbows",
-                    request_id=1234,
+                    request_id=b"\x12",
                 )
 
 
@@ -173,8 +175,8 @@ async def test_client_send_topic_query(alice, bob, alice_client, bob_client):
 #
 @pytest.mark.trio
 async def test_client_request_response_ping_pong(alice, bob, alice_client, bob_client):
-    async with trio.open_nursery() as nursery:
-        async with bob.events.ping_received.subscribe() as subscription:
+    async with bob.events.ping_received.subscribe() as subscription:
+        async with trio.open_nursery() as nursery:
 
             async def _send_response():
                 ping = await subscription.receive()

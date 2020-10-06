@@ -68,11 +68,11 @@ class SessionDriverAPI(ABC):
         ...
 
     @abstractmethod
-    async def send_ping(self, request_id: Optional[int] = None) -> PingMessage:
+    async def send_ping(self, request_id: Optional[bytes] = None) -> PingMessage:
         ...
 
     @abstractmethod
-    async def send_pong(self, request_id: Optional[int] = None) -> PongMessage:
+    async def send_pong(self, request_id: Optional[bytes] = None) -> PongMessage:
         ...
 
 

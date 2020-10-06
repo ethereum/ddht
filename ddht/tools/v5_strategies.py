@@ -13,6 +13,7 @@ random_data_st = st.binary(min_size=3, max_size=8)
 public_key_st = st.binary(min_size=32, max_size=32)
 node_id_st = st.binary(min_size=32, max_size=32)
 magic_st = st.binary(min_size=MAGIC_SIZE, max_size=MAGIC_SIZE)
+iv_st = st.binary(min_size=16, max_size=16)
 id_nonce_st = st.binary(min_size=ID_NONCE_SIZE, max_size=ID_NONCE_SIZE)
 enr_seq_st = st.integers(min_value=0)
 

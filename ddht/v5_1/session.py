@@ -3,35 +3,31 @@ import enum
 import itertools
 import logging
 import secrets
-from typing import Optional, Tuple, Type, cast
+from typing import Any, Optional, Tuple, Type, cast
 import uuid
 
 from eth_enr import ENRAPI, ENRDatabaseAPI, IdentitySchemeAPI
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import ValidationError
-import rlp
 import trio
 
 from ddht._utils import humanize_node_id
 from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
-from ddht.encryption import aesgcm_decrypt
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DecryptionError, HandshakeFailure
-from ddht.handshake_schemes import default_handshake_scheme_registry
 from ddht.message_registry import MessageTypeRegistry
 from ddht.typing import AES128Key, IDNonce, Nonce, SessionKeys
 from ddht.v5_1.abc import EventsAPI, SessionAPI
 from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.events import Events
-from ddht.v5_1.messages import v51_registry
+from ddht.v5_1.handshake_schemes import v51_handshake_scheme_registry
+from ddht.v5_1.messages import decode_message, v51_registry
 from ddht.v5_1.packets import (
-    AuthData,
     HandshakeHeader,
     HandshakePacket,
-    Header,
     MessagePacket,
     Packet,
     WhoAreYouPacket,
@@ -53,7 +49,7 @@ class BaseSession(SessionAPI):
     logger = logging.getLogger("ddht.session.Session")
 
     _last_message_received_at: float
-    _handshake_scheme_registry: HandshakeSchemeRegistryAPI = default_handshake_scheme_registry
+    _handshake_scheme_registry: HandshakeSchemeRegistryAPI = v51_handshake_scheme_registry
 
     def __init__(
         self,
@@ -150,7 +146,7 @@ class BaseSession(SessionAPI):
         return self.local_enr.identity_scheme
 
     @property
-    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI[Any]]:
         return self._handshake_scheme_registry[self.identity_scheme]
 
     @property
@@ -172,34 +168,13 @@ class BaseSession(SessionAPI):
         ...
 
     def decode_message(self, packet: Packet[MessagePacket]) -> BaseMessage:
-        return self._decode_message(
+        return decode_message(
             self.keys.decryption_key,
-            packet.header,
-            packet.auth_data,
-            packet.auth_data.aes_gcm_nonce,
+            packet.header.aes_gcm_nonce,
             packet.message_cipher_text,
+            packet.challenge_data,
+            self._message_type_registry,
         )
-
-    def _decode_message(
-        self,
-        decryption_key: AES128Key,
-        header: Header,
-        auth_data: AuthData,
-        nonce: Nonce,
-        message_cipher_text: bytes,
-    ) -> BaseMessage:
-        authenticated_data = header.to_wire_bytes() + auth_data.to_wire_bytes()
-        message_plain_text = aesgcm_decrypt(
-            key=decryption_key,
-            nonce=nonce,
-            cipher_text=message_cipher_text,
-            authenticated_data=authenticated_data,
-        )
-        message_type = message_plain_text[0]
-        message_sedes = self._message_type_registry[message_type]
-        message = rlp.decode(message_plain_text[1:], sedes=message_sedes)
-
-        return cast(BaseMessage, message)
 
     def get_encryption_nonce(self) -> Nonce:
         return Nonce(
@@ -210,13 +185,12 @@ class BaseSession(SessionAPI):
         if not self.is_after_handshake:
             raise Exception("Invalid")
         nonce = self.get_encryption_nonce()
-        auth_data = MessagePacket(aes_gcm_nonce=nonce)
+        auth_data = MessagePacket(source_node_id=self._local_node_id)
         packet = Packet.prepare(
-            nonce=nonce,
+            aes_gcm_nonce=nonce,
             initiator_key=self.keys.encryption_key,
             message=message.message,
             auth_data=auth_data,
-            source_node_id=self._local_node_id,
             dest_node_id=self.remote_node_id,
         )
         outbound_envelope = OutboundEnvelope(packet, self.remote_endpoint)
@@ -368,11 +342,10 @@ class SessionInitiator(BaseSession):
 
     async def _send_handshake_initiation(self) -> None:
         self._initiating_packet = Packet.prepare(
-            nonce=cast(Nonce, secrets.token_bytes(12)),
+            aes_gcm_nonce=cast(Nonce, secrets.token_bytes(12)),
             initiator_key=cast(AES128Key, secrets.token_bytes(16)),
             message=RandomMessage(),
-            auth_data=MessagePacket(aes_gcm_nonce=cast(Nonce, secrets.token_bytes(12))),
-            source_node_id=self._local_node_id,
+            auth_data=MessagePacket(source_node_id=self._local_node_id),
             dest_node_id=self.remote_node_id,
         )
         envelope = OutboundEnvelope(
@@ -386,6 +359,13 @@ class SessionInitiator(BaseSession):
     ) -> Tuple[SessionKeys, bytes]:
         self.logger.debug("%s: receiving handshake response", self)
 
+        if packet.header.aes_gcm_nonce != self._initiating_packet.header.aes_gcm_nonce:
+            raise HandshakeFailure(
+                f"WhoAreYou packet nonce does not match request nonce: "
+                f"expected={self._initiating_packet.header.aes_gcm_nonce.hex()}  "
+                f"actual={packet.header.aes_gcm_nonce.hex()}"
+            )
+
         # compute session keys
         ephemeral_private_key = keys.PrivateKey(secrets.token_bytes(32))
 
@@ -395,7 +375,7 @@ class SessionInitiator(BaseSession):
             remote_public_key=remote_enr.public_key,
             local_node_id=self._local_node_id,
             remote_node_id=self.remote_node_id,
-            id_nonce=packet.auth_data.id_nonce,
+            salt=packet.challenge_data,
             is_locally_initiated=True,
         )
 
@@ -412,14 +392,23 @@ class SessionInitiator(BaseSession):
         local_enr = self.local_enr
 
         # prepare response packet
-        id_nonce_signature = self.handshake_scheme.create_id_nonce_signature(
-            id_nonce=packet.auth_data.id_nonce,
+        signature_inputs = self.handshake_scheme.signature_inputs_cls(
+            iv=packet.iv,
+            header=packet.header,
+            who_are_you=packet.auth_data,
             ephemeral_public_key=ephemeral_public_key,
-            private_key=self._local_private_key,
+            recipient_node_id=self.remote_node_id,
+        )
+        id_nonce_signature = self.handshake_scheme.create_id_nonce_signature(
+            signature_inputs=signature_inputs, private_key=self._local_private_key,
         )
 
         auth_data = HandshakePacket(
-            auth_data_head=HandshakeHeader.v4_header(),
+            auth_data_head=HandshakeHeader(
+                source_node_id=self._local_node_id,
+                signature_size=len(id_nonce_signature),
+                ephemeral_key_size=len(ephemeral_public_key),
+            ),
             id_signature=id_nonce_signature,
             ephemeral_public_key=ephemeral_public_key,
             record=(
@@ -432,11 +421,10 @@ class SessionInitiator(BaseSession):
             ),
         )
         handshake_packet = Packet.prepare(
-            nonce=packet.auth_data.request_nonce,
+            aes_gcm_nonce=packet.header.aes_gcm_nonce,
             initiator_key=self.keys.encryption_key,
             message=self._initial_message.message,
             auth_data=auth_data,
-            source_node_id=self._local_node_id,
             dest_node_id=self._remote_node_id,
         )
 
@@ -556,7 +544,10 @@ class SessionRecipient(BaseSession):
                     )
                 except HandshakeFailure:
                     self.logger.debug(
-                        "%s: Discarding invalid Handshake packet: %s", self, envelope
+                        "%s: Discarding invalid Handshake packet: %s",
+                        self,
+                        envelope,
+                        exc_info=True,
                     )
                     await self._events.packet_discarded.trigger((self, envelope))
                     return False
@@ -597,7 +588,7 @@ class SessionRecipient(BaseSession):
             if envelope.packet.is_message:
                 self.logger.debug("%s: received handshake initiation", self)
                 self._status = SessionStatus.DURING
-                self._remote_node_id = envelope.packet.header.source_node_id
+                self._remote_node_id = envelope.packet.auth_data.source_node_id  # type: ignore
                 await self._send_handshake_response(
                     cast(Packet[MessagePacket], envelope.packet),
                     envelope.sender_endpoint,
@@ -617,25 +608,23 @@ class SessionRecipient(BaseSession):
     ) -> None:
         self.logger.debug("%s: sending handshake response", self)
         try:
-            remote_enr = self._enr_db.get_enr(packet.header.source_node_id)
+            remote_enr = self._enr_db.get_enr(packet.auth_data.source_node_id)
         except KeyError:
             enr_sequence_number = 0
         else:
             enr_sequence_number = remote_enr.sequence_number
 
         auth_data = WhoAreYouPacket(
-            request_nonce=packet.auth_data.aes_gcm_nonce,
-            id_nonce=cast(IDNonce, secrets.token_bytes(32)),
+            id_nonce=cast(IDNonce, secrets.token_bytes(16)),
             enr_sequence_number=enr_sequence_number,
         )
 
         self.handshake_response_packet = Packet.prepare(
-            nonce=cast(Nonce, secrets.token_bytes(12)),
+            aes_gcm_nonce=packet.header.aes_gcm_nonce,
             initiator_key=cast(AES128Key, secrets.token_bytes(16)),
             message=EmptyMessage(),
             auth_data=auth_data,
-            source_node_id=self._local_node_id,
-            dest_node_id=packet.header.source_node_id,
+            dest_node_id=packet.auth_data.source_node_id,
         )
         envelope = OutboundEnvelope(
             packet=self.handshake_response_packet, receiver_endpoint=sender_endpoint,
@@ -658,12 +647,18 @@ class SessionRecipient(BaseSession):
             remote_enr = self._enr_db.get_enr(self.remote_node_id)
 
         handshake_scheme = self.handshake_scheme
+        signature_inputs = handshake_scheme.signature_inputs_cls(
+            iv=self.handshake_response_packet.iv,
+            header=self.handshake_response_packet.header,
+            who_are_you=self.handshake_response_packet.auth_data,
+            ephemeral_public_key=packet.auth_data.ephemeral_public_key,
+            recipient_node_id=self._local_node_id,
+        )
         # Verify the id_nonce_signature which ensures that the remote node has
         # not lied about their node_id
         try:
             handshake_scheme.validate_id_nonce_signature(
-                id_nonce=self.handshake_response_packet.auth_data.id_nonce,
-                ephemeral_public_key=packet.auth_data.ephemeral_public_key,
+                signature_inputs=signature_inputs,
                 signature=packet.auth_data.id_signature,
                 public_key=remote_enr.public_key,
             )
@@ -675,16 +670,16 @@ class SessionRecipient(BaseSession):
             remote_public_key=packet.auth_data.ephemeral_public_key,
             local_node_id=self._local_node_id,
             remote_node_id=self.remote_node_id,
-            id_nonce=self.handshake_response_packet.auth_data.id_nonce,
+            salt=self.handshake_response_packet.challenge_data,
             is_locally_initiated=False,
         )
 
-        message = self._decode_message(
+        message = decode_message(
             session_keys.decryption_key,
-            packet.header,
-            packet.auth_data,
-            self.handshake_response_packet.auth_data.request_nonce,
+            packet.header.aes_gcm_nonce,
             packet.message_cipher_text,
+            packet.challenge_data,
+            self._message_type_registry,
         )
 
         await self._inbound_message_send_channel.send(

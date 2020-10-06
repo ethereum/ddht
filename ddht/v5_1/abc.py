@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
 from typing import (
+    Any,
     AsyncContextManager,
     Collection,
     ContextManager,
@@ -69,7 +70,7 @@ class SessionAPI(ABC):
 
     @property
     @abstractmethod
-    def handshake_scheme(self) -> Type[HandshakeSchemeAPI]:
+    def handshake_scheme(self) -> Type[HandshakeSchemeAPI[Any]]:
         ...
 
     @property
@@ -204,11 +205,11 @@ class DispatcherAPI(ServiceAPI):
         ...
 
     @abstractmethod
-    def get_free_request_id(self, node_id: NodeID) -> int:
+    def get_free_request_id(self, node_id: NodeID) -> bytes:
         ...
 
     @abstractmethod
-    def reserve_request_id(self, node_id: NodeID) -> ContextManager[int]:
+    def reserve_request_id(self, node_id: NodeID) -> ContextManager[bytes]:
         ...
 
     @abstractmethod
@@ -247,8 +248,12 @@ class ClientAPI(ServiceAPI):
 
     @abstractmethod
     async def send_ping(
-        self, endpoint: Endpoint, node_id: NodeID, *, request_id: Optional[int] = None,
-    ) -> int:
+        self,
+        endpoint: Endpoint,
+        node_id: NodeID,
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         ...
 
     #
@@ -256,7 +261,7 @@ class ClientAPI(ServiceAPI):
     #
     @abstractmethod
     async def send_pong(
-        self, endpoint: Endpoint, node_id: NodeID, *, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, request_id: bytes,
     ) -> None:
         ...
 
@@ -267,8 +272,8 @@ class ClientAPI(ServiceAPI):
         node_id: NodeID,
         *,
         distances: Collection[int],
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         ...
 
     @abstractmethod
@@ -278,7 +283,7 @@ class ClientAPI(ServiceAPI):
         node_id: NodeID,
         *,
         enrs: Sequence[ENRAPI],
-        request_id: int,
+        request_id: bytes,
     ) -> int:
         ...
 
@@ -290,13 +295,13 @@ class ClientAPI(ServiceAPI):
         *,
         protocol: bytes,
         payload: bytes,
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         ...
 
     @abstractmethod
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: bytes,
     ) -> None:
         ...
 
@@ -309,8 +314,8 @@ class ClientAPI(ServiceAPI):
         topic: bytes,
         enr: ENRAPI,
         ticket: bytes = b"",
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         ...
 
     @abstractmethod
@@ -321,13 +326,13 @@ class ClientAPI(ServiceAPI):
         *,
         ticket: bytes,
         wait_time: int,
-        request_id: int,
+        request_id: bytes,
     ) -> None:
         ...
 
     @abstractmethod
     async def send_registration_confirmation(
-        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: int,
+        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: bytes,
     ) -> None:
         ...
 
@@ -338,8 +343,8 @@ class ClientAPI(ServiceAPI):
         node_id: NodeID,
         *,
         topic: bytes,
-        request_id: Optional[int] = None,
-    ) -> int:
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
         ...
 
     #
