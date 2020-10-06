@@ -1,15 +1,6 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import (
-    Any,
-    AsyncContextManager,
-    Collection,
-    ContextManager,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-)
+from typing import Any, AsyncContextManager, ContextManager, Optional, Tuple, Type
 import uuid
 
 from async_service import ServiceAPI
@@ -18,7 +9,13 @@ from eth_keys import keys
 from eth_typing import NodeID
 import trio
 
-from ddht.abc import EventAPI, HandshakeSchemeAPI, RoutingTableAPI
+from ddht.abc import (
+    EventAPI,
+    FindNodesAPI,
+    HandshakeSchemeAPI,
+    PingPongAPI,
+    RoutingTableAPI,
+)
 from ddht.base_message import (
     AnyOutboundMessage,
     InboundMessage,
@@ -230,7 +227,11 @@ class DispatcherAPI(ServiceAPI):
         ...
 
 
-class ClientAPI(ServiceAPI):
+class ClientAPI(
+    ServiceAPI,
+    PingPongAPI[InboundMessage[PongMessage]],
+    FindNodesAPI[InboundMessage[FoundNodesMessage]],
+):
     enr_manager: ENRManagerAPI
     events: EventsAPI
     dispatcher: DispatcherAPI
@@ -246,52 +247,14 @@ class ClientAPI(ServiceAPI):
     async def wait_listening(self) -> None:
         ...
 
-    @abstractmethod
-    async def send_ping(
-        self,
-        endpoint: Endpoint,
-        node_id: NodeID,
-        *,
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        ...
-
     #
     # Message Sending API
     #
     @abstractmethod
-    async def send_pong(
-        self, endpoint: Endpoint, node_id: NodeID, *, request_id: bytes,
-    ) -> None:
-        ...
-
-    @abstractmethod
-    async def send_find_nodes(
-        self,
-        endpoint: Endpoint,
-        node_id: NodeID,
-        *,
-        distances: Collection[int],
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        ...
-
-    @abstractmethod
-    async def send_found_nodes(
-        self,
-        endpoint: Endpoint,
-        node_id: NodeID,
-        *,
-        enrs: Sequence[ENRAPI],
-        request_id: bytes,
-    ) -> int:
-        ...
-
-    @abstractmethod
     async def send_talk_request(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         protocol: bytes,
         payload: bytes,
@@ -301,15 +264,15 @@ class ClientAPI(ServiceAPI):
 
     @abstractmethod
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: bytes,
+        self, node_id: NodeID, endpoint: Endpoint, *, payload: bytes, request_id: bytes,
     ) -> None:
         ...
 
     @abstractmethod
     async def send_register_topic(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         topic: bytes,
         enr: ENRAPI,
@@ -321,8 +284,8 @@ class ClientAPI(ServiceAPI):
     @abstractmethod
     async def send_ticket(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         ticket: bytes,
         wait_time: int,
@@ -332,15 +295,15 @@ class ClientAPI(ServiceAPI):
 
     @abstractmethod
     async def send_registration_confirmation(
-        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: bytes,
+        self, node_id: NodeID, endpoint: Endpoint, *, topic: bytes, request_id: bytes,
     ) -> None:
         ...
 
     @abstractmethod
     async def send_topic_query(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         topic: bytes,
         request_id: Optional[bytes] = None,
@@ -351,28 +314,16 @@ class ClientAPI(ServiceAPI):
     # Request/Response API
     #
     @abstractmethod
-    async def ping(
-        self, endpoint: Endpoint, node_id: NodeID
-    ) -> InboundMessage[PongMessage]:
-        ...
-
-    @abstractmethod
-    async def find_nodes(
-        self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int]
-    ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
-        ...
-
-    @abstractmethod
     async def talk(
-        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, payload: bytes
+        self, node_id: NodeID, endpoint: Endpoint, protocol: bytes, payload: bytes
     ) -> InboundMessage[TalkResponseMessage]:
         ...
 
     @abstractmethod
     async def register_topic(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         topic: bytes,
         ticket: Optional[bytes] = None,
     ) -> Tuple[
@@ -383,7 +334,7 @@ class ClientAPI(ServiceAPI):
 
     @abstractmethod
     async def topic_query(
-        self, endpoint: Endpoint, node_id: NodeID, topic: bytes
+        self, node_id: NodeID, endpoint: Endpoint, topic: bytes
     ) -> InboundMessage[FoundNodesMessage]:
         ...
 

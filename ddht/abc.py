@@ -4,11 +4,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    Collection,
     Deque,
     Generic,
     Iterator,
     List,
     Optional,
+    Sequence,
     Tuple,
     Type,
     TypedDict,
@@ -16,12 +18,13 @@ from typing import (
 )
 
 from async_service import ServiceAPI
-from eth_enr.abc import IdentitySchemeAPI
+from eth_enr.abc import ENRAPI, IdentitySchemeAPI
 from eth_typing import NodeID
 import trio
 
 from ddht.base_message import BaseMessage
 from ddht.boot_info import BootInfo
+from ddht.endpoint import Endpoint
 from ddht.typing import JSON, SessionKeys
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
@@ -248,6 +251,9 @@ class HandshakeSchemeRegistryAPI(HandshakeSchemeRegistryBaseType):
         ...
 
 
+#
+# JSON-RPC Interfaces
+#
 class RPCRequest(TypedDict, total=False):
     jsonrpc: str
     method: str
@@ -271,4 +277,66 @@ class RPCHandlerAPI(ABC):
 class ApplicationAPI(ServiceAPI):
     @abstractmethod
     def __init__(self, boot_info: BootInfo) -> None:
+        ...
+
+
+#
+# Client Interfaces
+#
+TPongMessage = TypeVar("TPongMessage")
+
+
+class PingPongAPI(ABC, Generic[TPongMessage]):
+    @abstractmethod
+    async def send_ping(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_pong(
+        self, node_id: NodeID, endpoint: Endpoint, *, request_id: bytes,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    async def ping(self, node_id: NodeID, endpoint: Endpoint) -> TPongMessage:
+        ...
+
+
+TFoundNodesMessage = TypeVar("TFoundNodesMessage")
+
+
+class FindNodesAPI(ABC, Generic[TFoundNodesMessage]):
+    @abstractmethod
+    async def send_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        distances: Collection[int],
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_found_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enrs: Sequence[ENRAPI],
+        request_id: bytes,
+    ) -> int:
+        ...
+
+    @abstractmethod
+    async def find_nodes(
+        self, node_id: NodeID, endpoint: Endpoint, distances: Collection[int]
+    ) -> Tuple[TFoundNodesMessage, ...]:
         ...

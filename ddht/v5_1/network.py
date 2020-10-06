@@ -119,7 +119,7 @@ class Network(Service, NetworkAPI):
     ) -> PongMessage:
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
-        response = await self.client.ping(endpoint, node_id)
+        response = await self.client.ping(node_id, endpoint)
         return response.message
 
     async def find_nodes(
@@ -130,7 +130,7 @@ class Network(Service, NetworkAPI):
 
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
-        responses = await self.client.find_nodes(endpoint, node_id, distances=distances)
+        responses = await self.client.find_nodes(node_id, endpoint, distances=distances)
         return tuple(enr for response in responses for enr in response.message.enrs)
 
     async def talk(
@@ -143,7 +143,7 @@ class Network(Service, NetworkAPI):
     ) -> bytes:
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
-        response = await self.client.talk(endpoint, node_id, protocol, payload)
+        response = await self.client.talk(node_id, endpoint, protocol, payload)
         return response.message.payload
 
     async def get_enr(
@@ -386,8 +386,8 @@ class Network(Service, NetworkAPI):
                         raise Exception("Should be unreachable")
 
                 await self.client.send_found_nodes(
-                    request.sender_endpoint,
                     request.sender_node_id,
+                    request.sender_endpoint,
                     enrs=response_enrs,
                     request_id=request.message.request_id,
                 )

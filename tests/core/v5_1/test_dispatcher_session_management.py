@@ -16,7 +16,7 @@ async def test_dispatcher_detects_handshake_timeout_as_initiator(
             async with alice.events.session_created.subscribe_and_wait():
                 async with bob.events.packet_sent.subscribe() as subscription:
                     await alice_client.send_ping(
-                        endpoint=bob.endpoint, node_id=bob.node_id
+                        node_id=bob.node_id, endpoint=bob.endpoint,
                     )
                     _, envelope = await subscription.receive()
                     assert envelope.packet.is_who_are_you
@@ -42,7 +42,7 @@ async def test_dispatcher_detects_handshake_timeout_as_recipient(
             async with bob.events.session_created.subscribe_and_wait():
                 async with alice.events.packet_received.subscribe() as subscription:
                     await alice_client.send_ping(
-                        endpoint=bob.endpoint, node_id=bob.node_id
+                        node_id=bob.node_id, endpoint=bob.endpoint,
                     )
                     async for _, envelope in subscription:
                         if envelope.packet.is_who_are_you:
@@ -71,7 +71,7 @@ async def test_dispatcher_initiates_new_session_when_packet_cannot_be_decoded(
             async with alice.events.session_created.subscribe_and_wait():
                 async with bob.events.session_handshake_complete.subscribe() as subscription:
                     await bob_client.send_ping(
-                        endpoint=alice.endpoint, node_id=alice.node_id
+                        node_id=alice.node_id, endpoint=alice.endpoint,
                     )
                     session = await subscription.receive()
                     bob_client.pool.remove_session(session.id)
@@ -81,7 +81,7 @@ async def test_dispatcher_initiates_new_session_when_packet_cannot_be_decoded(
                 async with alice.events.session_created.subscribe_and_wait():
                     async with bob.events.session_created.subscribe_and_wait():
                         await bob_client.send_ping(
-                            endpoint=alice.endpoint, node_id=alice.node_id
+                            node_id=alice.node_id, endpoint=alice.endpoint,
                         )
 
 
@@ -96,7 +96,7 @@ async def test_dispatcher_detects_duplicate_handshakes(alice, bob, autojump_cloc
             async with alice.events.session_created.subscribe_and_wait():
                 async with bob.events.session_handshake_complete.subscribe() as subscription:
                     await bob_client.send_ping(
-                        endpoint=alice.endpoint, node_id=alice.node_id
+                        node_id=alice.node_id, endpoint=alice.endpoint,
                     )
                     session = await subscription.receive()
                     bob_client.pool.remove_session(session.id)
@@ -105,7 +105,7 @@ async def test_dispatcher_detects_duplicate_handshakes(alice, bob, autojump_cloc
             async with bob.events.session_created.subscribe() as subscription:
                 async with alice.events.session_created.subscribe_and_wait():
                     await bob_client.send_ping(
-                        endpoint=alice.endpoint, node_id=alice.node_id
+                        node_id=alice.node_id, endpoint=alice.endpoint,
                     )
                     session = await subscription.receive()
                 bob_client.pool.remove_session(session.id)
@@ -127,7 +127,7 @@ async def test_dispatcher_detects_duplicate_handshakes(alice, bob, autojump_cloc
             # success, alice should remove the full handshake
             async with alice.events.session_handshake_complete.subscribe() as subscription:
                 await bob_client.send_ping(
-                    endpoint=alice.endpoint, node_id=alice.node_id
+                    node_id=alice.node_id, endpoint=alice.endpoint,
                 )
                 new_full_session = await subscription.receive()
 

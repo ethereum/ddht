@@ -31,7 +31,7 @@ async def test_client_send_ping(alice, bob, alice_client, bob_client):
     with trio.fail_after(2):
         async with alice.events.ping_sent.subscribe_and_wait():
             async with bob.events.ping_received.subscribe_and_wait():
-                await alice_client.send_ping(bob.endpoint, bob.node_id)
+                await alice_client.send_ping(bob.node_id, bob.endpoint)
 
 
 @pytest.mark.trio
@@ -40,7 +40,7 @@ async def test_client_send_pong(alice, bob, alice_client, bob_client):
         async with alice.events.pong_sent.subscribe_and_wait():
             async with bob.events.pong_received.subscribe_and_wait():
                 await alice_client.send_pong(
-                    bob.endpoint, bob.node_id, request_id=b"\x12"
+                    bob.node_id, bob.endpoint, request_id=b"\x12"
                 )
 
 
@@ -50,7 +50,7 @@ async def test_client_send_find_nodes(alice, bob, alice_client, bob_client):
         async with alice.events.find_nodes_sent.subscribe_and_wait():
             async with bob.events.find_nodes_received.subscribe_and_wait():
                 await alice_client.send_find_nodes(
-                    bob.endpoint, bob.node_id, distances=[255]
+                    bob.node_id, bob.endpoint, distances=[255]
                 )
 
 
@@ -69,7 +69,7 @@ async def test_client_send_found_nodes(alice, bob, alice_client, bob_client, enr
         async with alice.events.found_nodes_sent.subscribe_and_wait():
             async with bob.events.found_nodes_received.subscribe() as subscription:
                 await alice_client.send_found_nodes(
-                    bob.endpoint, bob.node_id, enrs=enrs, request_id=b"\x12",
+                    bob.node_id, bob.endpoint, enrs=enrs, request_id=b"\x12",
                 )
 
                 with trio.fail_after(2):
@@ -93,8 +93,8 @@ async def test_client_send_talk_request(alice, bob, alice_client, bob_client):
         async with alice.events.talk_request_sent.subscribe_and_wait():
             async with bob.events.talk_request_received.subscribe_and_wait():
                 await alice_client.send_talk_request(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     protocol=b"test",
                     payload=b"test-request",
                 )
@@ -106,8 +106,8 @@ async def test_client_send_talk_response(alice, bob, alice_client, bob_client):
         async with alice.events.talk_response_sent.subscribe_and_wait():
             async with bob.events.talk_response_received.subscribe_and_wait():
                 await alice_client.send_talk_response(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     payload=b"test-response",
                     request_id=b"\x12",
                 )
@@ -119,8 +119,8 @@ async def test_client_send_register_topic(alice, bob, alice_client, bob_client):
         async with alice.events.register_topic_sent.subscribe_and_wait():
             async with bob.events.register_topic_received.subscribe_and_wait():
                 await alice_client.send_register_topic(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     topic=b"unicornsrainbowsunicornsrainbows",
                     enr=alice.enr,
                     ticket=b"test-ticket",
@@ -134,8 +134,8 @@ async def test_client_send_ticket(alice, bob, alice_client, bob_client):
         async with alice.events.ticket_sent.subscribe_and_wait():
             async with bob.events.ticket_received.subscribe_and_wait():
                 await alice_client.send_ticket(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     ticket=b"test-ticket",
                     wait_time=600,
                     request_id=b"\x12",
@@ -150,8 +150,8 @@ async def test_client_send_registration_confirmation(
         async with alice.events.registration_confirmation_sent.subscribe_and_wait():
             async with bob.events.registration_confirmation_received.subscribe_and_wait():
                 await alice_client.send_registration_confirmation(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     topic=b"unicornsrainbowsunicornsrainbows",
                     request_id=b"\x12",
                 )
@@ -163,8 +163,8 @@ async def test_client_send_topic_query(alice, bob, alice_client, bob_client):
         async with alice.events.topic_query_sent.subscribe_and_wait():
             async with bob.events.topic_query_received.subscribe_and_wait():
                 await alice_client.send_topic_query(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     topic=b"unicornsrainbowsunicornsrainbows",
                     request_id=b"\x12",
                 )
@@ -181,13 +181,13 @@ async def test_client_request_response_ping_pong(alice, bob, alice_client, bob_c
             async def _send_response():
                 ping = await subscription.receive()
                 await bob_client.send_pong(
-                    alice.endpoint, alice.node_id, request_id=ping.message.request_id,
+                    alice.node_id, alice.endpoint, request_id=ping.message.request_id,
                 )
 
             nursery.start_soon(_send_response)
 
             with trio.fail_after(2):
-                pong = await alice_client.ping(bob.endpoint, bob.node_id)
+                pong = await alice_client.ping(bob.node_id, bob.endpoint)
                 assert pong.message.enr_seq == bob.enr.sequence_number
                 assert pong.message.packet_ip == alice.endpoint.ip_address
                 assert pong.message.packet_port == alice.endpoint.port
@@ -197,7 +197,7 @@ async def test_client_request_response_ping_pong(alice, bob, alice_client, bob_c
 async def test_client_ping_timeout(alice, bob_client, autojump_clock):
     with trio.fail_after(60):
         with pytest.raises(trio.EndOfChannel):
-            await bob_client.ping(alice.endpoint, alice.node_id)
+            await bob_client.ping(alice.node_id, alice.endpoint)
 
 
 @pytest.mark.trio
@@ -225,8 +225,8 @@ async def test_client_request_response_find_nodes_found_nodes(
                     find_nodes = await subscription.receive()
                     checked_bucket_indexes.append(distance)
                     await bob_client.send_found_nodes(
-                        alice.endpoint,
                         alice.node_id,
+                        alice.endpoint,
                         enrs=expected_enrs,
                         request_id=find_nodes.message.request_id,
                     )
@@ -235,7 +235,7 @@ async def test_client_request_response_find_nodes_found_nodes(
 
                 with trio.fail_after(2):
                     found_nodes_messages = await alice_client.find_nodes(
-                        bob.endpoint, bob.node_id, distances=[distance],
+                        bob.node_id, bob.endpoint, distances=[distance],
                     )
                     found_node_ids = {
                         enr.node_id
@@ -254,8 +254,8 @@ async def test_client_talk_request_response(alice, bob, alice_client, bob_client
         async with client.dispatcher.subscribe(TalkRequestMessage) as subscription:
             request = await subscription.receive()
             await client.send_talk_response(
-                request.sender_endpoint,
                 request.sender_node_id,
+                request.sender_endpoint,
                 payload=b"talk-response",
                 request_id=request.message.request_id,
             )
@@ -277,8 +277,8 @@ async def test_client_talk_request_response(alice, bob, alice_client, bob_client
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(_do_talk_response, bob_client)
                 response = await alice_client.talk(
-                    bob.endpoint,
                     bob.node_id,
+                    bob.endpoint,
                     protocol=b"test-talk-proto",
                     payload=b"test-request",
                 )
@@ -290,8 +290,8 @@ async def test_client_talk_request_response_timeout(alice, bob_client, autojump_
     with trio.fail_after(60):
         with pytest.raises(trio.EndOfChannel):
             await bob_client.talk(
-                alice.endpoint,
                 alice.node_id,
+                alice.endpoint,
                 protocol=b"test",
                 payload=b"test-request",
             )
@@ -311,7 +311,7 @@ async def test_client_handles_malformed_datagrams(tester, datagram_bytes):
                 await bob_client._outbound_datagram_send_channel.send(
                     OutboundDatagram(datagram_bytes, alice.endpoint)
                 )
-                request_id = await bob_client.send_ping(alice.endpoint, alice.node_id)
+                request_id = await bob_client.send_ping(alice.node_id, alice.endpoint)
 
                 ping = await subscription.receive()
                 assert ping.message.request_id == request_id
