@@ -20,8 +20,9 @@ from eth_enr.abc import IdentitySchemeAPI
 from eth_typing import NodeID
 import trio
 
-from ddht.base_message import BaseMessage
+from ddht.base_message import AnyInboundMessage, BaseMessage, InboundMessage, TMessage
 from ddht.boot_info import BootInfo
+from ddht.endpoint import Endpoint
 from ddht.typing import JSON, SessionKeys
 
 TAddress = TypeVar("TAddress", bound="AddressAPI")
@@ -265,6 +266,21 @@ class RPCResponse(TypedDict, total=False):
 class RPCHandlerAPI(ABC):
     @abstractmethod
     async def __call__(self, request: RPCRequest) -> RPCResponse:
+        ...
+
+
+class SubscriptionManagerAPI(ABC, Generic[TMessage]):
+    @abstractmethod
+    def feed_subscriptions(self, message: AnyInboundMessage) -> None:
+        ...
+
+    @abstractmethod
+    def subscribe(
+        self,
+        message_type: Type[TMessage],
+        endpoint: Optional[Endpoint] = None,
+        node_id: Optional[NodeID] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
         ...
 
 

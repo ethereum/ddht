@@ -14,7 +14,12 @@ from eth_enr import ENRAPI, IdentitySchemeAPI
 from eth_typing import NodeID
 
 from ddht.abc import HandshakeSchemeAPI
-from ddht.base_message import AnyInboundMessage, BaseMessage, InboundMessage, TMessage
+from ddht.base_message import (
+    AnyInboundMessage,
+    BaseMessage,
+    InboundMessage,
+    TBaseMessage,
+)
 from ddht.endpoint import Endpoint
 from ddht.v5.packets import Packet
 from ddht.v5.typing import HandshakeResult, Tag
@@ -165,8 +170,8 @@ class MessageDispatcherAPI(ABC):
 
     @abstractmethod
     def add_request_handler(
-        self, message_class: Type[TMessage]
-    ) -> ChannelHandlerSubscriptionAPI[InboundMessage[TMessage]]:
+        self, message_class: Type[TBaseMessage]
+    ) -> ChannelHandlerSubscriptionAPI[InboundMessage[TBaseMessage]]:
         """
         Add a request handler for messages of a given type.
 
