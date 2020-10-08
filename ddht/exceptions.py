@@ -36,3 +36,11 @@ class UnexpectedMessage(BaseDDHTError):
     """
 
     pass
+
+
+class DuplicateProtocol(BaseDDHTError):
+    """
+    Raised when attempting to register a TALK protocol when one is already registered.
+    """
+
+    pass

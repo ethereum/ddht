@@ -6,7 +6,9 @@ from eth_enr.tools.factories import ENRFactory
 import pytest
 import trio
 
+from ddht.exceptions import DuplicateProtocol
 from ddht.kademlia import compute_log_distance
+from ddht.v5_1.abc import TalkProtocolAPI
 from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
 
 
@@ -143,7 +145,12 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
 
 @pytest.mark.trio
 async def test_network_talk_api(alice, bob):
+    class ProtocolTest(TalkProtocolAPI):
+        protocol_id = b"test"
+
     async def _do_talk_response(network):
+        network.add_talk_protocol(ProtocolTest())
+
         async with network.dispatcher.subscribe(TalkRequestMessage) as subscription:
             request = await subscription.receive()
             await network.client.send_talk_response(
@@ -164,3 +171,53 @@ async def test_network_talk_api(alice, bob):
                     )
 
     assert response == b"test-response-payload"
+
+
+class ProtocolA(TalkProtocolAPI):
+    protocol_id = b"a"
+
+
+class ProtocolB(TalkProtocolAPI):
+    protocol_id = b"b"
+
+
+@pytest.mark.trio
+async def test_network_add_talk_protocol(alice):
+    async with alice.network() as alice_network:
+        alice_network.add_talk_protocol(ProtocolA())
+
+        with pytest.raises(DuplicateProtocol):
+            alice_network.add_talk_protocol(ProtocolA())
+
+        alice_network.add_talk_protocol(ProtocolB())
+
+        with pytest.raises(DuplicateProtocol):
+            alice_network.add_talk_protocol(ProtocolB())
+
+
+@pytest.mark.trio
+async def test_network_responds_to_unhandled_protocol_messages(
+    alice, bob, autojump_clock
+):
+    bob.enr_db.set_enr(alice.enr)
+
+    async with alice.network() as alice_network:
+        async with bob.network() as bob_network:
+            with trio.fail_after(1):
+                response = await bob_network.talk(
+                    node_id=alice.node_id,
+                    protocol=ProtocolA.protocol_id,
+                    payload=b"payload-a",
+                    endpoint=alice.endpoint,
+                )
+            assert response == b""
+
+            alice_network.add_talk_protocol(ProtocolA())
+
+            with pytest.raises(trio.EndOfChannel):
+                response = await bob_network.talk(
+                    node_id=alice.node_id,
+                    protocol=ProtocolA.protocol_id,
+                    payload=b"payload-a",
+                    endpoint=alice.endpoint,
+                )
