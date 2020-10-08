@@ -1,22 +1,11 @@
-from contextlib import contextmanager
 import functools
 import logging
-import secrets
-from typing import (
-    AsyncContextManager,
-    AsyncIterator,
-    Iterator,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-)
+from typing import AsyncContextManager, AsyncIterator, Optional, Set, Tuple, Type
 
 from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRDatabaseAPI
 from eth_typing import NodeID
-from eth_utils import int_to_big_endian
 import trio
 
 from ddht._utils import humanize_node_id
@@ -47,13 +36,6 @@ from ddht.v5_1.messages import (
     TicketMessage,
     TopicQueryMessage,
 )
-
-
-def get_random_request_id() -> bytes:
-    return int_to_big_endian(secrets.randbits(32))
-
-
-MAX_REQUEST_ID_ATTEMPTS = 3
 
 
 def _get_event_for_outbound_message(
@@ -365,37 +347,6 @@ class Dispatcher(Service, DispatcherAPI):
         return sessions
 
     #
-    # Utility
-    #
-    def get_free_request_id(self, node_id: NodeID) -> bytes:
-        for _ in range(MAX_REQUEST_ID_ATTEMPTS):
-            request_id = get_random_request_id()
-
-            if (node_id, request_id) in self._reserved_request_ids:
-                continue
-            elif (node_id, request_id) in self._active_request_ids:
-                continue
-            else:
-                return request_id
-        else:
-            # The improbability of picking three already used request ids in a
-            # row is sufficiently improbable that we can generally assume it
-            # just will not ever happen (< 1/2**96)
-            raise ValueError(
-                f"Failed to get free request id ({len(self._reserved_request_ids)} "
-                f"handlers added right now)"
-            )
-
-    @contextmanager
-    def reserve_request_id(self, node_id: NodeID) -> Iterator[bytes]:
-        request_id = self.get_free_request_id(node_id)
-        try:
-            self._reserved_request_ids.add((node_id, request_id))
-            yield request_id
-        finally:
-            self._reserved_request_ids.remove((node_id, request_id))
-
-    #
     # Message Sending
     #
     async def send_message(self, message: AnyOutboundMessage) -> None:
@@ -409,10 +360,7 @@ class Dispatcher(Service, DispatcherAPI):
     @asynccontextmanager
     async def subscribe_request(
         self, request: AnyOutboundMessage, response_message_type: Type[TBaseMessage],
-    ) -> AsyncIterator[
-        trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]
-    ]:  # noqa: E501
-        node_id = request.receiver_node_id
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
         request_id = request.message.request_id
 
         self.logger.debug(
@@ -420,10 +368,6 @@ class Dispatcher(Service, DispatcherAPI):
         )
 
         send_channel, receive_channel = trio.open_memory_channel[TBaseMessage](256)
-        key = (node_id, request_id)
-        if key in self._active_request_ids:
-            raise Exception("Invariant")
-        self._active_request_ids.add(key)
 
         async with trio.open_nursery() as nursery:
             nursery.start_soon(

@@ -1,15 +1,6 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import (
-    Any,
-    AsyncContextManager,
-    Collection,
-    ContextManager,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-)
+from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tuple, Type
 import uuid
 
 from async_service import ServiceAPI
@@ -21,6 +12,7 @@ import trio
 from ddht.abc import (
     EventAPI,
     HandshakeSchemeAPI,
+    RequestTrackerAPI,
     RoutingTableAPI,
     SubscriptionManagerAPI,
 )
@@ -213,14 +205,6 @@ class DispatcherAPI(ServiceAPI):
         ...
 
     @abstractmethod
-    def get_free_request_id(self, node_id: NodeID) -> bytes:
-        ...
-
-    @abstractmethod
-    def reserve_request_id(self, node_id: NodeID) -> ContextManager[bytes]:
-        ...
-
-    @abstractmethod
     def subscribe(
         self,
         message_type: Type[TBaseMessage],
@@ -242,6 +226,7 @@ class ClientAPI(ServiceAPI):
     dispatcher: DispatcherAPI
     pool: PoolAPI
     enr_db: ENRDatabaseAPI
+    request_tracker: RequestTrackerAPI
 
     @property
     @abstractmethod
