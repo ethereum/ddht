@@ -31,3 +31,6 @@ ROUTING_TABLE_BUCKET_SIZE = 16
 class ProtocolVersion(enum.Enum):
     v5 = "v5"
     v5_1 = "v5.1"
+
+
+UINT8_TO_BYTES = {v: bytes([v]) for v in range(256)}
