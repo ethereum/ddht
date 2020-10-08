@@ -336,7 +336,7 @@ class Network(Service, NetworkAPI):
                 await self.dispatcher.send_message(
                     request.to_response(
                         PongMessage(
-                            request.message.request_id,
+                            request.request_id,
                             self.enr_manager.enr.sequence_number,
                             request.sender_endpoint.ip_address,
                             request.sender_endpoint.port,
@@ -397,7 +397,7 @@ class Network(Service, NetworkAPI):
                     request.sender_endpoint,
                     request.sender_node_id,
                     enrs=response_enrs,
-                    request_id=request.message.request_id,
+                    request_id=request.request_id,
                 )
 
     #

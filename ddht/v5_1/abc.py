@@ -252,6 +252,9 @@ class ClientAPI(ServiceAPI):
     async def wait_listening(self) -> None:
         ...
 
+    #
+    # Message Sending API
+    #
     @abstractmethod
     async def send_ping(
         self,
@@ -262,9 +265,6 @@ class ClientAPI(ServiceAPI):
     ) -> bytes:
         ...
 
-    #
-    # Message Sending API
-    #
     @abstractmethod
     async def send_pong(
         self, endpoint: Endpoint, node_id: NodeID, *, request_id: bytes,
@@ -358,19 +358,19 @@ class ClientAPI(ServiceAPI):
     #
     @abstractmethod
     async def ping(
-        self, endpoint: Endpoint, node_id: NodeID
+        self, endpoint: Endpoint, node_id: NodeID,
     ) -> InboundMessage[PongMessage]:
         ...
 
     @abstractmethod
     async def find_nodes(
-        self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int]
+        self, endpoint: Endpoint, node_id: NodeID, distances: Collection[int],
     ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
         ...
 
     @abstractmethod
     async def talk(
-        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, payload: bytes
+        self, endpoint: Endpoint, node_id: NodeID, protocol: bytes, payload: bytes,
     ) -> InboundMessage[TalkResponseMessage]:
         ...
 
@@ -389,7 +389,7 @@ class ClientAPI(ServiceAPI):
 
     @abstractmethod
     async def topic_query(
-        self, endpoint: Endpoint, node_id: NodeID, topic: bytes
+        self, endpoint: Endpoint, node_id: NodeID, topic: bytes,
     ) -> InboundMessage[FoundNodesMessage]:
         ...
 
@@ -442,7 +442,7 @@ class NetworkAPI(ServiceAPI):
 
     @abstractmethod
     async def ping(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> PongMessage:
         ...
 
