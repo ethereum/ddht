@@ -13,7 +13,6 @@ from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.constants import DEFAULT_LISTEN
 from ddht.datagram import send_datagram, InboundDatagram, DatagramReceiver, OutboundDatagram, DatagramSender
 from ddht.v5.channel_services import InboundPacket, PacketDecoder, OutboundPacket, PacketEncoder
-from ddht.v5.constants import DEFAULT_BOOTNODES
 from ddht.v5.messages import PingMessage, v5_registry, FindNodeMessage
 from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.packer import Packer
@@ -178,7 +177,6 @@ class Crawler(BaseApplication):
 
         # TODO: use these...
         boot_info.port: int
-        boot_info.bootnodes: Tuple[ENRAPI]
         boot_info.private_key: Optional[keys.PrivateKey]
         boot_info.listen_on
 
@@ -186,10 +184,7 @@ class Crawler(BaseApplication):
 
         # 1. Queue up some ENRs to be crawled
 
-        to_enr = lambda bootnode: ENR.from_repr(bootnode, default_identity_scheme_registry)
-        bootnodes = [to_enr(bootnode) for bootnode in DEFAULT_BOOTNODES[2:3]]
-
-        for bootnode in bootnodes:
+        for bootnode in boot_info.bootnodes:
             await self.schedule_enr_to_be_visited(bootnode)
 
         listen_on = boot_info.listen_on or DEFAULT_LISTEN
