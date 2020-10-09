@@ -70,7 +70,8 @@ setup(
         "lru-dict>=1.1.6,<2.0",
         "plyvel>=1.2.0,<1.3",
         "py-evm==0.3.0a19",
-        "rlp>=2.0.0a1,<3.0.0",
+        # TODO: unpin once the dependency problems are resolved
+        "rlp==2.0.0a1",
         "trio>=0.16.0,<0.17",
         "trio-typing>=0.5.0,<0.6",
         "upnp-port-forward>=0.1.1,<0.2",
