@@ -175,8 +175,8 @@ class Client(Service, ClientAPI):
     #
     async def send_ping(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         request_id: Optional[bytes] = None,
     ) -> bytes:
@@ -193,7 +193,7 @@ class Client(Service, ClientAPI):
         return message_request_id
 
     async def send_pong(
-        self, endpoint: Endpoint, node_id: NodeID, *, request_id: bytes,
+        self, node_id: NodeID, endpoint: Endpoint, *, request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             PongMessage(
@@ -209,8 +209,8 @@ class Client(Service, ClientAPI):
 
     async def send_find_nodes(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         distances: Collection[int],
         request_id: Optional[bytes] = None,
@@ -229,8 +229,8 @@ class Client(Service, ClientAPI):
 
     async def send_found_nodes(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         enrs: Sequence[ENRAPI],
         request_id: bytes,
@@ -249,8 +249,8 @@ class Client(Service, ClientAPI):
 
     async def send_talk_request(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         protocol: bytes,
         payload: bytes,
@@ -269,7 +269,7 @@ class Client(Service, ClientAPI):
         return message_request_id
 
     async def send_talk_response(
-        self, endpoint: Endpoint, node_id: NodeID, *, payload: bytes, request_id: bytes,
+        self, node_id: NodeID, endpoint: Endpoint, *, payload: bytes, request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             TalkResponseMessage(request_id, payload), endpoint, node_id,
@@ -278,8 +278,8 @@ class Client(Service, ClientAPI):
 
     async def send_register_topic(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         topic: bytes,
         enr: ENRAPI,
@@ -300,8 +300,8 @@ class Client(Service, ClientAPI):
 
     async def send_ticket(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         ticket: bytes,
         wait_time: int,
@@ -313,7 +313,7 @@ class Client(Service, ClientAPI):
         await self.dispatcher.send_message(message)
 
     async def send_registration_confirmation(
-        self, endpoint: Endpoint, node_id: NodeID, *, topic: bytes, request_id: bytes,
+        self, node_id: NodeID, endpoint: Endpoint, *, topic: bytes, request_id: bytes,
     ) -> None:
         message = AnyOutboundMessage(
             RegistrationConfirmationMessage(request_id, topic), endpoint, node_id,
@@ -322,8 +322,8 @@ class Client(Service, ClientAPI):
 
     async def send_topic_query(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         topic: bytes,
         request_id: Optional[bytes] = None,
@@ -342,13 +342,12 @@ class Client(Service, ClientAPI):
     #
     async def ping(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         *,
         request_id: Optional[bytes] = None,
     ) -> InboundMessage[PongMessage]:
         with self.request_tracker.reserve_request_id(node_id, request_id) as request_id:
-            assert isinstance(request_id, bytes)
             request = AnyOutboundMessage(
                 PingMessage(request_id, self.enr_manager.enr.sequence_number),
                 endpoint,
@@ -361,8 +360,8 @@ class Client(Service, ClientAPI):
 
     async def find_nodes(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         distances: Collection[int],
         *,
         request_id: Optional[bytes] = None,
@@ -410,8 +409,8 @@ class Client(Service, ClientAPI):
 
     async def talk(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         protocol: bytes,
         payload: bytes,
         *,
@@ -428,8 +427,8 @@ class Client(Service, ClientAPI):
 
     async def register_topic(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         topic: bytes,
         ticket: Optional[bytes] = None,
         *,
@@ -442,8 +441,8 @@ class Client(Service, ClientAPI):
 
     async def topic_query(
         self,
-        endpoint: Endpoint,
         node_id: NodeID,
+        endpoint: Endpoint,
         topic: bytes,
         *,
         request_id: Optional[bytes] = None,

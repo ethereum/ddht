@@ -127,15 +127,23 @@ class Network(Service, NetworkAPI):
         await self.bond(node_id, endpoint=endpoint)
 
     async def ping(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+        self,
+        node_id: NodeID,
+        *,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
     ) -> PongMessage:
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
-        response = await self.client.ping(endpoint, node_id)
+        response = await self.client.ping(node_id, endpoint, request_id=request_id)
         return response.message
 
     async def find_nodes(
-        self, node_id: NodeID, *distances: int, endpoint: Optional[Endpoint] = None,
+        self,
+        node_id: NodeID,
+        *distances: int,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
     ) -> Tuple[ENRAPI, ...]:
         if not distances:
             raise TypeError("Must provide at least one distance")
@@ -143,7 +151,7 @@ class Network(Service, NetworkAPI):
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
         responses = await self.client.find_nodes(
-            endpoint, node_id, distances=distances,
+            node_id, endpoint, distances=distances, request_id=request_id
         )
         return tuple(enr for response in responses for enr in response.message.enrs)
 
@@ -154,10 +162,13 @@ class Network(Service, NetworkAPI):
         protocol: bytes,
         payload: bytes,
         endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
     ) -> bytes:
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
-        response = await self.client.talk(endpoint, node_id, protocol, payload)
+        response = await self.client.talk(
+            node_id, endpoint, protocol, payload, request_id=request_id
+        )
         return response.message.payload
 
     async def get_enr(
@@ -423,8 +434,8 @@ class Network(Service, NetworkAPI):
                         raise Exception("Should be unreachable")
 
                 await self.client.send_found_nodes(
-                    request.sender_endpoint,
                     request.sender_node_id,
+                    request.sender_endpoint,
                     enrs=response_enrs,
                     request_id=request.request_id,
                 )
@@ -434,8 +445,8 @@ class Network(Service, NetworkAPI):
             async for request in subscription:
                 if request.message.protocol not in self._talk_protocols:
                     await self.client.send_talk_response(
-                        request.sender_endpoint,
                         request.sender_node_id,
+                        request.sender_endpoint,
                         payload=b"",
                         request_id=request.message.request_id,
                     )
