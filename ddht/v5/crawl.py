@@ -175,14 +175,8 @@ class Crawler(BaseApplication):
 
         boot_info = self._boot_info
 
-        # TODO: use these...
-        boot_info.port: int
-        boot_info.private_key: Optional[keys.PrivateKey]
-        boot_info.listen_on
-
-        # TODO: support UPNP?
-
-        # 1. Queue up some ENRs to be crawled
+        if boot_info.is_upnp_enabled:
+            logger.info("UPNP will not be used; crawling does not require listening for incoming connections.")
 
         for bootnode in boot_info.bootnodes:
             await self.schedule_enr_to_be_visited(bootnode)
