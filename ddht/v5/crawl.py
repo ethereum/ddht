@@ -39,14 +39,6 @@ logger = logging.getLogger("crawler")
 current_task = contextvars.ContextVar('current_task')
 
 
-def get_current_task():
-    if current_task.get(None) is None:
-        random_id = hex(random.getrandbits(16))
-        current_task.set(random_id)
-
-    return current_task.get()
-
-
 class Crawler(BaseApplication):
     def __init__(self, concurrency, boot_info):
         super().__init__(boot_info)
@@ -115,9 +107,7 @@ class Crawler(BaseApplication):
         self.bad_enr_count = 0
 
     async def visit_enr(self, remote_enr):
-        task = get_current_task()
-
-        logger.info(f"[{task}] sending FindNode(256). nodeid={encode_hex(remote_enr.node_id)}")
+        logger.debug(f"sending FindNode(256). nodeid={encode_hex(remote_enr.node_id)}")
         try:
             with trio.fail_after(2):
                 find_node = FindNodeMessage(request_id=0, distance=256)
@@ -130,7 +120,7 @@ class Crawler(BaseApplication):
 
                 total_enrs = responses[0].message.total
                 logger.info(
-                    f"[{task}] successful handshake and response from peer. "
+                    f"successful handshake and response from peer. "
                     f"enrs={total_enrs} nodeid={encode_hex(remote_enr.node_id)} "
                     f"enr={remote_enr}"
                 )
@@ -138,7 +128,7 @@ class Crawler(BaseApplication):
                 for resp in responses:
                     enr_count = resp.message.total
                     received_enrs = resp.message.enrs
-                    logger.info(f"[{task}] Received response. enr_count={enr_count}")
+                    logger.debug(f"Received response. nodeid={encode_hex(remote_enr.node_id)} enr_count={enr_count}")
 
                     for enr in received_enrs:
                         await self.schedule_enr_to_be_visited(enr)
@@ -148,28 +138,25 @@ class Crawler(BaseApplication):
                 await self.packer.managed_peer_packers[remote_enr.node_id].manager.stop()
 
         except trio.TooSlowError:
-            logger.error(f"[{task}] no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
+            logger.debug(f"no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
             self.bad_enr_count += 1
         except UnexpectedMessage as error:
             # TODO: Nodes sometimes send us Nodes messages with an unexpectedly large
             # number of peers. 12 or 15 of them. We should probably accept these messages!
-            logger.exception("[{task}] Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
+            logger.exception("Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
             self.bad_enr_count += 1
 
     async def read_from_queue_until_done(self):
-        task = get_current_task()
         async for enr in self.enrqueue:
             await self.visit_enr(enr)
         await self.manager.stop()
 
     async def schedule_enr_to_be_visited(self, enr):
-        task = get_current_task()
-
         if enr.node_id in self.seen_nodeids:
             return
 
         if IP_V4_ADDRESS_ENR_KEY not in enr:
-            logger.info(f"[{task}] Dropping ENR without IP address enr={enr} kv={enr.items()}")
+            logger.info(f"Dropping ENR without IP address enr={enr} kv={enr.items()}")
             return
 
         self.seen_nodeids.add(enr.node_id)
@@ -177,10 +164,10 @@ class Crawler(BaseApplication):
         try:
             self.enr_db.set_enr(enr)
         except OldSequenceNumber:
-            logger.info(f"[{task}] Dropping old ENR. enr={enr} kv={enr.items()}")
+            logger.info(f"Dropping old ENR. enr={enr} kv={enr.items()}")
             return
 
-        logger.info(f"[{task}] Found ENR. count={len(self.seen_nodeids)} enr={enr} kv={enr.items()}")
+        logger.info(f"Found ENR. count={len(self.seen_nodeids)} enr={enr} kv={enr.items()}")
 
         await self.enrqueue.send(enr)
 
@@ -255,10 +242,8 @@ class ENRQueue:
         return self
 
     async def __anext__(self):
-        task = get_current_task()
-
         if self.done.is_set():
-            raise Exception(f'[{task}] cannot add ENR, Queue has already finished')
+            raise Exception(f'cannot add ENR, Queue has already finished')
 
         while True:
             try:
@@ -269,12 +254,12 @@ class ENRQueue:
             if len(self.lot) + 1 >= self.concurrency_count:
                 # Every coro is waiting in new data. That means we're done!
                 self.done.set()
-                self.logger.debug(f'[{task}] exiting because everyone is waiting.')
+                self.logger.debug(f'exiting because everyone is waiting.')
                 raise StopAsyncIteration
 
             # wait for more data to come in.
             await self.lot.park()
 
             if self.done.is_set():
-                self.logger.debug(f'[{task}] exiting because someone else decided it was time')
+                self.logger.debug(f'exiting because someone else decided it was time')
                 raise StopAsyncIteration
