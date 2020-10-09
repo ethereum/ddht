@@ -52,117 +52,69 @@ class Crawler(BaseApplication):
         super().__init__(boot_info)
         self.concurrency = concurrency
 
-    async def run(self) -> None:
-        logger.info("Crawling!")
-        await do_crawl(self._boot_info)
+        self.enr_db = ENRDB(dict(), default_identity_scheme_registry)
 
+        self.sock = trio.socket.socket(
+            family=trio.socket.AF_INET, type=trio.socket.SOCK_DGRAM
+        )
 
-async def do_crawl(boot_info: BootInfo) -> None:
+        self.private_key = get_local_private_key(boot_info)
 
-    # TODO: use these...
-    boot_info.port: int
-    boot_info.bootnodes: Tuple[ENRAPI]
-    boot_info.private_key: Optional[keys.PrivateKey]
-    boot_info.listen_on
+        self.enr_manager = ENRManager(private_key=self.private_key, enr_db=self.enr_db)
+        self.enr_manager.update((b"udp", boot_info.port))
 
-    # TODO: support UPNP?
+        # Setup all the services
 
-    sock = trio.socket.socket(
-        family=trio.socket.AF_INET, type=trio.socket.SOCK_DGRAM
-    )
+        outbound_datagram_channels = trio.open_memory_channel[OutboundDatagram](0)
+        inbound_datagram_channels = trio.open_memory_channel[InboundDatagram](0)
+        outbound_packet_channels = trio.open_memory_channel[OutboundPacket](0)
+        inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
+        outbound_message_channels = trio.open_memory_channel[AnyOutboundMessage](0)
+        inbound_message_channels = trio.open_memory_channel[AnyInboundMessage](0)
 
-    enr_db = ENRDB(dict(), default_identity_scheme_registry)
+        datagram_sender = DatagramSender(  # type: ignore
+            outbound_datagram_channels[1], self.sock
+        )
+        datagram_receiver = DatagramReceiver(  # type: ignore
+            self.sock, inbound_datagram_channels[0]
+        )
 
-    local_private_key = get_local_private_key(boot_info)
+        packet_encoder = PacketEncoder(  # type: ignore
+            outbound_packet_channels[1], outbound_datagram_channels[0]
+        )
+        packet_decoder = PacketDecoder(  # type: ignore
+            inbound_datagram_channels[1], inbound_packet_channels[0]
+        )
 
-    enr_manager = ENRManager(private_key=local_private_key, enr_db=enr_db)
-    enr_manager.update((b"udp", boot_info.port))
+        self.packer = Packer(
+            local_private_key=self.private_key.to_bytes(),
+            local_node_id=self.enr_manager.enr.node_id,
+            enr_db=self.enr_db,
+            message_type_registry=v5_registry,
+            inbound_packet_receive_channel=inbound_packet_channels[1],
+            inbound_message_send_channel=inbound_message_channels[0],
+            outbound_message_receive_channel=outbound_message_channels[1],
+            outbound_packet_send_channel=outbound_packet_channels[0],
+        )
 
-    outbound_datagram_channels = trio.open_memory_channel[OutboundDatagram](0)
-    inbound_datagram_channels = trio.open_memory_channel[InboundDatagram](0)
-    outbound_packet_channels = trio.open_memory_channel[OutboundPacket](0)
-    inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
-    outbound_message_channels = trio.open_memory_channel[AnyOutboundMessage](0)
-    inbound_message_channels = trio.open_memory_channel[AnyInboundMessage](0)
+        self.message_dispatcher = MessageDispatcher(
+            enr_db=self.enr_db,
+            inbound_message_receive_channel=inbound_message_channels[1],
+            outbound_message_send_channel=outbound_message_channels[0],
+        )
 
-    datagram_sender = DatagramSender(  # type: ignore
-        outbound_datagram_channels[1], sock
-    )
-    datagram_receiver = DatagramReceiver(  # type: ignore
-        sock, inbound_datagram_channels[0]
-    )
+        self.services = (
+            packet_encoder, datagram_sender,
+            datagram_receiver, packet_decoder,
+            self.packer,
+            self.message_dispatcher,
+        )
 
-    packet_encoder = PacketEncoder(  # type: ignore
-        outbound_packet_channels[1], outbound_datagram_channels[0]
-    )
-    packet_decoder = PacketDecoder(  # type: ignore
-        inbound_datagram_channels[1], inbound_packet_channels[0]
-    )
+        self.enrqueue = ENRQueue(self.concurrency)
+        self.seen_nodeids = set()
+        self.bad_enr_count = 0
 
-    packer = Packer(
-        local_private_key=local_private_key.to_bytes(),
-        local_node_id=enr_manager.enr.node_id,
-        enr_db=enr_db,
-        message_type_registry=v5_registry,
-        inbound_packet_receive_channel=inbound_packet_channels[1],
-        inbound_message_send_channel=inbound_message_channels[0],
-        outbound_message_receive_channel=outbound_message_channels[1],
-        outbound_packet_send_channel=outbound_packet_channels[0],
-    )
-
-    message_dispatcher = MessageDispatcher(
-        enr_db=enr_db,
-        inbound_message_receive_channel=inbound_message_channels[1],
-        outbound_message_send_channel=outbound_message_channels[0],
-    )
-
-    services = (
-        packet_encoder, datagram_sender,
-        datagram_receiver, packet_decoder,
-        packer,
-        message_dispatcher,
-    )
-
-    CONCURRENCY = 32
-    queue = ENRQueue(CONCURRENCY)
-
-    # 1. Queue up some ENRs to be crawled
-
-    seen_nodeids = set()
-
-    async def queue_enr_to_be_visited(enr):
-        task = get_current_task()
-
-        if enr.node_id in seen_nodeids:
-            return
-
-        if IP_V4_ADDRESS_ENR_KEY not in enr:
-            logger.info(f"[{task}] Dropping ENR without IP address enr={enr} kv={enr.items()}")
-            return
-
-        seen_nodeids.add(enr.node_id)
-
-        try:
-            enr_db.set_enr(enr)
-        except OldSequenceNumber:
-            logger.info(f"[{task}] Dropping old ENR. enr={enr} kv={enr.items()}")
-            return
-
-        logger.info(f"[{task}] Found ENR. count={len(seen_nodeids)} enr={enr} kv={enr.items()}")
-
-        await queue.send(enr)
-
-    to_enr = lambda bootnode: ENR.from_repr(bootnode, default_identity_scheme_registry)
-    bootnodes = [to_enr(bootnode) for bootnode in DEFAULT_BOOTNODES[2:3]]
-
-    for bootnode in bootnodes:
-        await queue_enr_to_be_visited(bootnode)
-
-    bad_enr_count = 0
-
-    async def visit_enr(remote_enr):
-        nonlocal bad_enr_count
-
+    async def visit_enr(self, remote_enr):
         task = get_current_task()
 
         logger.info(f"[{task}] sending FindNode(256). nodeid={encode_hex(remote_enr.node_id)}")
@@ -170,11 +122,18 @@ async def do_crawl(boot_info: BootInfo) -> None:
             with trio.fail_after(2):
                 find_node = FindNodeMessage(request_id=0, distance=256)
 
-                responses = await message_dispatcher.request_nodes(
+                responses = await self.message_dispatcher.request_nodes(
                     remote_enr.node_id, find_node
                 )
 
-                logger.info(f"[{task}] successful handshake and response from peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
+                assert len(responses) > 0
+
+                total_enrs = responses[0].message.total
+                logger.info(
+                    f"[{task}] successful handshake and response from peer. "
+                    f"enrs={total_enrs} nodeid={encode_hex(remote_enr.node_id)} "
+                    f"enr={remote_enr}"
+                )
 
                 for resp in responses:
                     enr_count = resp.message.total
@@ -182,45 +141,83 @@ async def do_crawl(boot_info: BootInfo) -> None:
                     logger.info(f"[{task}] Received response. enr_count={enr_count}")
 
                     for enr in received_enrs:
-                        await queue_enr_to_be_visited(enr)
+                        await self.schedule_enr_to_be_visited(enr)
 
                 # we only send one packet per peer, so do some cleanup now or else we'll
                 # leak memory.
-                await packer.managed_peer_packers[remote_enr.node_id].manager.stop()
+                await self.packer.managed_peer_packers[remote_enr.node_id].manager.stop()
 
         except trio.TooSlowError:
             logger.error(f"[{task}] no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
-            bad_enr_count += 1
+            self.bad_enr_count += 1
         except UnexpectedMessage as error:
             # TODO: Nodes sometimes send us Nodes messages with an unexpectedly large
             # number of peers. 12 or 15 of them. We should probably accept these messages!
             logger.exception("[{task}] Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
-            bad_enr_count += 1
+            self.bad_enr_count += 1
 
-    async def visitor(manager):
+    async def read_from_queue_until_done(self):
         task = get_current_task()
-        async for enr in queue:
-            await visit_enr(enr)
-        await manager.stop()
+        async for enr in self.enrqueue:
+            await self.visit_enr(enr)
+        await self.manager.stop()
 
-    class CrawlService(Service):
-        async def run(self) -> None:
-            for service in services:
+    async def schedule_enr_to_be_visited(self, enr):
+        task = get_current_task()
+
+        if enr.node_id in self.seen_nodeids:
+            return
+
+        if IP_V4_ADDRESS_ENR_KEY not in enr:
+            logger.info(f"[{task}] Dropping ENR without IP address enr={enr} kv={enr.items()}")
+            return
+
+        self.seen_nodeids.add(enr.node_id)
+
+        try:
+            self.enr_db.set_enr(enr)
+        except OldSequenceNumber:
+            logger.info(f"[{task}] Dropping old ENR. enr={enr} kv={enr.items()}")
+            return
+
+        logger.info(f"[{task}] Found ENR. count={len(self.seen_nodeids)} enr={enr} kv={enr.items()}")
+
+        await self.enrqueue.send(enr)
+
+    async def run(self) -> None:
+        logger.info("Crawling!")
+
+        boot_info = self._boot_info
+
+        # TODO: use these...
+        boot_info.port: int
+        boot_info.bootnodes: Tuple[ENRAPI]
+        boot_info.private_key: Optional[keys.PrivateKey]
+        boot_info.listen_on
+
+        # TODO: support UPNP?
+
+        # 1. Queue up some ENRs to be crawled
+
+        to_enr = lambda bootnode: ENR.from_repr(bootnode, default_identity_scheme_registry)
+        bootnodes = [to_enr(bootnode) for bootnode in DEFAULT_BOOTNODES[2:3]]
+
+        for bootnode in bootnodes:
+            await self.schedule_enr_to_be_visited(bootnode)
+
+        listen_on = boot_info.listen_on or DEFAULT_LISTEN
+        logger.info(f"About to listen. bind={listen_on}:{boot_info.port}")
+        await self.sock.bind(("0.0.0.0", boot_info.port))
+
+        with self.sock:
+            for service in self.services:
                 self.manager.run_daemon_child_service(service)
-            for _ in range(CONCURRENCY):
-                self.manager.run_daemon_task(visitor, self.manager)
+            for _ in range(self.concurrency):
+                self.manager.run_daemon_task(self.read_from_queue_until_done)
             await self.manager.wait_finished()
 
-    listen_on = boot_info.listen_on or DEFAULT_LISTEN
-    logger.info(f"About to listen. bind={listen_on}:{boot_info.port}")
-    await sock.bind(("0.0.0.0", boot_info.port))
-
-    with sock:
-        async with background_trio_service(CrawlService()) as manager:
-            await manager.wait_finished()
-
-    successes = len(seen_nodeids) - bad_enr_count
-    logger.info(f"Finished crawling. found_enrs={len(seen_nodeids)} bad_enrs={bad_enr_count} successful_connects={successes}")
+        successes = len(self.seen_nodeids) - self.bad_enr_count
+        logger.info(f"Finished crawling. found_enrs={len(self.seen_nodeids)} bad_enrs={self.bad_enr_count} successful_connects={successes}")
 
 
 class ENRQueue:
