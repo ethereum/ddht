@@ -54,7 +54,7 @@ async def DatagramReceiver(
                 return
 
 
-async def send_datagram(sock, datagram, endpoint):
+async def send_datagram(sock: SocketType, datagram: bytes, endpoint: Endpoint) -> None:
     logger = logging.getLogger("ddht.DatagramSender")
     logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
     await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))

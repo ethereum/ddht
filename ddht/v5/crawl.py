@@ -1,5 +1,4 @@
 import contextlib
-import contextvars
 import logging
 import math
 import random
@@ -10,6 +9,7 @@ from async_service import Service, background_trio_service
 from async_service.exceptions import DaemonTaskExit
 from eth_enr import (
     ENR,
+    ENRAPI,
     ENRDB,
     ENRManager,
     UnsignedENR,
@@ -45,14 +45,13 @@ from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.messages import FindNodeMessage, PingMessage, v5_registry
 from ddht.v5.packer import Packer
 
+from typing import Iterator, Set
+
 logger = logging.getLogger("crawler")
 
 
-current_task = contextvars.ContextVar("current_task")
-
-
 class Crawler(BaseApplication):
-    def __init__(self, concurrency, boot_info):
+    def __init__(self, concurrency: int, boot_info: BootInfo) -> None:
         super().__init__(boot_info)
         self.concurrency = concurrency
 
@@ -118,12 +117,12 @@ class Crawler(BaseApplication):
 
         self.active_tasks = ActiveTaskCounter()
 
-        self.seen_nodeids = set()
+        self.seen_nodeids: Set[bytes] = set()
         self.bad_enr_count = 0
 
-        self.enrqueue_send, self.enrqueue_recv = trio.open_memory_channel[ENR](2048)
+        self.enrqueue_send, self.enrqueue_recv = trio.open_memory_channel[ENRAPI](2048)
 
-    async def visit_enr(self, remote_enr):
+    async def visit_enr(self, remote_enr: ENRAPI) -> None:
         logger.debug(f"sending FindNode(256). nodeid={encode_hex(remote_enr.node_id)}")
         try:
             with trio.fail_after(2):
@@ -169,7 +168,7 @@ class Crawler(BaseApplication):
             )
             self.bad_enr_count += 1
 
-    async def read_from_queue_until_done(self):
+    async def read_from_queue_until_done(self) -> None:
         """
         This block only works because we're doing everything inside a single thread.
         """
@@ -202,7 +201,7 @@ class Crawler(BaseApplication):
             with self.active_tasks.enter():
                 await self.visit_enr(enr)
 
-    async def schedule_enr_to_be_visited(self, enr):
+    async def schedule_enr_to_be_visited(self, enr: ENRAPI) -> None:
         if enr.node_id in self.seen_nodeids:
             # In order to be nicer on the network only send a single packet to each
             # remote node.
@@ -260,16 +259,16 @@ class Crawler(BaseApplication):
 
 
 class ActiveTaskCounter:
-    def __init__(self):
-        self.active_tasks = 0
+    def __init__(self) -> None:
+        self.active_tasks: int = 0
 
     @contextlib.contextmanager
-    def enter(self):
+    def enter(self) -> Iterator[None]:
         try:
             self.active_tasks += 1
             yield
         finally:
             self.active_tasks -= 1
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.active_tasks
