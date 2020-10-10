@@ -4,6 +4,7 @@ import math
 import random
 import secrets
 from socket import inet_aton
+from typing import Iterator, Set
 
 from async_service import Service, background_trio_service
 from async_service.exceptions import DaemonTaskExit
@@ -44,8 +45,6 @@ from ddht.v5.channel_services import (
 from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.messages import FindNodeMessage, PingMessage, v5_registry
 from ddht.v5.packer import Packer
-
-from typing import Iterator, Set
 
 logger = logging.getLogger("crawler")
 
