@@ -154,9 +154,7 @@ class Crawler(BaseApplication):
 
                 # we only send one packet per peer, so do some cleanup now or else we'll
                 # leak memory.
-                await self.packer.managed_peer_packers[
-                    remote_enr.node_id
-                ].manager.stop()
+                self.packer.managed_peer_packers[remote_enr.node_id].manager.cancel()
 
         except trio.TooSlowError:
             logger.debug(
@@ -206,6 +204,8 @@ class Crawler(BaseApplication):
 
     async def schedule_enr_to_be_visited(self, enr):
         if enr.node_id in self.seen_nodeids:
+            # In order to be nicer on the network only send a single packet to each
+            # remote node.
             return
 
         if IP_V4_ADDRESS_ENR_KEY not in enr:
