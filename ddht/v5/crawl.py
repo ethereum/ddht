@@ -241,7 +241,7 @@ class Crawler(BaseApplication):
 
         listen_on = boot_info.listen_on or DEFAULT_LISTEN
         logger.info(f"About to listen. bind={listen_on}:{boot_info.port}")
-        await self.sock.bind(("0.0.0.0", boot_info.port))
+        await self.sock.bind((str(listen_on), boot_info.port))
 
         with self.sock:
             for service in self.services:
