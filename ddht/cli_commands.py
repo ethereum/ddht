@@ -1,7 +1,7 @@
 import logging
 import os
 
-from async_service import ServiceAPI, background_trio_service, as_service, Service
+from async_service import Service, ServiceAPI, as_service, background_trio_service
 import trio
 
 from ddht.boot_info import BootInfo
@@ -9,7 +9,6 @@ from ddht.constants import ProtocolVersion
 from ddht.v5.app import Application as ApplicationV5
 from ddht.v5.crawl import Crawler
 from ddht.v5_1.app import Application as ApplicationV5_1
-
 
 logger = logging.getLogger("ddht")
 
@@ -26,6 +25,7 @@ async def do_main(boot_info: BootInfo) -> None:
     logger.info("Started main process (pid=%d)", os.getpid())
     async with background_trio_service(app) as manager:
         await manager.wait_finished()
+
 
 async def do_crawl(boot_info: BootInfo) -> None:
 

@@ -1,41 +1,54 @@
+import contextlib
+import contextvars
 import logging
 import math
-from socket import inet_aton
+import random
 import secrets
-import trio
+from socket import inet_aton
+
 from async_service import Service, background_trio_service
-
-from ddht.app import BaseApplication
-
-from ddht.v5.app import get_local_private_key
-from eth_enr import ENRDB, default_identity_scheme_registry, ENRManager, ENR, UnsignedENR
-from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
-from ddht.constants import DEFAULT_LISTEN
-from ddht.datagram import send_datagram, InboundDatagram, DatagramReceiver, OutboundDatagram, DatagramSender
-from ddht.v5.channel_services import InboundPacket, PacketDecoder, OutboundPacket, PacketEncoder
-from ddht.v5.messages import PingMessage, v5_registry, FindNodeMessage
-from ddht.v5.message_dispatcher import MessageDispatcher
-from ddht.v5.packer import Packer
-from ddht.endpoint import Endpoint
-
+from async_service.exceptions import DaemonTaskExit
+from eth_enr import (
+    ENR,
+    ENRDB,
+    ENRManager,
+    UnsignedENR,
+    default_identity_scheme_registry,
+)
+from eth_enr.exceptions import OldSequenceNumber
 from eth_keys import keys
 from eth_utils import decode_hex, encode_hex
-from eth_enr.exceptions import OldSequenceNumber
+import trio
 from trio.lowlevel import ParkingLot
-from ddht.exceptions import UnexpectedMessage
-from ddht.constants import IP_V4_ADDRESS_ENR_KEY
-from async_service.exceptions import DaemonTaskExit
 
+from ddht.app import BaseApplication
+from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.boot_info import BootInfo
-
-import contextvars
-import random
-
+from ddht.constants import DEFAULT_LISTEN, IP_V4_ADDRESS_ENR_KEY
+from ddht.datagram import (
+    DatagramReceiver,
+    DatagramSender,
+    InboundDatagram,
+    OutboundDatagram,
+    send_datagram,
+)
+from ddht.endpoint import Endpoint
+from ddht.exceptions import UnexpectedMessage
+from ddht.v5.app import get_local_private_key
+from ddht.v5.channel_services import (
+    InboundPacket,
+    OutboundPacket,
+    PacketDecoder,
+    PacketEncoder,
+)
+from ddht.v5.message_dispatcher import MessageDispatcher
+from ddht.v5.messages import FindNodeMessage, PingMessage, v5_registry
+from ddht.v5.packer import Packer
 
 logger = logging.getLogger("crawler")
 
 
-current_task = contextvars.ContextVar('current_task')
+current_task = contextvars.ContextVar("current_task")
 
 
 class Crawler(BaseApplication):
@@ -95,15 +108,20 @@ class Crawler(BaseApplication):
         )
 
         self.services = (
-            packet_encoder, datagram_sender,
-            datagram_receiver, packet_decoder,
+            packet_encoder,
+            datagram_sender,
+            datagram_receiver,
+            packet_decoder,
             self.packer,
             self.message_dispatcher,
         )
 
-        self.enrqueue = ENRQueue(self.concurrency)
+        self.active_tasks = ActiveTaskCounter()
+
         self.seen_nodeids = set()
         self.bad_enr_count = 0
+
+        self.enrqueue_send, self.enrqueue_recv = trio.open_memory_channel[ENR](2048)
 
     async def visit_enr(self, remote_enr):
         logger.debug(f"sending FindNode(256). nodeid={encode_hex(remote_enr.node_id)}")
@@ -127,28 +145,64 @@ class Crawler(BaseApplication):
                 for resp in responses:
                     enr_count = resp.message.total
                     received_enrs = resp.message.enrs
-                    logger.debug(f"Received response. nodeid={encode_hex(remote_enr.node_id)} enr_count={enr_count}")
+                    logger.debug(
+                        f"Received response. nodeid={encode_hex(remote_enr.node_id)} enr_count={enr_count}"
+                    )
 
                     for enr in received_enrs:
                         await self.schedule_enr_to_be_visited(enr)
 
                 # we only send one packet per peer, so do some cleanup now or else we'll
                 # leak memory.
-                await self.packer.managed_peer_packers[remote_enr.node_id].manager.stop()
+                await self.packer.managed_peer_packers[
+                    remote_enr.node_id
+                ].manager.stop()
 
         except trio.TooSlowError:
-            logger.debug(f"no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
+            logger.debug(
+                f"no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
+            )
             self.bad_enr_count += 1
         except UnexpectedMessage as error:
             # TODO: Nodes sometimes send us Nodes messages with an unexpectedly large
             # number of peers. 12 or 15 of them. We should probably accept these messages!
-            logger.exception("Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}")
+            logger.exception(
+                "Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
+            )
             self.bad_enr_count += 1
 
     async def read_from_queue_until_done(self):
-        async for enr in self.enrqueue:
-            await self.visit_enr(enr)
-        await self.manager.stop()
+        """
+        This block only works because we're doing everything inside a single thread.
+        """
+
+        while True:
+
+            # CAUTION: Do not insert any code here. There must not be any checkpoints
+            #          between leaving active_tasks (in the previous loop iteration) and
+            #          trying to read from the queue.
+
+            try:
+                enr = self.enrqueue_recv.receive_nowait()
+            except trio.WouldBlock:
+                if len(self.active_tasks) > 0:
+                    # some tasks are still active so it's too soon to quit. Instead, block
+                    # until new work comes in. If we've truly run out of work then this
+                    # will block forever but that's okay, another task will notice and
+                    # cause our cancellation.
+                    enr = await self.enrqueue_recv.receive()
+                else:
+                    # nobody else is performing any work and there's also no work left to
+                    # be done. It's time to quit! Calling this causes all other tasks to
+                    # be canceled.
+                    await self.manager.stop()
+                    return
+
+            # CAUTION: Do not insert any code here. There must not be any checkpoints
+            #          between popping from the queue and entering active_tasks.
+
+            with self.active_tasks.enter():
+                await self.visit_enr(enr)
 
     async def schedule_enr_to_be_visited(self, enr):
         if enr.node_id in self.seen_nodeids:
@@ -166,9 +220,11 @@ class Crawler(BaseApplication):
             logger.info(f"Dropping old ENR. enr={enr} kv={enr.items()}")
             return
 
-        logger.info(f"Found ENR. count={len(self.seen_nodeids)} enr={enr} kv={enr.items()}")
+        logger.info(
+            f"Found ENR. count={len(self.seen_nodeids)} enr={enr} kv={enr.items()}"
+        )
 
-        await self.enrqueue.send(enr)
+        await self.enrqueue_send.send(enr)
 
     async def run(self) -> None:
         logger.info("Crawling!")
@@ -176,7 +232,9 @@ class Crawler(BaseApplication):
         boot_info = self._boot_info
 
         if boot_info.is_upnp_enabled:
-            logger.info("UPNP will not be used; crawling does not require listening for incoming connections.")
+            logger.info(
+                "UPNP will not be used; crawling does not require listening for incoming connections."
+            )
 
         for bootnode in boot_info.bootnodes:
             await self.schedule_enr_to_be_visited(bootnode)
@@ -190,65 +248,28 @@ class Crawler(BaseApplication):
                 self.manager.run_daemon_child_service(service)
             for _ in range(self.concurrency):
                 self.manager.run_daemon_task(self.read_from_queue_until_done)
+
+            # When it is time to quit one of the `read_from_queue_until_done` tasks will
+            # notice and trigger a clean shutdown.
             await self.manager.wait_finished()
 
         successes = len(self.seen_nodeids) - self.bad_enr_count
-        logger.info(f"Finished crawling. found_enrs={len(self.seen_nodeids)} bad_enrs={self.bad_enr_count} successful_connects={successes}")
+        logger.info(
+            f"Finished crawling. found_enrs={len(self.seen_nodeids)} bad_enrs={self.bad_enr_count} successful_connects={successes}"
+        )
 
 
-class ENRQueue:
-    """
-    The script should quit when there is nothing left to crawl.
+class ActiveTaskCounter:
+    def __init__(self):
+        self.active_tasks = 0
 
-    However, it can't quit when the ENR queue is empty, because the ENR queue might
-    be temporarily empty while some packets are still in-flight.
+    @contextlib.contextmanager
+    def enter(self):
+        try:
+            self.active_tasks += 1
+            yield
+        finally:
+            self.active_tasks -= 1
 
-    It is time to quit when every coro is waiting on a new ENR from the queue. Not only is
-    the queue empty, but there is no work in progress.
-
-    Note that this class takes no responsibility for shutting down some corors if one
-    of them crashes. If a coro crashes then this class will cause the others to hang
-    forever, so you probably want to put them into some kind of nursury which handles
-    cancellation.
-    """
-    logger = logging.getLogger("enrqueue")
-
-    def __init__(self, concurrency_count):
-        self.lot = ParkingLot()
-        self.concurrency_count = concurrency_count
-        self.done = trio.Event()
-
-        self._send, self._recv = trio.open_memory_channel[ENR](math.inf)
-
-    async def send(self, enr: ENR):
-        if self.done.is_set():
-            raise Exception('cannot add ENR, Queue has already finished')
-
-        await self._send.send(enr)
-        self.lot.unpark_all()
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        if self.done.is_set():
-            raise Exception(f'cannot add ENR, Queue has already finished')
-
-        while True:
-            try:
-                return self._recv.receive_nowait()
-            except trio.WouldBlock:
-                pass
-
-            if len(self.lot) + 1 >= self.concurrency_count:
-                # Every coro is waiting in new data. That means we're done!
-                self.done.set()
-                self.logger.debug(f'exiting because everyone is waiting.')
-                raise StopAsyncIteration
-
-            # wait for more data to come in.
-            await self.lot.park()
-
-            if self.done.is_set():
-                self.logger.debug(f'exiting because someone else decided it was time')
-                raise StopAsyncIteration
+    def __len__(self):
+        return self.active_tasks

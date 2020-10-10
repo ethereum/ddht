@@ -138,7 +138,7 @@ jsonrpc_parser.add_argument(
 # Crawl Subcommand
 #
 crawl_parser = subparser.add_parser(
-    'crawl',
-    help='Attempts to bond with as many nodes as possible and dumps all found ENRs',
+    "crawl",
+    help="Attempts to bond with as many nodes as possible and dumps all found ENRs",
 )
 crawl_parser.set_defaults(func=do_crawl)
