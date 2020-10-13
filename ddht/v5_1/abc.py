@@ -465,7 +465,7 @@ class NetworkAPI(ServiceAPI):
 
     @abstractmethod
     async def get_enr(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+        self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
         ...
 

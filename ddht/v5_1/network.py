@@ -84,27 +84,13 @@ class Network(Service, NetworkAPI):
             return False
 
         try:
-            enr = self.enr_db.get_enr(node_id)
-        except KeyError:
-            try:
-                enr = await self.get_enr(node_id, endpoint=endpoint)
-            except trio.EndOfChannel:
-                self.logger.debug(
-                    "Bonding with %s timed out during ENR retrieval",
-                    humanize_node_id(node_id),
-                )
-                return False
-        else:
-            if pong.enr_seq > enr.sequence_number:
-                try:
-                    enr = await self.get_enr(node_id, endpoint=endpoint)
-                except trio.EndOfChannel:
-                    self.logger.debug(
-                        "Bonding with %s timed out during ENR retrieval",
-                        humanize_node_id(node_id),
-                    )
-                else:
-                    self.enr_db.set_enr(enr)
+            enr = await self.get_enr(node_id, enr_seq=pong.enr_seq, endpoint=endpoint)
+        except trio.EndOfChannel:
+            self.logger.debug(
+                "Bonding with %s timed out during ENR retrieval",
+                humanize_node_id(node_id),
+            )
+            return False
 
         self.routing_table.update(enr.node_id)
 
@@ -147,7 +133,22 @@ class Network(Service, NetworkAPI):
         return response.message.payload
 
     async def get_enr(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+        self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
+    ) -> ENRAPI:
+        try:
+            enr = self.enr_db.get_enr(node_id)
+        except KeyError:
+            enr = await self._fetch_enr(node_id, endpoint=endpoint)
+            self.enr_db.set_enr(enr)
+        else:
+            if enr_seq > enr.sequence_number:
+                enr = await self._fetch_enr(node_id, endpoint=endpoint)
+                self.enr_db.set_enr(enr)
+
+        return enr
+
+    async def _fetch_enr(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint]
     ) -> ENRAPI:
         enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
         if not enrs:
@@ -342,6 +343,13 @@ class Network(Service, NetworkAPI):
                         )
                     )
                 )
+                enr = await self.get_enr(
+                    request.sender_node_id,
+                    enr_seq=request.message.enr_seq,
+                    endpoint=request.sender_endpoint,
+                )
+                self.routing_table.update(enr.node_id)
+                self._routing_table_ready.set()
 
     async def _serve_find_nodes(self) -> None:
         async with self.dispatcher.subscribe(FindNodeMessage) as subscription:
