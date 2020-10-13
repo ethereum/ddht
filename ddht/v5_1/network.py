@@ -2,7 +2,7 @@ import itertools
 import logging
 import operator
 import secrets
-from typing import Collection, Iterable, List, Optional, Set, Tuple
+from typing import Collection, Dict, Iterable, List, Optional, Set, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
@@ -16,21 +16,35 @@ import trio
 from ddht._utils import every, humanize_node_id
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
+from ddht.exceptions import DuplicateProtocol
 from ddht.kademlia import (
     KademliaRoutingTable,
     compute_distance,
     compute_log_distance,
     iter_closest_nodes,
 )
-from ddht.v5_1.abc import ClientAPI, DispatcherAPI, EventsAPI, NetworkAPI, PoolAPI
+from ddht.v5_1.abc import (
+    ClientAPI,
+    DispatcherAPI,
+    EventsAPI,
+    NetworkAPI,
+    PoolAPI,
+    TalkProtocolAPI,
+)
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
-from ddht.v5_1.messages import FindNodeMessage, PingMessage, PongMessage
+from ddht.v5_1.messages import (
+    FindNodeMessage,
+    PingMessage,
+    PongMessage,
+    TalkRequestMessage,
+)
 
 
 class Network(Service, NetworkAPI):
     logger = logging.getLogger("ddht.Network")
 
     _bootnodes: Tuple[ENRAPI, ...]
+    _talk_protocols: Dict[bytes, TalkProtocolAPI]
 
     def __init__(self, client: ClientAPI, bootnodes: Collection[ENRAPI],) -> None:
         self.client = client
@@ -41,6 +55,8 @@ class Network(Service, NetworkAPI):
         )
         self._routing_table_ready = trio.Event()
         self._last_pong_at = LRU(2048)
+
+        self._talk_protocols = {}
 
     #
     # Proxied ClientAPI properties
@@ -68,6 +84,16 @@ class Network(Service, NetworkAPI):
     @property
     def enr_db(self) -> ENRDatabaseAPI:
         return self.client.enr_db
+
+    #
+    # TALK API
+    #
+    def add_talk_protocol(self, protocol: TalkProtocolAPI) -> None:
+        if protocol.protocol_id in self._talk_protocols:
+            raise DuplicateProtocol(
+                f"A protocol is already registered for '{protocol.protocol_id!r}'"
+            )
+        self._talk_protocols[protocol.protocol_id] = protocol
 
     #
     # High Level API
@@ -101,7 +127,7 @@ class Network(Service, NetworkAPI):
         await self.bond(node_id, endpoint=endpoint)
 
     async def ping(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> PongMessage:
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
@@ -116,7 +142,9 @@ class Network(Service, NetworkAPI):
 
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
-        responses = await self.client.find_nodes(endpoint, node_id, distances=distances)
+        responses = await self.client.find_nodes(
+            endpoint, node_id, distances=distances,
+        )
         return tuple(enr for response in responses for enr in response.message.enrs)
 
     async def talk(
@@ -237,6 +265,7 @@ class Network(Service, NetworkAPI):
         self.manager.run_daemon_task(self._manage_routing_table)
         self.manager.run_daemon_task(self._pong_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
+        self.manager.run_daemon_task(self._handle_unhandled_talk_requests)
 
         await self.manager.wait_finished()
 
@@ -399,6 +428,17 @@ class Network(Service, NetworkAPI):
                     enrs=response_enrs,
                     request_id=request.request_id,
                 )
+
+    async def _handle_unhandled_talk_requests(self) -> None:
+        async with self.dispatcher.subscribe(TalkRequestMessage) as subscription:
+            async for request in subscription:
+                if request.message.protocol not in self._talk_protocols:
+                    await self.client.send_talk_response(
+                        request.sender_endpoint,
+                        request.sender_node_id,
+                        payload=b"",
+                        request_id=request.message.request_id,
+                    )
 
     #
     # Utility
