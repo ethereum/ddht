@@ -17,7 +17,7 @@ async def test_network_responds_to_pings(alice, bob):
     async with alice.network() as alice_network:
         async with bob.network():
             with trio.fail_after(2):
-                response = await alice_network.client.ping(bob.endpoint, bob.node_id,)
+                response = await alice_network.client.ping(bob.node_id, bob.endpoint)
 
     assert response.message.enr_seq == bob.enr.sequence_number
     assert response.message.packet_ip == alice.endpoint.ip_address
@@ -42,7 +42,7 @@ async def test_network_responds_to_find_node_requests(alice, bob):
 
             with trio.fail_after(2):
                 responses = await alice_network.client.find_nodes(
-                    bob.endpoint, bob.node_id, distances=(0, 255, 256),
+                    bob.node_id, bob.endpoint, distances=(0, 255, 256),
                 )
 
     assert all(
@@ -154,8 +154,8 @@ async def test_network_talk_api(alice, bob):
         async with network.dispatcher.subscribe(TalkRequestMessage) as subscription:
             request = await subscription.receive()
             await network.client.send_talk_response(
-                request.sender_endpoint,
                 request.sender_node_id,
+                request.sender_endpoint,
                 payload=b"test-response-payload",
                 request_id=request.message.request_id,
             )
