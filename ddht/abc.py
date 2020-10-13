@@ -4,6 +4,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    ContextManager,
     Deque,
     Generic,
     Iterator,
@@ -281,6 +282,22 @@ class SubscriptionManagerAPI(ABC, Generic[TMessage]):
         endpoint: Optional[Endpoint] = None,
         node_id: Optional[NodeID] = None,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
+        ...
+
+
+class RequestTrackerAPI(ABC):
+    @abstractmethod
+    def get_free_request_id(self, node_id: NodeID) -> bytes:
+        ...
+
+    @abstractmethod
+    def reserve_request_id(
+        self, node_id: NodeID, request_id: Optional[bytes] = None
+    ) -> ContextManager[bytes]:
+        ...
+
+    @abstractmethod
+    def is_request_id_active(self, node_id: NodeID, request_id: bytes) -> bool:
         ...
 
 
