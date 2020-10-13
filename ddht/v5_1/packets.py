@@ -11,6 +11,7 @@ from eth_utils.toolz import take
 import rlp
 
 from ddht.base_message import BaseMessage
+from ddht.constants import UINT8_TO_BYTES
 from ddht.encryption import aesctr_decrypt_stream, aesctr_encrypt, aesgcm_encrypt
 from ddht.exceptions import DecodingError
 from ddht.typing import AES128Key, IDNonce, Nonce
@@ -22,8 +23,6 @@ from ddht.v5_1.constants import (
     PROTOCOL_ID,
     WHO_ARE_YOU_PACKET_SIZE,
 )
-
-UINT8_TO_BYTES = {v: bytes([v]) for v in range(256)}
 
 
 @dataclass(frozen=True)
