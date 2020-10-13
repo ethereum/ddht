@@ -24,7 +24,7 @@ from ddht.base_message import (
     AnyInboundMessage,
     AnyOutboundMessage,
     InboundMessage,
-    TMessage,
+    TBaseMessage,
 )
 from ddht.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from ddht.endpoint import Endpoint
@@ -87,7 +87,7 @@ class ChannelHandlerSubscription(ChannelHandlerSubscriptionAPI[ChannelContentTyp
             raise StopAsyncIteration
 
 
-InboundMessageSubscription = ChannelHandlerSubscription[InboundMessage[TMessage]]
+InboundMessageSubscription = ChannelHandlerSubscription[InboundMessage[TBaseMessage]]
 AnyInboundMessageSubscription = ChannelHandlerSubscription[AnyInboundMessage]
 
 
@@ -183,15 +183,15 @@ class MessageDispatcher(Service, MessageDispatcherAPI):
             )
 
     def add_request_handler(
-        self, message_class: Type[TMessage]
-    ) -> InboundMessageSubscription[TMessage]:
+        self, message_class: Type[TBaseMessage]
+    ) -> InboundMessageSubscription[TBaseMessage]:
         message_type = message_class.message_type
         if message_type in self.request_handler_send_channels:
             raise ValueError(
                 f"Request handler for {message_class.__name__} is already added"
             )
 
-        request_channels = trio.open_memory_channel[InboundMessage[TMessage]](0)
+        request_channels = trio.open_memory_channel[InboundMessage[TBaseMessage]](0)
         self.request_handler_send_channels[message_type] = request_channels[0]
 
         self.logger.debug("Adding request handler for %s", message_class.__name__)

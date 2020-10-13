@@ -116,7 +116,6 @@ class Client(Service, ClientAPI):
             self._inbound_message_receive_channel,
             self.pool,
             self.enr_db,
-            self._registry,
             self.events,
         )
         self.envelope_decoder = EnvelopeEncoder(

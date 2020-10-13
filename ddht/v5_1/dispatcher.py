@@ -1,13 +1,11 @@
-import collections
 from contextlib import contextmanager
 import functools
 import logging
 import secrets
 from typing import (
+    AsyncContextManager,
     AsyncIterator,
-    DefaultDict,
     Iterator,
-    NamedTuple,
     Optional,
     Set,
     Tuple,
@@ -28,10 +26,10 @@ from ddht.base_message import (
     AnyOutboundMessage,
     InboundMessage,
     OutboundMessage,
-    TMessage,
+    TBaseMessage,
 )
 from ddht.endpoint import Endpoint
-from ddht.message_registry import MessageTypeRegistry
+from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
 from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope
@@ -48,14 +46,7 @@ from ddht.v5_1.messages import (
     TalkResponseMessage,
     TicketMessage,
     TopicQueryMessage,
-    v51_registry,
 )
-
-
-class _Subcription(NamedTuple):
-    send_channel: trio.abc.SendChannel[AnyInboundMessage]
-    filter_by_endpoint: Optional[Endpoint]
-    filter_by_node_id: Optional[NodeID]
 
 
 def get_random_request_id() -> bytes:
@@ -66,8 +57,8 @@ MAX_REQUEST_ID_ATTEMPTS = 3
 
 
 def _get_event_for_outbound_message(
-    events: EventsAPI, message: OutboundMessage[TMessage],
-) -> EventAPI[OutboundMessage[TMessage]]:
+    events: EventsAPI, message: OutboundMessage[TBaseMessage],
+) -> EventAPI[OutboundMessage[TBaseMessage]]:
     message_type = type(message.message)
 
     if message_type is PingMessage:
@@ -95,8 +86,8 @@ def _get_event_for_outbound_message(
 
 
 def _get_event_for_inbound_message(
-    events: EventsAPI, message: InboundMessage[TMessage]
-) -> EventAPI[InboundMessage[TMessage]]:
+    events: EventsAPI, message: InboundMessage[TBaseMessage]
+) -> EventAPI[InboundMessage[TBaseMessage]]:
     message_type = type(message.message)
 
     if message_type is PingMessage:
@@ -126,8 +117,6 @@ def _get_event_for_inbound_message(
 class Dispatcher(Service, DispatcherAPI):
     logger = logging.getLogger("ddht.Dispatcher")
 
-    _subscriptions: DefaultDict[int, Set[_Subcription]]
-
     _reserved_request_ids: Set[Tuple[NodeID, bytes]]
     _active_request_ids: Set[Tuple[NodeID, bytes]]
 
@@ -137,11 +126,8 @@ class Dispatcher(Service, DispatcherAPI):
         inbound_message_receive_channel: trio.abc.ReceiveChannel[AnyInboundMessage],
         pool: PoolAPI,
         enr_db: ENRDatabaseAPI,
-        message_registry: MessageTypeRegistry = v51_registry,
         events: EventsAPI = None,
     ) -> None:
-        self._registry = message_registry
-
         self._pool = pool
         self._enr_db = enr_db
 
@@ -157,10 +143,18 @@ class Dispatcher(Service, DispatcherAPI):
             self._outbound_message_receive_channel,
         ) = trio.open_memory_channel[AnyOutboundMessage](256)
 
-        self._subscriptions = collections.defaultdict(set)
+        self.subscription_manager = SubscriptionManager()
 
         self._reserved_request_ids = set()
         self._active_request_ids = set()
+
+    def subscribe(
+        self,
+        message_type: Type[TBaseMessage],
+        endpoint: Optional[Endpoint] = None,
+        node_id: Optional[NodeID] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
+        return self.subscription_manager.subscribe(message_type, endpoint, node_id)
 
     async def run(self) -> None:
         self.manager.run_daemon_task(
@@ -213,8 +207,8 @@ class Dispatcher(Service, DispatcherAPI):
     ) -> None:
         @functools.lru_cache(16)
         def get_event(
-            message: OutboundMessage[TMessage],
-        ) -> EventAPI[OutboundMessage[TMessage]]:
+            message: OutboundMessage[TBaseMessage],
+        ) -> EventAPI[OutboundMessage[TBaseMessage]]:
             return _get_event_for_outbound_message(self._events, message)
 
         async with receive_channel:
@@ -243,8 +237,8 @@ class Dispatcher(Service, DispatcherAPI):
     ) -> None:
         @functools.lru_cache(16)
         def get_event(
-            message: InboundMessage[TMessage],
-        ) -> EventAPI[InboundMessage[TMessage]]:
+            message: InboundMessage[TBaseMessage],
+        ) -> EventAPI[InboundMessage[TBaseMessage]]:
             return _get_event_for_inbound_message(self._events, message)
 
         async with receive_channel:
@@ -254,31 +248,7 @@ class Dispatcher(Service, DispatcherAPI):
                 await event.trigger(message)
 
                 # feed subscriptions
-                message_id = self._registry.get_message_id(type(message.message))
-                subscriptions = tuple(self._subscriptions[message_id])
-                self.logger.debug(
-                    "Handling %d subscriptions for message: %s",
-                    len(subscriptions),
-                    message,
-                )
-                for subscription in subscriptions:
-                    if subscription.filter_by_endpoint is not None:
-                        if message.sender_endpoint != subscription.filter_by_endpoint:
-                            continue
-                    if subscription.filter_by_node_id is not None:
-                        if message.sender_node_id != subscription.filter_by_node_id:
-                            continue
-
-                    try:
-                        subscription.send_channel.send_nowait(message)  # type: ignore
-                    except trio.WouldBlock:
-                        self.logger.debug(
-                            "Discarding message for subscription %s due to full channel: %s",
-                            subscription,
-                            message,
-                        )
-                    except trio.BrokenResourceError:
-                        pass
+                self.subscription_manager.feed_subscriptions(message)
 
     #
     # Session Management
@@ -437,28 +407,11 @@ class Dispatcher(Service, DispatcherAPI):
     # Request Response
     #
     @asynccontextmanager
-    async def subscribe(
-        self,
-        message_type: Type[TMessage],
-        endpoint: Optional[Endpoint] = None,
-        node_id: Optional[NodeID] = None,
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
-        message_id = self._registry.get_message_id(message_type)
-        send_channel, receive_channel = trio.open_memory_channel[
-            InboundMessage[TMessage]
-        ](256)
-        subscription = _Subcription(send_channel, endpoint, node_id)
-        self._subscriptions[message_id].add(subscription)
-        try:
-            async with receive_channel:
-                yield receive_channel
-        finally:
-            self._subscriptions[message_id].remove(subscription)
-
-    @asynccontextmanager
     async def subscribe_request(
-        self, request: AnyOutboundMessage, response_message_type: Type[TMessage],
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:  # noqa: E501
+        self, request: AnyOutboundMessage, response_message_type: Type[TBaseMessage],
+    ) -> AsyncIterator[
+        trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]
+    ]:  # noqa: E501
         node_id = request.receiver_node_id
         request_id = request.message.request_id
 
@@ -466,7 +419,7 @@ class Dispatcher(Service, DispatcherAPI):
             "Sending request: %s with request id %s", request, request_id.hex(),
         )
 
-        send_channel, receive_channel = trio.open_memory_channel[TMessage](256)
+        send_channel, receive_channel = trio.open_memory_channel[TBaseMessage](256)
         key = (node_id, request_id)
         if key in self._active_request_ids:
             raise Exception("Invariant")
@@ -483,19 +436,18 @@ class Dispatcher(Service, DispatcherAPI):
                 async with receive_channel:
                     yield receive_channel
             finally:
-                self._active_request_ids.remove(key)
                 nursery.cancel_scope.cancel()
 
     async def _manage_request_response(
         self,
         request: AnyOutboundMessage,
-        response_message_type: Type[TMessage],
-        send_channel: trio.abc.SendChannel[InboundMessage[TMessage]],
+        response_message_type: Type[TBaseMessage],
+        send_channel: trio.abc.SendChannel[InboundMessage[TBaseMessage]],
     ) -> None:
         request_id = request.message.request_id
 
         with trio.move_on_after(REQUEST_RESPONSE_TIMEOUT) as scope:
-            subscription_ctx = self.subscribe(
+            subscription_ctx = self.subscription_manager.subscribe(
                 response_message_type,
                 request.receiver_endpoint,
                 request.receiver_node_id,
