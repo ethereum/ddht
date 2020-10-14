@@ -1,12 +1,21 @@
 from abc import abstractmethod
-from typing import Optional
+from typing import Any, AsyncContextManager, Optional, Type
 
+from async_service import ServiceAPI
+from eth_enr import ENRManagerAPI
 from eth_typing import NodeID
+import trio
 
-from ddht.abc import RequestTrackerAPI
+from ddht.abc import RequestTrackerAPI, SubscriptionManagerAPI
+from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
-from ddht.v5_1.alexandria.messages import PongMessage
+from ddht.v5_1.alexandria.messages import (
+    AlexandriaMessage,
+    PongMessage,
+    TAlexandriaMessage,
+)
+from ddht.v5_1.alexandria.payloads import PongPayload
 
 
 class AlexandriaClientAPI(TalkProtocolAPI):
@@ -40,4 +49,41 @@ class AlexandriaClientAPI(TalkProtocolAPI):
     async def ping(
         self, node_id: NodeID, endpoint: Optional[Endpoint] = None,
     ) -> PongMessage:
+        ...
+
+
+class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
+    subscription_manager: SubscriptionManagerAPI[AlexandriaMessage[Any]]
+
+    @property
+    @abstractmethod
+    def network(self) -> NetworkAPI:
+        ...
+
+    @property
+    @abstractmethod
+    def enr_manager(self) -> ENRManagerAPI:
+        ...
+
+    #
+    # Proxy API for subscriptions
+    #
+    @abstractmethod
+    def subscribe(
+        self,
+        message_type: Type[TAlexandriaMessage],
+        endpoint: Optional[Endpoint] = None,
+        node_id: Optional[NodeID] = None,
+    ) -> AsyncContextManager[
+        trio.abc.ReceiveChannel[InboundMessage[TAlexandriaMessage]]
+    ]:
+        ...
+
+    #
+    # High Level Request/Response
+    #
+    @abstractmethod
+    async def ping(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+    ) -> PongPayload:
         ...
