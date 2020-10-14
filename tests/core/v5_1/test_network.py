@@ -102,8 +102,7 @@ async def test_network_find_nodes_api(alice, bob):
 
 
 @pytest.fixture
-async def bob_client(alice, bob):
-    bob.enr_db.set_enr(alice.enr)
+async def bob_client(bob):
     async with bob.client() as bob_client:
         yield bob_client
 
@@ -115,47 +114,49 @@ async def alice_network(alice):
 
 
 @pytest.mark.trio
-async def test_network_lookup_empty_response(alice, alice_network, bob, bob_client):
+async def test_network_lookup_empty_response(bob, alice_network, alice, bob_client):
     async def return_empty_response():
         async with bob.events.find_nodes_received.subscribe() as subscription:
             find_nodes = await subscription.receive()
 
             await bob_client.send_found_nodes(
-                alice.endpoint,
                 alice.node_id,
+                alice.endpoint,
                 enrs=[],
                 request_id=find_nodes.message.request_id,
             )
 
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(return_empty_response)
+    with trio.fail_after(2):
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(return_empty_response)
 
-        with pytest.raises(Exception):
-            await alice_network.lookup_enr(bob.node_id)
+            with pytest.raises(Exception):
+                await alice_network.lookup_enr(bob.node_id, enr_seq=101)
 
 
 @pytest.mark.trio
-async def test_network_lookup_normal_response(alice, alice_network, bob, bob_client):
+async def test_network_lookup_normal_response(bob, alice_network, alice, bob_client):
     async def return_normal_response():
         async with bob.events.find_nodes_received.subscribe() as subscription:
             find_nodes = await subscription.receive()
 
             await bob_client.send_found_nodes(
-                alice.endpoint,
                 alice.node_id,
+                alice.endpoint,
                 enrs=[bob.enr],
                 request_id=find_nodes.message.request_id,
             )
 
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(return_normal_response)
+    with trio.fail_after(2):
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(return_normal_response)
 
-        enr = await alice_network.lookup_enr(bob.node_id)
-        assert enr == bob.enr
+            enr = await alice_network.lookup_enr(bob.node_id, enr_seq=101)
+            assert enr == bob.enr
 
 
 @pytest.mark.trio
-async def test_network_lookup_many_enr_response(alice, alice_network, bob, bob_client):
+async def test_network_lookup_many_enr_response(bob, alice_network, alice, bob_client):
 
     enr_manager = ENRManager(private_key=bob.private_key, enr_db=bob.enr_db,)
     enr_manager.update(
@@ -173,17 +174,18 @@ async def test_network_lookup_many_enr_response(alice, alice_network, bob, bob_c
             find_nodes = await subscription.receive()
 
             await bob_client.send_found_nodes(
-                alice.endpoint,
                 alice.node_id,
+                alice.endpoint,
                 enrs=[second_enr, first_enr],
                 request_id=find_nodes.message.request_id,
             )
 
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(return_duplicate_enr_response)
+    with trio.fail_after(2):
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(return_duplicate_enr_response)
 
-        enr = await alice_network.lookup_enr(bob.node_id)
-        assert enr == second_enr  # the one with the highest sequence number
+            enr = await alice_network.lookup_enr(bob.node_id, enr_seq=101)
+            assert enr == second_enr  # the one with the highest sequence number
 
 
 @pytest.mark.trio

@@ -176,15 +176,11 @@ class Network(Service, NetworkAPI):
     async def lookup_enr(
         self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
-        try:
-            enr = self.enr_db.get_enr(node_id)
-        except KeyError:
+        enr = self.enr_db.get_enr(node_id)
+
+        if enr_seq > enr.sequence_number:
             enr = await self._fetch_enr(node_id, endpoint=endpoint)
             self.enr_db.set_enr(enr)
-        else:
-            if enr_seq > enr.sequence_number:
-                enr = await self._fetch_enr(node_id, endpoint=endpoint)
-                self.enr_db.set_enr(enr)
 
         return enr
 
