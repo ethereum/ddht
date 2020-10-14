@@ -192,7 +192,9 @@ class Network(Service, NetworkAPI):
         enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
         if not enrs:
             raise Exception("Invalid response")
-        # This reduce accounts for
+
+        # Assuming we're given enrs for a single node, this reduce returns the enr for
+        # that node with the highest sequence number
         return _reduce_enrs(enrs)[0]
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:

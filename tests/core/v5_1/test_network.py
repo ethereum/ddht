@@ -2,6 +2,7 @@ import collections
 from contextlib import AsyncExitStack
 import secrets
 
+from eth_enr import ENRManager
 from eth_enr.tools.factories import ENRFactory
 import pytest
 import trio
@@ -98,6 +99,91 @@ async def test_network_find_nodes_api(alice, bob):
         if enr.node_id != bob.node_id
     }
     assert response_distances == {256, 255}
+
+
+@pytest.fixture
+async def bob_client(alice, bob):
+    bob.enr_db.set_enr(alice.enr)
+    async with bob.client() as bob_client:
+        yield bob_client
+
+
+@pytest.fixture
+async def alice_network(alice):
+    async with alice.network() as alice_network:
+        yield alice_network
+
+
+@pytest.mark.trio
+async def test_network_lookup_empty_response(alice, alice_network, bob, bob_client):
+    async def return_empty_response():
+        async with bob.events.find_nodes_received.subscribe() as subscription:
+            find_nodes = await subscription.receive()
+
+            await bob_client.send_found_nodes(
+                alice.endpoint,
+                alice.node_id,
+                enrs=[],
+                request_id=find_nodes.message.request_id,
+            )
+
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(return_empty_response)
+
+        with pytest.raises(Exception):
+            await alice_network.lookup_enr(bob.node_id)
+
+
+@pytest.mark.trio
+async def test_network_lookup_normal_response(alice, alice_network, bob, bob_client):
+    async def return_normal_response():
+        async with bob.events.find_nodes_received.subscribe() as subscription:
+            find_nodes = await subscription.receive()
+
+            await bob_client.send_found_nodes(
+                alice.endpoint,
+                alice.node_id,
+                enrs=[bob.enr],
+                request_id=find_nodes.message.request_id,
+            )
+
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(return_normal_response)
+
+        enr = await alice_network.lookup_enr(bob.node_id)
+        assert enr == bob.enr
+
+
+@pytest.mark.trio
+async def test_network_lookup_many_enr_response(alice, alice_network, bob, bob_client):
+
+    enr_manager = ENRManager(private_key=bob.private_key, enr_db=bob.enr_db,)
+    enr_manager.update(
+        (b"udp", bob.endpoint.port), (b"ip", bob.endpoint.ip_address),
+    )
+
+    first_enr = enr_manager.enr
+
+    enr_manager.update((b"eth2", b"\x00\x00"))
+
+    second_enr = enr_manager.enr
+
+    async def return_normal_response():
+        async with bob.events.find_nodes_received.subscribe() as subscription:
+            find_nodes = await subscription.receive()
+
+            await bob_client.send_found_nodes(
+                alice.endpoint,
+                alice.node_id,
+                enrs=[second_enr, first_enr],
+                request_id=find_nodes.message.request_id,
+            )
+
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(return_normal_response)
+
+        enr = await alice_network.lookup_enr(bob.node_id)
+        assert enr == second_enr  # the one with the highest sequence number
 
 
 @pytest.mark.trio
