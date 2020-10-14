@@ -32,6 +32,9 @@ extras_require = {
         "ipython",
     ],
     "web3": ["web3>=5.12.1,<6"],
+    "alexandria": [
+        "ssz>=0.2.4,<0.3",
+    ],
 }
 
 extras_require["dev"] = (
