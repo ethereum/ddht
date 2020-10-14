@@ -110,7 +110,9 @@ class Network(Service, NetworkAPI):
             return False
 
         try:
-            enr = await self.lookup_enr(node_id, enr_seq=pong.enr_seq, endpoint=endpoint)
+            enr = await self.lookup_enr(
+                node_id, enr_seq=pong.enr_seq, endpoint=endpoint
+            )
         except trio.EndOfChannel:
             self.logger.debug(
                 "Bonding with %s timed out during ENR retrieval",
@@ -385,7 +387,7 @@ class Network(Service, NetworkAPI):
                         )
                     )
                 )
-                enr = await self.get_enr(
+                enr = await self.lookup_enr(
                     request.sender_node_id,
                     enr_seq=request.message.enr_seq,
                     endpoint=request.sender_endpoint,
