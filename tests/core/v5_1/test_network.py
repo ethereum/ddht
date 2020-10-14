@@ -168,7 +168,7 @@ async def test_network_lookup_many_enr_response(alice, alice_network, bob, bob_c
 
     second_enr = enr_manager.enr
 
-    async def return_normal_response():
+    async def return_duplicate_enr_response():
         async with bob.events.find_nodes_received.subscribe() as subscription:
             find_nodes = await subscription.receive()
 
@@ -180,7 +180,7 @@ async def test_network_lookup_many_enr_response(alice, alice_network, bob, bob_c
             )
 
     async with trio.open_nursery() as nursery:
-        nursery.start_soon(return_normal_response)
+        nursery.start_soon(return_duplicate_enr_response)
 
         enr = await alice_network.lookup_enr(bob.node_id)
         assert enr == second_enr  # the one with the highest sequence number
