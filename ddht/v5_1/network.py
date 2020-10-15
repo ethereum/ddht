@@ -16,7 +16,7 @@ import trio
 from ddht._utils import every, humanize_node_id
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.exceptions import DuplicateProtocol
+from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
 from ddht.kademlia import (
     KademliaRoutingTable,
     compute_distance,
@@ -197,7 +197,8 @@ class Network(Service, NetworkAPI):
     ) -> ENRAPI:
         enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
         if not enrs:
-            raise Exception("Invalid response")
+            h_node_id = humanize_node_id(node_id)
+            raise EmptyFindNodesResponse(f"{h_node_id} did not return its ENR")
 
         # Assuming we're given enrs for a single node, this reduce returns the enr for
         # that node with the highest sequence number

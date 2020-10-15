@@ -44,3 +44,11 @@ class DuplicateProtocol(BaseDDHTError):
     """
 
     pass
+
+
+class EmptyFindNodesResponse(BaseDDHTError):
+    """
+    Raised when we ask a remote node for its ENR and it returns nothing.
+    """
+
+    pass

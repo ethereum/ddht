@@ -7,7 +7,7 @@ from eth_enr.tools.factories import ENRFactory
 import pytest
 import trio
 
-from ddht.exceptions import DuplicateProtocol
+from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
 from ddht.kademlia import compute_log_distance
 from ddht.v5_1.abc import TalkProtocolAPI
 from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
@@ -130,7 +130,7 @@ async def test_network_lookup_empty_response(bob, alice_network, alice, bob_clie
         async with trio.open_nursery() as nursery:
             nursery.start_soon(return_empty_response)
 
-            with pytest.raises(Exception):
+            with pytest.raises(EmptyFindNodesResponse):
                 await alice_network.lookup_enr(bob.node_id, enr_seq=101)
 
 
@@ -168,6 +168,9 @@ async def test_network_lookup_many_enr_response(bob, alice_network, alice, bob_c
     enr_manager.update((b"eth2", b"\x00\x00"))
 
     second_enr = enr_manager.enr
+
+    # quick sanity check, if these are equal the next assertion would be testing nothing
+    assert first_enr != second_enr
 
     async def return_duplicate_enr_response():
         async with bob.events.find_nodes_received.subscribe() as subscription:
