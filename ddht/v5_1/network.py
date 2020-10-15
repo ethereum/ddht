@@ -16,7 +16,7 @@ import trio
 from ddht._utils import every, humanize_node_id
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.exceptions import DuplicateProtocol
+from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
 from ddht.kademlia import (
     KademliaRoutingTable,
     compute_distance,
@@ -110,7 +110,9 @@ class Network(Service, NetworkAPI):
             return False
 
         try:
-            enr = await self.get_enr(node_id, enr_seq=pong.enr_seq, endpoint=endpoint)
+            enr = await self.lookup_enr(
+                node_id, enr_seq=pong.enr_seq, endpoint=endpoint
+            )
         except trio.EndOfChannel:
             self.logger.debug(
                 "Bonding with %s timed out during ENR retrieval",
@@ -171,18 +173,22 @@ class Network(Service, NetworkAPI):
         )
         return response.message.payload
 
-    async def get_enr(
+    async def lookup_enr(
         self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
         try:
             enr = self.enr_db.get_enr(node_id)
+
+            if enr.sequence_number >= enr_seq:
+                return enr
         except KeyError:
-            enr = await self._fetch_enr(node_id, endpoint=endpoint)
-            self.enr_db.set_enr(enr)
-        else:
-            if enr_seq > enr.sequence_number:
-                enr = await self._fetch_enr(node_id, endpoint=endpoint)
-                self.enr_db.set_enr(enr)
+            if endpoint is None:
+                # we weren't given an endpoint and we don't have an enr which would give
+                # us an endpoint, there's no way to reach this node.
+                raise
+
+        enr = await self._fetch_enr(node_id, endpoint=endpoint)
+        self.enr_db.set_enr(enr)
 
         return enr
 
@@ -191,8 +197,11 @@ class Network(Service, NetworkAPI):
     ) -> ENRAPI:
         enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
         if not enrs:
-            raise Exception("Invalid response")
-        # This reduce accounts for
+            h_node_id = humanize_node_id(node_id)
+            raise EmptyFindNodesResponse(f"{h_node_id} did not return its ENR")
+
+        # Assuming we're given enrs for a single node, this reduce returns the enr for
+        # that node with the highest sequence number
         return _reduce_enrs(enrs)[0]
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
@@ -383,7 +392,7 @@ class Network(Service, NetworkAPI):
                         )
                     )
                 )
-                enr = await self.get_enr(
+                enr = await self.lookup_enr(
                     request.sender_node_id,
                     enr_seq=request.message.enr_seq,
                     endpoint=request.sender_endpoint,
