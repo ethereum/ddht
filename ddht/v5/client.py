@@ -3,6 +3,7 @@ import logging
 from async_service import Service
 from eth_enr import ENRDatabaseAPI
 from eth_keys import keys
+from eth_typing import NodeID
 import trio
 
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
@@ -27,7 +28,11 @@ class Client(Service):
     logger = logging.getLogger("ddht.Client")
 
     def __init__(
-        self, local_private_key: keys.PrivateKey, enr_db: ENRDatabaseAPI, node_id, sock
+        self,
+        local_private_key: keys.PrivateKey,
+        enr_db: ENRDatabaseAPI,
+        node_id: NodeID,
+        sock: trio.socket.SocketType,
     ) -> None:
 
         self.enr_db = enr_db
@@ -82,7 +87,7 @@ class Client(Service):
 
         self.outbound_message_send_channel = outbound_message_channels[0]
 
-    def discard_peer(self, remote_node_id) -> None:
+    def discard_peer(self, remote_node_id: NodeID) -> None:
         """
         Signals that we intend not to send any more messages to the remote peer, stops the
         service associated with that peer.
