@@ -1,8 +1,7 @@
 import logging
 import os
 
-from async_service import Service, ServiceAPI, as_service, background_trio_service
-import trio
+from async_service import ServiceAPI, background_trio_service
 
 from ddht.boot_info import BootInfo
 from ddht.constants import ProtocolVersion
@@ -30,7 +29,7 @@ async def do_main(boot_info: BootInfo) -> None:
 async def do_crawl(boot_info: BootInfo) -> None:
 
     if boot_info.protocol_version is not ProtocolVersion.v5:
-        raise Exception(f"Currently crawling is only supported on the v5 network.")
+        raise Exception("Currently crawling is only supported on the v5 network.")
 
     crawler = Crawler(concurrency=4, boot_info=boot_info)
 

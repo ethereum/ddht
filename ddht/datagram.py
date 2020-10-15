@@ -68,7 +68,6 @@ async def DatagramSender(
     sock: SocketType,
 ) -> None:
     """Take datagrams from a channel and send them via a socket to their designated receivers."""
-
     async with outbound_datagram_receive_channel:
         async for datagram, endpoint in outbound_datagram_receive_channel:
             await send_datagram(sock, datagram, endpoint)

@@ -7,32 +7,17 @@ import trio
 
 from ddht._utils import generate_node_key_file, read_node_key_file
 from ddht.app import BaseApplication
-from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.boot_info import BootInfo
 from ddht.constants import (
     DEFAULT_LISTEN,
     IP_V4_ADDRESS_ENR_KEY,
     ROUTING_TABLE_BUCKET_SIZE,
 )
-from ddht.datagram import (
-    DatagramReceiver,
-    DatagramSender,
-    InboundDatagram,
-    OutboundDatagram,
-)
 from ddht.kademlia import KademliaRoutingTable
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
-from ddht.v5.channel_services import (
-    InboundPacket,
-    OutboundPacket,
-    PacketDecoder,
-    PacketEncoder,
-)
+from ddht.v5.client import Client
 from ddht.v5.endpoint_tracker import EndpointTracker, EndpointVote
-from ddht.v5.message_dispatcher import MessageDispatcher
-from ddht.v5.messages import v5_registry
-from ddht.v5.packer import Packer
 from ddht.v5.routing_table_manager import RoutingTableManager
 
 ENR_DATABASE_DIR_NAME = "enr-db"
@@ -52,7 +37,6 @@ def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
 class Application(BaseApplication):
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
-        message_type_registry = v5_registry
 
         enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
         enr_database_dir.mkdir(exist_ok=True)
@@ -95,45 +79,10 @@ class Application(BaseApplication):
         sock = trio.socket.socket(
             family=trio.socket.AF_INET, type=trio.socket.SOCK_DGRAM
         )
-        outbound_datagram_channels = trio.open_memory_channel[OutboundDatagram](0)
-        inbound_datagram_channels = trio.open_memory_channel[InboundDatagram](0)
-        outbound_packet_channels = trio.open_memory_channel[OutboundPacket](0)
-        inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
-        outbound_message_channels = trio.open_memory_channel[AnyOutboundMessage](0)
-        inbound_message_channels = trio.open_memory_channel[AnyInboundMessage](0)
+
+        client = Client(local_private_key, enr_db, enr_manager.enr.node_id, sock)
+
         endpoint_vote_channels = trio.open_memory_channel[EndpointVote](0)
-
-        # types ignored due to https://github.com/ethereum/async-service/issues/5
-        datagram_sender = DatagramSender(  # type: ignore
-            outbound_datagram_channels[1], sock
-        )
-        datagram_receiver = DatagramReceiver(  # type: ignore
-            sock, inbound_datagram_channels[0]
-        )
-
-        packet_encoder = PacketEncoder(  # type: ignore
-            outbound_packet_channels[1], outbound_datagram_channels[0]
-        )
-        packet_decoder = PacketDecoder(  # type: ignore
-            inbound_datagram_channels[1], inbound_packet_channels[0]
-        )
-
-        packer = Packer(
-            local_private_key=local_private_key.to_bytes(),
-            local_node_id=enr_manager.enr.node_id,
-            enr_db=enr_db,
-            message_type_registry=message_type_registry,
-            inbound_packet_receive_channel=inbound_packet_channels[1],
-            inbound_message_send_channel=inbound_message_channels[0],
-            outbound_message_receive_channel=outbound_message_channels[1],
-            outbound_packet_send_channel=outbound_packet_channels[0],
-        )
-
-        message_dispatcher = MessageDispatcher(
-            enr_db=enr_db,
-            inbound_message_receive_channel=inbound_message_channels[1],
-            outbound_message_send_channel=outbound_message_channels[0],
-        )
 
         endpoint_tracker = EndpointTracker(
             local_private_key=local_private_key.to_bytes(),
@@ -146,9 +95,9 @@ class Application(BaseApplication):
         routing_table_manager = RoutingTableManager(
             local_node_id=enr_manager.enr.node_id,
             routing_table=routing_table,
-            message_dispatcher=message_dispatcher,
+            message_dispatcher=client.message_dispatcher,
             enr_db=enr_db,
-            outbound_message_send_channel=outbound_message_channels[0],
+            outbound_message_send_channel=client.outbound_message_send_channel,
             endpoint_vote_send_channel=endpoint_vote_channels[0],
         )
 
@@ -159,12 +108,7 @@ class Application(BaseApplication):
         self.logger.info(f"Local ENR: {enr_manager.enr}")
 
         services = (
-            datagram_sender,
-            datagram_receiver,
-            packet_encoder,
-            packet_decoder,
-            packer,
-            message_dispatcher,
+            client,
             endpoint_tracker,
             routing_table_manager,
         )

@@ -1,51 +1,19 @@
 import contextlib
 import logging
-import math
-import random
-import secrets
-from socket import inet_aton
 from typing import Iterator, Set
 
-from async_service import Service, background_trio_service
-from async_service.exceptions import DaemonTaskExit
-from eth_enr import (
-    ENR,
-    ENRAPI,
-    ENRDB,
-    ENRManager,
-    UnsignedENR,
-    default_identity_scheme_registry,
-)
+from eth_enr import ENRAPI, ENRDB, ENRManager, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
-from eth_keys import keys
-from eth_utils import decode_hex, encode_hex
+from eth_utils import encode_hex
 import trio
-from trio.lowlevel import ParkingLot
 
-from ddht._utils import humanize_node_id
 from ddht.app import BaseApplication
-from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.boot_info import BootInfo
 from ddht.constants import DEFAULT_LISTEN, IP_V4_ADDRESS_ENR_KEY
-from ddht.datagram import (
-    DatagramReceiver,
-    DatagramSender,
-    InboundDatagram,
-    OutboundDatagram,
-    send_datagram,
-)
-from ddht.endpoint import Endpoint
 from ddht.exceptions import UnexpectedMessage
 from ddht.v5.app import get_local_private_key
-from ddht.v5.channel_services import (
-    InboundPacket,
-    OutboundPacket,
-    PacketDecoder,
-    PacketEncoder,
-)
-from ddht.v5.message_dispatcher import MessageDispatcher
-from ddht.v5.messages import FindNodeMessage, PingMessage, v5_registry
-from ddht.v5.packer import Packer
+from ddht.v5.client import Client
+from ddht.v5.messages import FindNodeMessage
 
 logger = logging.getLogger("ddht.crawler")
 
@@ -66,54 +34,8 @@ class Crawler(BaseApplication):
         self.enr_manager = ENRManager(private_key=self.private_key, enr_db=self.enr_db)
         self.enr_manager.update((b"udp", boot_info.port))
 
-        # Setup all the services
-
-        outbound_datagram_channels = trio.open_memory_channel[OutboundDatagram](0)
-        inbound_datagram_channels = trio.open_memory_channel[InboundDatagram](0)
-        outbound_packet_channels = trio.open_memory_channel[OutboundPacket](0)
-        inbound_packet_channels = trio.open_memory_channel[InboundPacket](0)
-        outbound_message_channels = trio.open_memory_channel[AnyOutboundMessage](0)
-        inbound_message_channels = trio.open_memory_channel[AnyInboundMessage](0)
-
-        datagram_sender = DatagramSender(  # type: ignore
-            outbound_datagram_channels[1], self.sock
-        )
-        datagram_receiver = DatagramReceiver(  # type: ignore
-            self.sock, inbound_datagram_channels[0]
-        )
-
-        packet_encoder = PacketEncoder(  # type: ignore
-            outbound_packet_channels[1], outbound_datagram_channels[0]
-        )
-        packet_decoder = PacketDecoder(  # type: ignore
-            inbound_datagram_channels[1], inbound_packet_channels[0]
-        )
-
-        self.packer = Packer(
-            local_private_key=self.private_key.to_bytes(),
-            local_node_id=self.enr_manager.enr.node_id,
-            enr_db=self.enr_db,
-            message_type_registry=v5_registry,
-            inbound_packet_receive_channel=inbound_packet_channels[1],
-            inbound_message_send_channel=inbound_message_channels[0],
-            outbound_message_receive_channel=outbound_message_channels[1],
-            outbound_packet_send_channel=outbound_packet_channels[0],
-        )
-
-        self.message_dispatcher = MessageDispatcher(
-            enr_db=self.enr_db,
-            inbound_message_receive_channel=inbound_message_channels[1],
-            outbound_message_send_channel=outbound_message_channels[0],
-        )
-
-        self.services = (
-            packet_encoder,
-            datagram_sender,
-            datagram_receiver,
-            packet_decoder,
-            self.packer,
-            self.message_dispatcher,
-        )
+        my_node_id = self.enr_manager.enr.node_id
+        self.client = Client(self.private_key, self.enr_db, my_node_id, self.sock)
 
         self.active_tasks = ActiveTaskCounter()
 
@@ -128,7 +50,7 @@ class Crawler(BaseApplication):
             with trio.fail_after(2):
                 find_node = FindNodeMessage(request_id=0, distance=256)
 
-                responses = await self.message_dispatcher.request_nodes(
+                responses = await self.client.message_dispatcher.request_nodes(
                     remote_enr.node_id, find_node
                 )
 
@@ -145,7 +67,8 @@ class Crawler(BaseApplication):
                     enr_count = resp.message.total
                     received_enrs = resp.message.enrs
                     logger.debug(
-                        f"Received response. nodeid={encode_hex(remote_enr.node_id)} enr_count={enr_count}"
+                        f"Received response. nodeid={encode_hex(remote_enr.node_id)} "
+                        f"enr_count={enr_count}"
                     )
 
                     for enr in received_enrs:
@@ -156,24 +79,19 @@ class Crawler(BaseApplication):
                 f"no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
             )
             self.bad_enr_count += 1
-        except UnexpectedMessage as error:
+        except UnexpectedMessage:
             # TODO: Nodes sometimes send us Nodes messages with an unexpectedly large
             # number of peers. 12 or 15 of them. We should probably accept these messages!
             logger.exception(
-                "Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
+                "Received a bad message from the peer. "
+                f"nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
             )
             self.bad_enr_count += 1
         finally:
-            if remote_enr.node_id in self.packer.managed_peer_packers:
-                # we only send one packet per peer, so do some cleanup now or else we'll
-                # leak memory.
-                self.packer.managed_peer_packers[remote_enr.node_id].manager.cancel()
+            # we only send one packet per peer. do some cleanup now or we'll leak memory.
+            self.client.discard_peer(remote_enr.node_id)
 
     async def read_from_queue_until_done(self) -> None:
-        """
-        This block only works because we're doing everything inside a single thread.
-        """
-
         while True:
 
             # CAUTION: Do not insert any code here. There must not be any checkpoints
@@ -234,7 +152,8 @@ class Crawler(BaseApplication):
 
         if boot_info.is_upnp_enabled:
             logger.info(
-                "UPNP will not be used; crawling does not require listening for incoming connections."
+                "UPNP will not be used; crawling does not require listening for "
+                "incoming connections."
             )
 
         for bootnode in boot_info.bootnodes:
@@ -245,8 +164,8 @@ class Crawler(BaseApplication):
         await self.sock.bind((str(listen_on), boot_info.port))
 
         with self.sock:
-            for service in self.services:
-                self.manager.run_daemon_child_service(service)
+            self.manager.run_daemon_child_service(self.client)
+
             for _ in range(self.concurrency):
                 self.manager.run_daemon_task(self.read_from_queue_until_done)
 
@@ -256,7 +175,8 @@ class Crawler(BaseApplication):
 
         successes = len(self.seen_nodeids) - self.bad_enr_count
         logger.info(
-            f"Finished crawling. found_enrs={len(self.seen_nodeids)} bad_enrs={self.bad_enr_count} successful_connects={successes}"
+            f"Finished crawling. found_enrs={len(self.seen_nodeids)} "
+            f"bad_enrs={self.bad_enr_count} successful_connects={successes}"
         )
 
 
