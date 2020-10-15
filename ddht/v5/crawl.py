@@ -22,6 +22,7 @@ from eth_utils import decode_hex, encode_hex
 import trio
 from trio.lowlevel import ParkingLot
 
+from ddht._utils import humanize_node_id
 from ddht.app import BaseApplication
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage
 from ddht.boot_info import BootInfo
@@ -46,7 +47,7 @@ from ddht.v5.message_dispatcher import MessageDispatcher
 from ddht.v5.messages import FindNodeMessage, PingMessage, v5_registry
 from ddht.v5.packer import Packer
 
-logger = logging.getLogger("crawler")
+logger = logging.getLogger("ddht.crawler")
 
 
 class Crawler(BaseApplication):
@@ -150,10 +151,6 @@ class Crawler(BaseApplication):
                     for enr in received_enrs:
                         await self.schedule_enr_to_be_visited(enr)
 
-                # we only send one packet per peer, so do some cleanup now or else we'll
-                # leak memory.
-                self.packer.managed_peer_packers[remote_enr.node_id].manager.cancel()
-
         except trio.TooSlowError:
             logger.debug(
                 f"no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
@@ -166,6 +163,11 @@ class Crawler(BaseApplication):
                 "Received a bad message from the peer.  nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
             )
             self.bad_enr_count += 1
+        finally:
+            if remote_enr.node_id in self.packer.managed_peer_packers:
+                # we only send one packet per peer, so do some cleanup now or else we'll
+                # leak memory.
+                self.packer.managed_peer_packers[remote_enr.node_id].manager.cancel()
 
     async def read_from_queue_until_done(self) -> None:
         """
@@ -219,7 +221,8 @@ class Crawler(BaseApplication):
             return
 
         logger.info(
-            f"Found ENR. count={len(self.seen_nodeids)} enr={enr} kv={enr.items()}"
+            f"Found ENR. count={len(self.seen_nodeids)} enr={enr} node_id={enr.node_id.hex()}"
+            f" sequence_number={enr.sequence_number} kv={enr.items()}"
         )
 
         await self.enrqueue_send.send(enr)

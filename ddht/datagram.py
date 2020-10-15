@@ -10,6 +10,8 @@ from trio.socket import SocketType
 from ddht.constants import DISCOVERY_DATAGRAM_BUFFER_SIZE
 from ddht.endpoint import Endpoint
 
+dg_sender_logger = logging.getLogger("ddht.DatagramSender")
+
 
 #
 # Data structures
@@ -55,8 +57,7 @@ async def DatagramReceiver(
 
 
 async def send_datagram(sock: SocketType, datagram: bytes, endpoint: Endpoint) -> None:
-    logger = logging.getLogger("ddht.DatagramSender")
-    logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
+    dg_sender_logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
     await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
 
 
