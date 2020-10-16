@@ -111,6 +111,10 @@ class Crawler(BaseApplication):
                     self.responsive_peers.add(peerid)
                     consecutive_empty_buckets = 0
 
+                # as we get deeper into the peer's routing table the chance that there are
+                # any peers in the given bucket decreases exponentially. we save some time
+                # by moving on to the next peer once we notice that the buckets have
+                # started to think out.
                 if consecutive_empty_buckets >= 5:
                     return
 
