@@ -16,10 +16,24 @@ from ddht.v5_1.abc import (
     PoolAPI,
     SessionAPI,
 )
-from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.abc import AlexandriaClientAPI, AlexandriaNetworkAPI
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.packets import AnyPacket
+
+
+class AlexandriaNodeAPI(ABC):
+    @abstractmethod
+    def client(
+        self, network: Optional[NetworkAPI] = None
+    ) -> AsyncContextManager[AlexandriaClientAPI]:
+        ...
+
+    @abstractmethod
+    def network(
+        self, network: Optional[NetworkAPI] = None
+    ) -> AsyncContextManager[AlexandriaNetworkAPI]:
+        ...
 
 
 class NodeAPI(ABC):
@@ -27,6 +41,7 @@ class NodeAPI(ABC):
     enr: ENRAPI
     enr_db: ENRDatabaseAPI
     events: EventsAPI
+    alexandria: AlexandriaNodeAPI
 
     @property
     @abstractmethod
@@ -46,12 +61,6 @@ class NodeAPI(ABC):
     def network(
         self, bootnodes: Collection[ENRAPI] = ()
     ) -> AsyncContextManager[NetworkAPI]:
-        ...
-
-    @abstractmethod
-    def alexandria(
-        self, network: Optional[NetworkAPI] = None
-    ) -> AsyncContextManager[AlexandriaNetworkAPI]:
         ...
 
 

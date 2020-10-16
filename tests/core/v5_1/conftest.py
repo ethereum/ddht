@@ -26,6 +26,20 @@ async def driver(tester, alice, bob):
 
 
 @pytest.fixture
+async def alice_client(alice, bob):
+    alice.enr_db.set_enr(bob.enr)
+    async with alice.client() as alice_client:
+        yield alice_client
+
+
+@pytest.fixture
+async def bob_client(alice, bob):
+    bob.enr_db.set_enr(alice.enr)
+    async with bob.client() as bob_client:
+        yield bob_client
+
+
+@pytest.fixture
 async def alice_network(alice, bob):
     alice.enr_db.set_enr(bob.enr)
     async with alice.network() as alice_network:
