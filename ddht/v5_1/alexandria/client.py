@@ -1,15 +1,30 @@
 import functools
 import logging
-from typing import Any, AsyncContextManager, AsyncIterator, Optional, Set, Type
+from typing import (
+    Any,
+    AsyncContextManager,
+    AsyncIterator,
+    Collection,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Type,
+)
 
 from async_generator import asynccontextmanager
 from async_service import Service
+from eth_enr import ENRAPI
 from eth_typing import NodeID
+from eth_utils import ValidationError
 import trio
 
 from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
+from ddht.enr import partition_enrs
 from ddht.exceptions import DecodingError
+from ddht.kademlia import compute_log_distance
 from ddht.request_tracker import RequestTracker
 from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import NetworkAPI
@@ -17,13 +32,20 @@ from ddht.v5_1.alexandria.abc import AlexandriaClientAPI
 from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
+    FindNodesMessage,
+    FoundNodesMessage,
     PingMessage,
     PongMessage,
     TAlexandriaMessage,
     decode_message,
 )
-from ddht.v5_1.alexandria.payloads import PingPayload, PongPayload
-from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
+from ddht.v5_1.alexandria.payloads import (
+    FindNodesPayload,
+    FoundNodesPayload,
+    PingPayload,
+    PongPayload,
+)
+from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
 
@@ -253,6 +275,38 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         message = PongMessage(PongPayload(enr_seq))
         await self._send_response(node_id, endpoint, message, request_id=request_id)
 
+    async def send_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        distances: Collection[int],
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        message = FindNodesMessage(FindNodesPayload(tuple(distances)))
+        return await self._send_request(
+            node_id, endpoint, message, request_id=request_id
+        )
+
+    async def send_found_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enrs: Sequence[ENRAPI],
+        request_id: bytes,
+    ) -> int:
+
+        enr_batches = partition_enrs(
+            enrs, max_payload_size=FOUND_NODES_MAX_PAYLOAD_SIZE
+        )
+        num_batches = len(enr_batches)
+        for batch in enr_batches:
+            message = FoundNodesMessage(FoundNodesPayload.from_enrs(num_batches, batch))
+            await self._send_response(node_id, endpoint, message, request_id=request_id)
+
+        return num_batches
+
     #
     # High Level Request/Response
     #
@@ -260,6 +314,55 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         request = PingMessage(PingPayload(self.network.enr_manager.enr.sequence_number))
         response = await self._request(node_id, endpoint, request, PongMessage)
         return response
+
+    async def find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
+        request = FindNodesMessage(FindNodesPayload(tuple(distances)))
+
+        subscription: trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]
+        # unclear why `subscribe_request` isn't properly carrying the type information
+        async with self.subscribe_request(  # type: ignore
+            node_id, endpoint, request, FoundNodesMessage, request_id=request_id,
+        ) as subscription:
+            head_response = await subscription.receive()
+            total = head_response.message.payload.total
+            responses: Tuple[InboundMessage[FoundNodesMessage], ...]
+            if total == 1:
+                responses = (head_response,)
+            elif total > 1:
+                tail_responses: List[InboundMessage[FoundNodesMessage]] = []
+                for _ in range(total - 1):
+                    tail_responses.append(await subscription.receive())
+                responses = (head_response,) + tuple(tail_responses)
+            else:
+                # TODO: this code path needs to be excercised and
+                # probably replaced with some sort of
+                # `SessionTerminated` exception.
+                raise Exception("Invalid `total` counter in response")
+
+            # Validate that all responses are indeed at one of the
+            # specified distances.
+            for response in responses:
+                for enr in response.message.payload.enrs:
+                    if enr.node_id == node_id:
+                        if 0 not in distances:
+                            raise ValidationError(
+                                f"Invalid response: distance=0  expected={distances}"
+                            )
+                    else:
+                        distance = compute_log_distance(enr.node_id, node_id)
+                        if distance not in distances:
+                            raise ValidationError(
+                                f"Invalid response: distance={distance}  expected={distances}"
+                            )
+
+            return responses
 
     #
     # Long Running Processes to manage subscriptions

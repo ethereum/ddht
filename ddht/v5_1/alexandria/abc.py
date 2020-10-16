@@ -1,8 +1,8 @@
 from abc import abstractmethod
-from typing import Any, AsyncContextManager, Optional, Type
+from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tuple, Type
 
 from async_service import ServiceAPI
-from eth_enr import ENRDatabaseAPI, ENRManagerAPI
+from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
 from eth_typing import NodeID
 import trio
 
@@ -12,6 +12,7 @@ from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
+    FoundNodesMessage,
     PongMessage,
     TAlexandriaMessage,
 )
@@ -57,11 +58,44 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> None:
         ...
 
+    @abstractmethod
+    async def send_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        distances: Collection[int],
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_found_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enrs: Sequence[ENRAPI],
+        request_id: bytes,
+    ) -> int:
+        ...
+
     #
     # High Level Request/Response
     #
     @abstractmethod
-    async def ping(self, node_id: NodeID, endpoint: Endpoint,) -> PongMessage:
+    async def ping(self, node_id: NodeID, endpoint: Endpoint) -> PongMessage:
+        ...
+
+    @abstractmethod
+    async def find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
         ...
 
 
