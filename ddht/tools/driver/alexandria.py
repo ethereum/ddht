@@ -1,7 +1,8 @@
-from typing import AsyncContextManager, AsyncIterator, Optional
+from typing import AsyncContextManager, AsyncIterator, Collection, Optional
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
+from eth_enr import ENRAPI
 
 from ddht._utils import asyncnullcontext
 from ddht.tools.driver._utils import NamedLock
@@ -40,7 +41,9 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
     @asynccontextmanager
     async def network(
-        self, network: Optional[NetworkAPI] = None,
+        self,
+        network: Optional[NetworkAPI] = None,
+        bootnodes: Optional[Collection[ENRAPI]] = None,
     ) -> AsyncIterator[AlexandriaNetworkAPI]:
         network_context: AsyncContextManager[NetworkAPI]
 
@@ -52,7 +55,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
-                alexandria_network = AlexandriaNetwork(network)
+                alexandria_network = AlexandriaNetwork(network, ())
                 network.add_talk_protocol(alexandria_network)
                 async with background_trio_service(alexandria_network):
                     yield alexandria_network

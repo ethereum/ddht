@@ -1,19 +1,18 @@
 import itertools
 import logging
-import operator
 import secrets
-from typing import Collection, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Collection, Dict, List, Optional, Set, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils import ValidationError, to_tuple
-from eth_utils.toolz import cons, first, groupby, take
+from eth_utils import ValidationError
+from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
 
-from ddht._utils import every, humanize_node_id
+from ddht._utils import every, humanize_node_id, reduce_enrs
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
@@ -219,7 +218,7 @@ class Network(Service, NetworkAPI):
 
         # Assuming we're given enrs for a single node, this reduce returns the enr for
         # that node with the highest sequence number
-        return _reduce_enrs(enrs)[0]
+        return reduce_enrs(enrs)[0]
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         self.logger.debug("Recursive find nodes: %s", humanize_node_id(target))
@@ -285,7 +284,7 @@ class Network(Service, NetworkAPI):
         # now sort and return the ENR records in order of closesness to the target.
         return tuple(
             sorted(
-                _reduce_enrs(received_enrs),
+                reduce_enrs(received_enrs),
                 key=lambda enr: compute_distance(enr.node_id, target),
             )
         )
@@ -483,13 +482,3 @@ class Network(Service, NetworkAPI):
     def _endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
         enr = self.enr_db.get_enr(node_id)
         return Endpoint.from_enr(enr)
-
-
-@to_tuple
-def _reduce_enrs(enrs: Collection[ENRAPI]) -> Iterable[ENRAPI]:
-    enrs_by_node_id = groupby(operator.attrgetter("node_id"), enrs)
-    for _, enr_group in enrs_by_node_id.items():
-        if len(enr_group) == 1:
-            yield enr_group[0]
-        else:
-            yield max(enr_group, key=operator.attrgetter("sequence_number"))
