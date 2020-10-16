@@ -198,23 +198,24 @@ class Crawler(BaseApplication):
             await self.schedule_enr_to_be_visited(bootnode)
 
         listen_on = boot_info.listen_on or DEFAULT_LISTEN
-        logger.info(f"about to listen. bind={listen_on}:{boot_info.port}")
+        logger.info(f"about to bind to port. bind={listen_on}:{boot_info.port}")
         await self.sock.bind((str(listen_on), boot_info.port))
 
-        with self.sock:
-            self.manager.run_daemon_child_service(self.client)
+        try:
+            with self.sock:
+                self.manager.run_daemon_child_service(self.client)
 
-            for _ in range(self.concurrency):
-                self.manager.run_daemon_task(self.read_from_queue_until_done)
+                for _ in range(self.concurrency):
+                    self.manager.run_daemon_task(self.read_from_queue_until_done)
 
-            # When it is time to quit one of the `read_from_queue_until_done` tasks will
-            # notice and trigger a shutdown.
-            await self.manager.wait_finished()
-
-        logger.info(
-            f"scaning finished. found_peers={len(self.seen_nodeids)} "
-            f"responsive_peers={len(self.responsive_peers)} "
-        )
+                # When it is time to quit one of the `read_from_queue_until_done` tasks will
+                # notice and trigger a shutdown.
+                await self.manager.wait_finished()
+        finally:
+            logger.info(
+                f"scaning finished. found_peers={len(self.seen_nodeids)} "
+                f"responsive_peers={len(self.responsive_peers)} "
+            )
 
 
 class ActiveTaskCounter:
