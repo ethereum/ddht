@@ -31,7 +31,7 @@ async def do_crawl(boot_info: BootInfo) -> None:
     if boot_info.protocol_version is not ProtocolVersion.v5:
         raise Exception("Currently crawling is only supported on the v5 network.")
 
-    crawler = Crawler(concurrency=4, boot_info=boot_info)
+    crawler = Crawler(concurrency=32, boot_info=boot_info)
 
     logger.info("Started main process (pid=%d)", os.getpid())
     async with background_trio_service(crawler) as manager:

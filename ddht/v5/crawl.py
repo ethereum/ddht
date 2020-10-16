@@ -1,9 +1,10 @@
 import contextlib
 import logging
-from typing import Iterator, Set
+from typing import Iterator, List, Set
 
 from eth_enr import ENRAPI, ENRDB, ENRManager, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
+from eth_typing import NodeID
 from eth_utils import encode_hex
 import trio
 
@@ -16,6 +17,10 @@ from ddht.v5.client import Client
 from ddht.v5.messages import FindNodeMessage
 
 logger = logging.getLogger("ddht.crawler")
+
+
+class StopScanning(Exception):
+    pass
 
 
 class Crawler(BaseApplication):
@@ -39,54 +44,82 @@ class Crawler(BaseApplication):
 
         self.active_tasks = ActiveTaskCounter()
 
-        self.seen_nodeids: Set[bytes] = set()
-        self.bad_enr_count = 0
+        self.seen_nodeids: Set[NodeID] = set()
+        self.responsive_peers: Set[NodeID] = set()
 
-        self.enrqueue_send, self.enrqueue_recv = trio.open_memory_channel[ENRAPI](2048)
+        self.enrqueue_send, self.enrqueue_recv = trio.open_memory_channel[ENRAPI](
+            10_000
+        )
 
-    async def visit_enr(self, remote_enr: ENRAPI) -> None:
-        logger.debug(f"sending FindNode(256). nodeid={encode_hex(remote_enr.node_id)}")
+    async def fetch_enr_bucket(self, remote_enr: ENRAPI, bucket: int) -> List[ENRAPI]:
+        peer_id = remote_enr.node_id
+
+        logger.debug(f"sending FindNode. nodeid={encode_hex(peer_id)} bucket={bucket}")
+
         try:
             with trio.fail_after(2):
-                find_node = FindNodeMessage(request_id=0, distance=256)
+                find_node = FindNodeMessage(
+                    request_id=self.client.message_dispatcher.get_free_request_id(
+                        peer_id
+                    ),
+                    distance=bucket,
+                )
 
                 responses = await self.client.message_dispatcher.request_nodes(
-                    remote_enr.node_id, find_node
+                    peer_id, find_node
                 )
 
-                assert len(responses) > 0
-
-                total_enrs = responses[0].message.total
-                logger.info(
-                    f"successful handshake and response from peer. "
-                    f"enrs={total_enrs} nodeid={encode_hex(remote_enr.node_id)} "
-                    f"enr={remote_enr}"
-                )
-
-                for resp in responses:
-                    enr_count = resp.message.total
-                    received_enrs = resp.message.enrs
-                    logger.debug(
-                        f"Received response. nodeid={encode_hex(remote_enr.node_id)} "
-                        f"enr_count={enr_count}"
-                    )
-
-                    for enr in received_enrs:
-                        await self.schedule_enr_to_be_visited(enr)
-
+                return [enr for response in responses for enr in response.message.enrs]
         except trio.TooSlowError:
-            logger.debug(
-                f"no response from peer. nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
+            logger.info(
+                f"no response from peer. nodeid={encode_hex(peer_id)} bucket={bucket}"
             )
-            self.bad_enr_count += 1
+            raise StopScanning()
         except UnexpectedMessage:
-            # TODO: Nodes sometimes send us Nodes messages with an unexpectedly large
-            # number of peers. 12 or 15 of them. We should probably accept these messages!
             logger.exception(
-                "Received a bad message from the peer. "
-                f"nodeid={encode_hex(remote_enr.node_id)} enr={remote_enr}"
+                "received a bad message from the peer. " f"nodeid={encode_hex(peer_id)}"
             )
-            self.bad_enr_count += 1
+            raise StopScanning()
+
+    async def scan_enr_buckets(self, remote_enr: ENRAPI) -> None:
+        """
+        Attempts to read ENRs from the outermost few buckets of the remote node.
+        """
+        peerid = remote_enr.node_id
+        logger.debug(f"scanning. nodeid={encode_hex(peerid)}")
+
+        SCAN_DEPTH = 100
+
+        consecutive_empty_buckets = 0
+
+        try:
+            for bucket in range(256, 256 - SCAN_DEPTH, -1):
+                enrs = await self.fetch_enr_bucket(remote_enr, bucket)
+
+                novel_enrs = len(
+                    [enr for enr in enrs if enr.node_id not in self.seen_nodeids]
+                )
+
+                logger.info(
+                    f"received ENRs. nodeid={encode_hex(peerid)} bucket={bucket} "
+                    f"enrs={len(enrs)} novel={novel_enrs}"
+                )
+
+                if len(enrs) == 0:
+                    consecutive_empty_buckets += 1
+                else:
+                    self.responsive_peers.add(peerid)
+                    consecutive_empty_buckets = 0
+
+                if consecutive_empty_buckets >= 5:
+                    return
+
+                for enr in enrs:
+                    await self.schedule_enr_to_be_visited(enr)
+
+                await trio.sleep(1)  # don't overburden this peer
+        except StopScanning:
+            pass
         finally:
             # we only send one packet per peer. do some cleanup now or we'll leak memory.
             self.client.discard_peer(remote_enr.node_id)
@@ -118,7 +151,7 @@ class Crawler(BaseApplication):
             #          between popping from the queue and entering active_tasks.
 
             with self.active_tasks.enter():
-                await self.visit_enr(enr)
+                await self.scan_enr_buckets(enr)
 
     async def schedule_enr_to_be_visited(self, enr: ENRAPI) -> None:
         if enr.node_id in self.seen_nodeids:
@@ -127,7 +160,7 @@ class Crawler(BaseApplication):
             return
 
         if IP_V4_ADDRESS_ENR_KEY not in enr:
-            logger.info(f"Dropping ENR without IP address enr={enr} kv={enr.items()}")
+            logger.info(f"dropping ENR without IP address enr={enr} kv={enr.items()}")
             return
 
         self.seen_nodeids.add(enr.node_id)
@@ -135,24 +168,25 @@ class Crawler(BaseApplication):
         try:
             self.enr_db.set_enr(enr)
         except OldSequenceNumber:
-            logger.info(f"Dropping old ENR. enr={enr} kv={enr.items()}")
+            logger.info(f"dropping old ENR. enr={enr} kv={enr.items()}")
             return
 
+        enqueued = self.enrqueue_send.statistics().current_buffer_used
         logger.info(
-            f"Found ENR. count={len(self.seen_nodeids)} enr={enr} node_id={enr.node_id.hex()}"
-            f" sequence_number={enr.sequence_number} kv={enr.items()}"
+            f"found ENR. count={len(self.seen_nodeids)} enr={enr} node_id={enr.node_id.hex()}"
+            f" sequence_number={enr.sequence_number} kv={enr.items()} queue_len={enqueued}"
         )
 
         await self.enrqueue_send.send(enr)
 
     async def run(self) -> None:
-        logger.info("Crawling!")
+        logger.info("crawling!")
 
         boot_info = self._boot_info
 
         if boot_info.is_upnp_enabled:
             logger.info(
-                "UPNP will not be used; crawling does not require listening for "
+                "uPNP will not be used; crawling does not require listening for "
                 "incoming connections."
             )
 
@@ -160,7 +194,7 @@ class Crawler(BaseApplication):
             await self.schedule_enr_to_be_visited(bootnode)
 
         listen_on = boot_info.listen_on or DEFAULT_LISTEN
-        logger.info(f"About to listen. bind={listen_on}:{boot_info.port}")
+        logger.info(f"about to listen. bind={listen_on}:{boot_info.port}")
         await self.sock.bind((str(listen_on), boot_info.port))
 
         with self.sock:
@@ -170,13 +204,12 @@ class Crawler(BaseApplication):
                 self.manager.run_daemon_task(self.read_from_queue_until_done)
 
             # When it is time to quit one of the `read_from_queue_until_done` tasks will
-            # notice and trigger a clean shutdown.
+            # notice and trigger a shutdown.
             await self.manager.wait_finished()
 
-        successes = len(self.seen_nodeids) - self.bad_enr_count
         logger.info(
-            f"Finished crawling. found_enrs={len(self.seen_nodeids)} "
-            f"bad_enrs={self.bad_enr_count} successful_connects={successes}"
+            f"scaning finished. found_peers={len(self.seen_nodeids)} "
+            f"responsive_peers={len(self.responsive_peers)} "
         )
 
 
