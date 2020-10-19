@@ -1,6 +1,14 @@
 import logging
 import socket
-from typing import Collection, List, Optional, Sequence, Tuple
+from typing import (
+    AsyncContextManager,
+    Collection,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+)
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManager
@@ -8,7 +16,12 @@ from eth_keys import keys
 from eth_typing import NodeID
 import trio
 
-from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, InboundMessage
+from ddht.base_message import (
+    AnyInboundMessage,
+    AnyOutboundMessage,
+    InboundMessage,
+    TBaseMessage,
+)
 from ddht.datagram import (
     DatagramReceiver,
     DatagramSender,
@@ -169,6 +182,17 @@ class Client(Service, ClientAPI):
         await self.manager.wait_finished()
 
     #
+    # SubscriptionProxyAPI
+    #
+    def subscribe(
+        self,
+        message_type: Type[TBaseMessage],
+        endpoint: Optional[Endpoint] = None,
+        node_id: Optional[NodeID] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
+        return self.dispatcher.subscribe(message_type, endpoint, node_id)
+
+    #
     # Message API
     #
     async def send_ping(
@@ -176,23 +200,33 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
+        enr_seq: Optional[int] = None,
         request_id: Optional[bytes] = None,
     ) -> bytes:
+        if enr_seq is None:
+            enr_seq = self.enr_manager.enr.sequence_number
+
         with self.request_tracker.reserve_request_id(
             node_id, request_id
         ) as message_request_id:
             message = AnyOutboundMessage(
-                PingMessage(message_request_id, self.enr_manager.enr.sequence_number),
-                endpoint,
-                node_id,
+                PingMessage(message_request_id, enr_seq), endpoint, node_id,
             )
             await self.dispatcher.send_message(message)
 
         return message_request_id
 
     async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, request_id: bytes,
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: bytes,
     ) -> None:
+        if enr_seq is None:
+            enr_seq = self.enr_manager.enr.sequence_number
+
         message = AnyOutboundMessage(
             PongMessage(
                 request_id,

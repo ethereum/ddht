@@ -59,8 +59,8 @@ async def test_alexandria_client_ping_request_response(
                 pong_message = await alice_alexandria_client.ping(
                     bob.node_id, bob.endpoint
                 )
-                assert isinstance(pong_message, PongMessage)
-                assert pong_message.payload.enr_seq == bob.enr.sequence_number
+                assert isinstance(pong_message.message, PongMessage)
+                assert pong_message.message.payload.enr_seq == bob.enr.sequence_number
 
 
 @pytest.mark.trio

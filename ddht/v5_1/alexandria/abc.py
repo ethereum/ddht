@@ -9,7 +9,7 @@ import trio
 from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
 from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
-from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
+from ddht.v5_1.abc import NetworkAPI, PingPongClientAPI, TalkProtocolAPI
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
     FoundNodesMessage,
@@ -19,7 +19,7 @@ from ddht.v5_1.alexandria.messages import (
 from ddht.v5_1.alexandria.payloads import PongPayload
 
 
-class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
+class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI, PingPongClientAPI[PongMessage]):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI
     subscription_manager: SubscriptionManagerAPI[AlexandriaMessage[Any]]
@@ -41,23 +41,6 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     #
     # Low Level Message Sending
     #
-    @abstractmethod
-    async def send_ping(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        enr_seq: int,
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        ...
-
-    @abstractmethod
-    async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, enr_seq: int, request_id: bytes,
-    ) -> None:
-        ...
-
     @abstractmethod
     async def send_find_nodes(
         self,
@@ -83,10 +66,6 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     #
     # High Level Request/Response
     #
-    @abstractmethod
-    async def ping(self, node_id: NodeID, endpoint: Endpoint) -> PongMessage:
-        ...
-
     @abstractmethod
     async def find_nodes(
         self,

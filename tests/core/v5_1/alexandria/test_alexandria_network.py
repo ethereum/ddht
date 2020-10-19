@@ -26,7 +26,7 @@ async def test_alexandria_network_responds_to_pings(
             bob.node_id, bob.endpoint
         )
 
-    assert pong_message.payload.enr_seq == bob.enr.sequence_number
+    assert pong_message.message.payload.enr_seq == bob.enr.sequence_number
 
 
 @pytest.mark.trio

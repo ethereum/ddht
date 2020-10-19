@@ -23,6 +23,7 @@ from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage
 from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.ping_handler import PingHandler
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
@@ -38,6 +39,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
+        )
+
+        # child-services
+        self._ping_handler = PingHandler(
+            client=self.client,
+            enr_manager=self.enr_manager,
+            routing_table=self.routing_table,
+            ping_message_type=PingMessage,
         )
 
     @property
@@ -58,7 +67,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
-        self.manager.run_daemon_task(self._pong_when_pinged)
+        self.manager.run_daemon_child_service(self._ping_handler)
         self.manager.run_daemon_task(self._serve_find_nodes)
 
         await self.manager.wait_finished()
@@ -72,7 +81,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         if endpoint is None:
             endpoint = self._endpoint_for_node_id(node_id)
         response = await self.client.ping(node_id, endpoint=endpoint)
-        return response.payload
+        return response.message.payload
 
     async def find_nodes(
         self,
@@ -189,16 +198,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     #
     # Long Running Processes
     #
-    async def _pong_when_pinged(self) -> None:
-        async with self.client.subscribe(PingMessage) as subscription:
-            async for request in subscription:
-                await self.client.send_pong(
-                    request.sender_node_id,
-                    request.sender_endpoint,
-                    enr_seq=self.enr_manager.enr.sequence_number,
-                    request_id=request.request_id,
-                )
-
     async def _serve_find_nodes(self) -> None:
         async with self.client.subscribe(FindNodesMessage) as subscription:
             async for request in subscription:

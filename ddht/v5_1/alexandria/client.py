@@ -112,7 +112,9 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         endpoint: Endpoint,
         request: AlexandriaMessage[Any],
         response_class: Type[TAlexandriaMessage],
-    ) -> TAlexandriaMessage:
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> InboundMessage[TAlexandriaMessage]:
         #
         # Request ID Shenanigans
         #
@@ -135,7 +137,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         # then feed this into our local tracker, which allows us to query it
         # upon receiving an incoming TALKRESPONSE to see if the response is to
         # a message from this protocol.
-        request_id = self.network.client.request_tracker.get_free_request_id(node_id)
+        if request_id is None:
+            request_id = self.network.client.request_tracker.get_free_request_id(
+                node_id
+            )
         request_data = request.to_wire_bytes()
         with self.request_tracker.reserve_request_id(node_id, request_id):
             response_data = await self.network.talk(
@@ -151,7 +156,12 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
             raise DecodingError(
                 f"Invalid response. expected={response_class}  got={type(response)}"
             )
-        return response  # type: ignore
+        return InboundMessage(
+            message=response,  # type: ignore
+            sender_node_id=node_id,
+            sender_endpoint=endpoint,
+            explicit_request_id=request_id,
+        )
 
     def subscribe(
         self,
@@ -261,17 +271,28 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        enr_seq: int,
+        enr_seq: Optional[int] = None,
         request_id: Optional[bytes] = None,
     ) -> bytes:
+        if enr_seq is None:
+            enr_seq = self.network.enr_manager.enr.sequence_number
+
         message = PingMessage(PingPayload(enr_seq))
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
         )
 
     async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, enr_seq: int, request_id: bytes,
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: bytes,
     ) -> None:
+        if enr_seq is None:
+            enr_seq = self.network.enr_manager.enr.sequence_number
+
         message = PongMessage(PongPayload(enr_seq))
         await self._send_response(node_id, endpoint, message, request_id=request_id)
 
@@ -310,9 +331,17 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
     #
     # High Level Request/Response
     #
-    async def ping(self, node_id: NodeID, endpoint: Endpoint) -> PongMessage:
+    async def ping(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> InboundMessage[PongMessage]:
         request = PingMessage(PingPayload(self.network.enr_manager.enr.sequence_number))
-        response = await self._request(node_id, endpoint, request, PongMessage)
+        response = await self._request(
+            node_id, endpoint, request, PongMessage, request_id=request_id,
+        )
         return response
 
     async def find_nodes(

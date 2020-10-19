@@ -1,6 +1,16 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tuple, Type
+from typing import (
+    Any,
+    AsyncContextManager,
+    Collection,
+    Generic,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+)
 import uuid
 
 from async_service import ServiceAPI
@@ -197,13 +207,7 @@ class PoolAPI(ABC):
         ...
 
 
-class DispatcherAPI(ServiceAPI):
-    subscription_manager: SubscriptionManagerAPI[BaseMessage]
-
-    @abstractmethod
-    async def send_message(self, message: AnyOutboundMessage) -> None:
-        ...
-
+class SubscriptionProxyAPI(ABC):
     @abstractmethod
     def subscribe(
         self,
@@ -213,6 +217,14 @@ class DispatcherAPI(ServiceAPI):
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
         ...
 
+
+class DispatcherAPI(ServiceAPI, SubscriptionProxyAPI):
+    subscription_manager: SubscriptionManagerAPI[BaseMessage]
+
+    @abstractmethod
+    async def send_message(self, message: AnyOutboundMessage) -> None:
+        ...
+
     @abstractmethod
     def subscribe_request(
         self, request: AnyOutboundMessage, response_message_type: Type[TBaseMessage],
@@ -220,7 +232,44 @@ class DispatcherAPI(ServiceAPI):
         ...
 
 
-class ClientAPI(ServiceAPI):
+TPongMessage = TypeVar("TPongMessage")
+
+
+class PingPongClientAPI(SubscriptionProxyAPI, Generic[TPongMessage]):
+    @abstractmethod
+    async def send_ping(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_pong(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: bytes,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    async def ping(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> InboundMessage[TPongMessage]:
+        ...
+
+
+class ClientAPI(ServiceAPI, PingPongClientAPI[PongMessage]):
     enr_manager: ENRManagerAPI
     events: EventsAPI
     dispatcher: DispatcherAPI
@@ -240,22 +289,6 @@ class ClientAPI(ServiceAPI):
     #
     # Message Sending API
     #
-    @abstractmethod
-    async def send_ping(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        ...
-
-    @abstractmethod
-    async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, request_id: bytes,
-    ) -> None:
-        ...
-
     @abstractmethod
     async def send_find_nodes(
         self,
@@ -341,16 +374,6 @@ class ClientAPI(ServiceAPI):
     #
     # Request/Response API
     #
-    @abstractmethod
-    async def ping(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        request_id: Optional[bytes] = None,
-    ) -> InboundMessage[PongMessage]:
-        ...
-
     @abstractmethod
     async def find_nodes(
         self,

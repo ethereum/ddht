@@ -37,6 +37,7 @@ from ddht.v5_1.messages import (
     PongMessage,
     TalkRequestMessage,
 )
+from ddht.v5_1.ping_handler import PingHandler
 
 
 class Network(Service, NetworkAPI):
@@ -56,6 +57,14 @@ class Network(Service, NetworkAPI):
         self._last_pong_at = LRU(2048)
 
         self._talk_protocols = {}
+
+        # child-services
+        self._ping_handler = PingHandler(
+            client=self.client,
+            enr_manager=self.enr_manager,
+            routing_table=self.routing_table,
+            ping_message_type=PingMessage,
+        )
 
     #
     # Proxied ClientAPI properties
@@ -299,7 +308,8 @@ class Network(Service, NetworkAPI):
         self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
         self.manager.run_daemon_task(self._track_last_pong)
         self.manager.run_daemon_task(self._manage_routing_table)
-        self.manager.run_daemon_task(self._pong_when_pinged)
+        self.manager.run_daemon_child_service(self._ping_handler)
+        self.manager.run_daemon_task(self._update_routing_table_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
         self.manager.run_daemon_task(self._handle_unhandled_talk_requests)
 
@@ -395,19 +405,9 @@ class Network(Service, NetworkAPI):
                     endpoint = Endpoint.from_enr(enr)
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
 
-    async def _pong_when_pinged(self) -> None:
+    async def _update_routing_table_when_pinged(self) -> None:
         async with self.dispatcher.subscribe(PingMessage) as subscription:
             async for request in subscription:
-                await self.dispatcher.send_message(
-                    request.to_response(
-                        PongMessage(
-                            request.request_id,
-                            self.enr_manager.enr.sequence_number,
-                            request.sender_endpoint.ip_address,
-                            request.sender_endpoint.port,
-                        )
-                    )
-                )
                 enr = await self.lookup_enr(
                     request.sender_node_id,
                     enr_seq=request.message.enr_seq,
