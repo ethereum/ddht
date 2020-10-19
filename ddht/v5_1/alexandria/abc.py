@@ -1,81 +1,35 @@
 from abc import abstractmethod
-from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tuple, Type
+from typing import Any, Optional, Tuple
 
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
 from eth_typing import NodeID
-import trio
 
 from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
-from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
-from ddht.v5_1.abc import NetworkAPI, PingPongClientAPI, TalkProtocolAPI
+from ddht.v5_1.abc import (
+    FindNodesClientAPI,
+    NetworkAPI,
+    PingPongClientAPI,
+    TalkProtocolAPI,
+)
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
     FoundNodesMessage,
     PongMessage,
-    TAlexandriaMessage,
 )
 from ddht.v5_1.alexandria.payloads import PongPayload
 
 
-class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI, PingPongClientAPI[PongMessage]):
+class AlexandriaClientAPI(
+    ServiceAPI,
+    TalkProtocolAPI,
+    PingPongClientAPI[PongMessage],
+    FindNodesClientAPI[FoundNodesMessage],
+):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI
     subscription_manager: SubscriptionManagerAPI[AlexandriaMessage[Any]]
-
-    #
-    # Proxy API for subscriptions
-    #
-    @abstractmethod
-    def subscribe(
-        self,
-        message_type: Type[TAlexandriaMessage],
-        endpoint: Optional[Endpoint] = None,
-        node_id: Optional[NodeID] = None,
-    ) -> AsyncContextManager[
-        trio.abc.ReceiveChannel[InboundMessage[TAlexandriaMessage]]
-    ]:
-        ...
-
-    #
-    # Low Level Message Sending
-    #
-    @abstractmethod
-    async def send_find_nodes(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        distances: Collection[int],
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        ...
-
-    @abstractmethod
-    async def send_found_nodes(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        enrs: Sequence[ENRAPI],
-        request_id: bytes,
-    ) -> int:
-        ...
-
-    #
-    # High Level Request/Response
-    #
-    @abstractmethod
-    async def find_nodes(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        distances: Collection[int],
-        *,
-        request_id: Optional[bytes] = None,
-    ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
-        ...
 
 
 class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):

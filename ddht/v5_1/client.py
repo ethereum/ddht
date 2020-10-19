@@ -20,7 +20,7 @@ from ddht.base_message import (
     AnyInboundMessage,
     AnyOutboundMessage,
     InboundMessage,
-    TBaseMessage,
+    TMessage,
 )
 from ddht.datagram import (
     DatagramReceiver,
@@ -186,10 +186,10 @@ class Client(Service, ClientAPI):
     #
     def subscribe(
         self,
-        message_type: Type[TBaseMessage],
+        message_type: Type[TMessage],
         endpoint: Optional[Endpoint] = None,
         node_id: Optional[NodeID] = None,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
         return self.dispatcher.subscribe(message_type, endpoint, node_id)
 
     #

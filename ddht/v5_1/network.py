@@ -31,6 +31,7 @@ from ddht.v5_1.abc import (
     TalkProtocolAPI,
 )
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
+from ddht.v5_1.find_nodes_handler import FindNodesHandler
 from ddht.v5_1.messages import (
     FindNodeMessage,
     PingMessage,
@@ -64,6 +65,14 @@ class Network(Service, NetworkAPI):
             enr_manager=self.enr_manager,
             routing_table=self.routing_table,
             ping_message_type=PingMessage,
+        )
+
+        self._find_nodes_handler = FindNodesHandler(
+            client=client,
+            routing_table=self.routing_table,
+            enr_manager=self.enr_manager,
+            enr_db=self.enr_db,
+            find_nodes_message_type=FindNodeMessage,
         )
 
     #
@@ -310,7 +319,7 @@ class Network(Service, NetworkAPI):
         self.manager.run_daemon_task(self._manage_routing_table)
         self.manager.run_daemon_child_service(self._ping_handler)
         self.manager.run_daemon_task(self._update_routing_table_when_pinged)
-        self.manager.run_daemon_task(self._serve_find_nodes)
+        self.manager.run_daemon_child_service(self._find_nodes_handler)
         self.manager.run_daemon_task(self._handle_unhandled_talk_requests)
 
         await self.manager.wait_finished()
@@ -415,55 +424,6 @@ class Network(Service, NetworkAPI):
                 )
                 self.routing_table.update(enr.node_id)
                 self._routing_table_ready.set()
-
-    async def _serve_find_nodes(self) -> None:
-        async with self.dispatcher.subscribe(FindNodeMessage) as subscription:
-            async for request in subscription:
-                response_enrs: List[ENRAPI] = []
-                distances = set(request.message.distances)
-                if len(distances) != len(request.message.distances):
-                    self.logger.debug(
-                        "Ignoring invalid FindNodeMessage from %s@%s: duplicate distances",
-                        humanize_node_id(request.sender_node_id),
-                        request.sender_endpoint,
-                    )
-                    continue
-                elif not distances:
-                    self.logger.debug(
-                        "Ignoring invalid FindNodeMessage from %s@%s: empty distances",
-                        humanize_node_id(request.sender_node_id),
-                        request.sender_endpoint,
-                    )
-                    continue
-                elif any(
-                    distance > self.routing_table.num_buckets for distance in distances
-                ):
-                    self.logger.debug(
-                        "Ignoring invalid FindNodeMessage from %s@%s: distances: %s",
-                        humanize_node_id(request.sender_node_id),
-                        request.sender_endpoint,
-                        distances,
-                    )
-                    continue
-
-                for distance in distances:
-                    if distance == 0:
-                        response_enrs.append(self.enr_manager.enr)
-                    elif distance <= self.routing_table.num_buckets:
-                        node_ids_at_distance = self.routing_table.get_nodes_at_log_distance(
-                            distance,
-                        )
-                        for node_id in node_ids_at_distance:
-                            response_enrs.append(self.enr_db.get_enr(node_id))
-                    else:
-                        raise Exception("Should be unreachable")
-
-                await self.client.send_found_nodes(
-                    request.sender_node_id,
-                    request.sender_endpoint,
-                    enrs=response_enrs,
-                    request_id=request.request_id,
-                )
 
     async def _handle_unhandled_talk_requests(self) -> None:
         async with self.dispatcher.subscribe(TalkRequestMessage) as subscription:

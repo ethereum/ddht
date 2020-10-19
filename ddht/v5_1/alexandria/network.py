@@ -23,6 +23,7 @@ from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage
 from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.find_nodes_handler import FindNodesHandler
 from ddht.v5_1.ping_handler import PingHandler
 
 
@@ -49,6 +50,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             ping_message_type=PingMessage,
         )
 
+        self._find_nodes_handler = FindNodesHandler(
+            client=self.client,
+            routing_table=self.routing_table,
+            enr_manager=self.enr_manager,
+            enr_db=self.enr_db,
+            find_nodes_message_type=FindNodesMessage,
+        )
+
     @property
     def network(self) -> NetworkAPI:
         return self.client.network
@@ -68,7 +77,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
         self.manager.run_daemon_child_service(self._ping_handler)
-        self.manager.run_daemon_task(self._serve_find_nodes)
+        self.manager.run_daemon_child_service(self._find_nodes_handler)
 
         await self.manager.wait_finished()
 
@@ -194,58 +203,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 key=lambda enr: compute_distance(enr.node_id, target),
             )
         )
-
-    #
-    # Long Running Processes
-    #
-    async def _serve_find_nodes(self) -> None:
-        async with self.client.subscribe(FindNodesMessage) as subscription:
-            async for request in subscription:
-                response_enrs: List[ENRAPI] = []
-                distances = set(request.message.payload.distances)
-                if len(distances) != len(request.message.payload.distances):
-                    self.logger.debug(
-                        "Ignoring invalid FindNodesMessage from %s@%s: duplicate distances",
-                        humanize_node_id(request.sender_node_id),
-                        request.sender_endpoint,
-                    )
-                    continue
-                elif not distances:
-                    self.logger.debug(
-                        "Ignoring invalid FindNodesMessage from %s@%s: empty distances",
-                        humanize_node_id(request.sender_node_id),
-                        request.sender_endpoint,
-                    )
-                    continue
-                elif any(
-                    distance > self.routing_table.num_buckets for distance in distances
-                ):
-                    self.logger.debug(
-                        "Ignoring invalid FindNodesMessage from %s@%s: distances: %s",
-                        humanize_node_id(request.sender_node_id),
-                        request.sender_endpoint,
-                        distances,
-                    )
-                    continue
-
-                for distance in distances:
-                    if distance == 0:
-                        response_enrs.append(self.enr_manager.enr)
-                    elif distance <= self.routing_table.num_buckets:
-                        node_ids_at_distance = self.routing_table.get_nodes_at_log_distance(
-                            distance,
-                        )
-                        for node_id in node_ids_at_distance:
-                            response_enrs.append(self.enr_db.get_enr(node_id))
-                    else:
-                        raise Exception("Should be unreachable")
-
-                await self.client.send_found_nodes(
-                    request.sender_node_id,
-                    request.sender_endpoint,
-                    enrs=response_enrs,
-                    request_id=request.request_id,
-                )
 
     #
     # Utility

@@ -16,6 +16,7 @@ from ddht.base_message import (
     InboundMessage,
     OutboundMessage,
     TBaseMessage,
+    TMessage,
 )
 from ddht.endpoint import Endpoint
 from ddht.subscription_manager import SubscriptionManager
@@ -132,11 +133,11 @@ class Dispatcher(Service, DispatcherAPI):
 
     def subscribe(
         self,
-        message_type: Type[TBaseMessage],
+        message_type: Type[TMessage],
         endpoint: Optional[Endpoint] = None,
         node_id: Optional[NodeID] = None,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
-        return self.subscription_manager.subscribe(message_type, endpoint, node_id)
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
+        return self.subscription_manager.subscribe(message_type, endpoint, node_id)  # type: ignore
 
     async def run(self) -> None:
         self.manager.run_daemon_task(

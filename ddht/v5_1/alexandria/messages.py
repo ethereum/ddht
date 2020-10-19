@@ -1,4 +1,4 @@
-from typing import Any, Dict, Generic, Type, TypeVar
+from typing import Any, Dict, Generic, Tuple, Type, TypeVar
 
 import ssz
 from ssz import BaseSedes
@@ -96,6 +96,10 @@ class FindNodesMessage(AlexandriaMessage[FindNodesPayload]):
     payload_type = FindNodesPayload
 
     payload: FindNodesPayload
+
+    @property
+    def distances(self) -> Tuple[int, ...]:
+        return self.payload.distances
 
     @classmethod
     def from_payload_args(

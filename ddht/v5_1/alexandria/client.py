@@ -20,7 +20,7 @@ from eth_typing import NodeID
 from eth_utils import ValidationError
 import trio
 
-from ddht.base_message import InboundMessage
+from ddht.base_message import InboundMessage, TMessage
 from ddht.endpoint import Endpoint
 from ddht.enr import partition_enrs
 from ddht.exceptions import DecodingError
@@ -165,12 +165,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
 
     def subscribe(
         self,
-        message_type: Type[TAlexandriaMessage],
+        message_type: Type[TMessage],
         endpoint: Optional[Endpoint] = None,
         node_id: Optional[NodeID] = None,
-    ) -> AsyncContextManager[
-        trio.abc.ReceiveChannel[InboundMessage[TAlexandriaMessage]]
-    ]:
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
         return self.subscription_manager.subscribe(message_type, endpoint, node_id,)  # type: ignore
 
     @asynccontextmanager

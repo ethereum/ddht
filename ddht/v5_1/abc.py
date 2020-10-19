@@ -32,6 +32,7 @@ from ddht.base_message import (
     InboundMessage,
     OutboundMessage,
     TBaseMessage,
+    TMessage,
 )
 from ddht.endpoint import Endpoint
 from ddht.typing import SessionKeys
@@ -211,10 +212,10 @@ class SubscriptionProxyAPI(ABC):
     @abstractmethod
     def subscribe(
         self,
-        message_type: Type[TBaseMessage],
+        message_type: Type[TMessage],
         endpoint: Optional[Endpoint] = None,
         node_id: Optional[NodeID] = None,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[TMessage]]]:
         ...
 
 
@@ -269,26 +270,10 @@ class PingPongClientAPI(SubscriptionProxyAPI, Generic[TPongMessage]):
         ...
 
 
-class ClientAPI(ServiceAPI, PingPongClientAPI[PongMessage]):
-    enr_manager: ENRManagerAPI
-    events: EventsAPI
-    dispatcher: DispatcherAPI
-    pool: PoolAPI
-    enr_db: ENRDatabaseAPI
-    request_tracker: RequestTrackerAPI
+TFoundNodesMessage = TypeVar("TFoundNodesMessage")
 
-    @property
-    @abstractmethod
-    def local_node_id(self) -> NodeID:
-        ...
 
-    @abstractmethod
-    async def wait_listening(self) -> None:
-        ...
-
-    #
-    # Message Sending API
-    #
+class FindNodesClientAPI(SubscriptionProxyAPI, Generic[TFoundNodesMessage]):
     @abstractmethod
     async def send_find_nodes(
         self,
@@ -311,6 +296,40 @@ class ClientAPI(ServiceAPI, PingPongClientAPI[PongMessage]):
     ) -> int:
         ...
 
+    @abstractmethod
+    async def find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[InboundMessage[TFoundNodesMessage], ...]:
+        ...
+
+
+class ClientAPI(
+    ServiceAPI, PingPongClientAPI[PongMessage], FindNodesClientAPI[FindNodeMessage]
+):
+    enr_manager: ENRManagerAPI
+    events: EventsAPI
+    dispatcher: DispatcherAPI
+    pool: PoolAPI
+    enr_db: ENRDatabaseAPI
+    request_tracker: RequestTrackerAPI
+
+    @property
+    @abstractmethod
+    def local_node_id(self) -> NodeID:
+        ...
+
+    @abstractmethod
+    async def wait_listening(self) -> None:
+        ...
+
+    #
+    # Message Sending API
+    #
     @abstractmethod
     async def send_talk_request(
         self,
@@ -374,17 +393,6 @@ class ClientAPI(ServiceAPI, PingPongClientAPI[PongMessage]):
     #
     # Request/Response API
     #
-    @abstractmethod
-    async def find_nodes(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        distances: Collection[int],
-        *,
-        request_id: Optional[bytes] = None,
-    ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
-        ...
-
     @abstractmethod
     async def talk(
         self,
