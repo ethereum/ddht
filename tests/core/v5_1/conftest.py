@@ -23,3 +23,17 @@ async def bob(tester):
 @pytest.fixture
 async def driver(tester, alice, bob):
     return tester.session_pair(alice, bob)
+
+
+@pytest.fixture
+async def alice_network(alice, bob):
+    alice.enr_db.set_enr(bob.enr)
+    async with alice.network() as alice_network:
+        yield alice_network
+
+
+@pytest.fixture
+async def bob_network(alice, bob):
+    bob.enr_db.set_enr(alice.enr)
+    async with bob.network() as bob_network:
+        yield bob_network
