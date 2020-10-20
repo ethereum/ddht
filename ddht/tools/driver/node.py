@@ -12,6 +12,9 @@ from eth_utils import humanize_hash
 from ddht.endpoint import Endpoint
 from ddht.tools.driver.abc import NodeAPI
 from ddht.v5_1.abc import ClientAPI, EventsAPI, NetworkAPI
+from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.client import AlexandriaClient
+from ddht.v5_1.alexandria.network import AlexandriaNetwork
 from ddht.v5_1.client import Client
 from ddht.v5_1.events import Events
 from ddht.v5_1.network import Network
@@ -74,3 +77,19 @@ class Node(NodeAPI):
         async with background_trio_service(network):
             await client.wait_listening()
             yield network
+
+    @asynccontextmanager
+    async def alexandria(
+        self, network: Optional[NetworkAPI] = None,
+    ) -> AsyncIterator[AlexandriaNetworkAPI]:
+        if network is None:
+            async with self.network() as network:
+                alexandria = AlexandriaNetwork(AlexandriaClient(network))
+                network.add_talk_protocol(alexandria)
+                async with background_trio_service(alexandria):
+                    yield alexandria
+        else:
+            alexandria = AlexandriaNetwork(AlexandriaClient(network))
+            network.add_talk_protocol(alexandria)
+            async with background_trio_service(alexandria):
+                yield alexandria
