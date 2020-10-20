@@ -7,14 +7,17 @@ import socket
 from typing import (
     Any,
     AsyncGenerator,
+    AsyncIterator,
     Awaitable,
     Callable,
     Iterable,
     Optional,
     Tuple,
+    TypeVar,
     Union,
 )
 
+from async_generator import asynccontextmanager
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import humanize_hash
@@ -121,3 +124,11 @@ def get_open_port() -> int:
         port = s.getsockname()[1]
         s.close()
     return port
+
+
+TEnterValue = TypeVar("TEnterValue")
+
+
+@asynccontextmanager
+async def asyncnullcontext(enter_value: TEnterValue) -> AsyncIterator[TEnterValue]:
+    yield enter_value

@@ -2,7 +2,7 @@ from abc import abstractmethod
 from typing import Any, AsyncContextManager, Optional, Type
 
 from async_service import ServiceAPI
-from eth_enr import ENRManagerAPI
+from eth_enr import ENRDatabaseAPI, ENRManagerAPI
 from eth_typing import NodeID
 import trio
 
@@ -18,9 +18,24 @@ from ddht.v5_1.alexandria.messages import (
 from ddht.v5_1.alexandria.payloads import PongPayload
 
 
-class AlexandriaClientAPI(TalkProtocolAPI):
+class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI
+    subscription_manager: SubscriptionManagerAPI[AlexandriaMessage[Any]]
+
+    #
+    # Proxy API for subscriptions
+    #
+    @abstractmethod
+    def subscribe(
+        self,
+        message_type: Type[TAlexandriaMessage],
+        endpoint: Optional[Endpoint] = None,
+        node_id: Optional[NodeID] = None,
+    ) -> AsyncContextManager[
+        trio.abc.ReceiveChannel[InboundMessage[TAlexandriaMessage]]
+    ]:
+        ...
 
     #
     # Low Level Message Sending
@@ -46,14 +61,12 @@ class AlexandriaClientAPI(TalkProtocolAPI):
     # High Level Request/Response
     #
     @abstractmethod
-    async def ping(
-        self, node_id: NodeID, endpoint: Optional[Endpoint] = None,
-    ) -> PongMessage:
+    async def ping(self, node_id: NodeID, endpoint: Endpoint,) -> PongMessage:
         ...
 
 
 class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
-    subscription_manager: SubscriptionManagerAPI[AlexandriaMessage[Any]]
+    client: AlexandriaClientAPI
 
     @property
     @abstractmethod
@@ -65,18 +78,9 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     def enr_manager(self) -> ENRManagerAPI:
         ...
 
-    #
-    # Proxy API for subscriptions
-    #
+    @property
     @abstractmethod
-    def subscribe(
-        self,
-        message_type: Type[TAlexandriaMessage],
-        endpoint: Optional[Endpoint] = None,
-        node_id: Optional[NodeID] = None,
-    ) -> AsyncContextManager[
-        trio.abc.ReceiveChannel[InboundMessage[TAlexandriaMessage]]
-    ]:
+    def enr_db(self) -> ENRDatabaseAPI:
         ...
 
     #
