@@ -1,6 +1,6 @@
 import contextlib
 import logging
-from typing import Iterator, Set, Tuple
+from typing import Iterator, Set, Tuple, cast
 
 from eth_enr import ENRAPI, ENRDB, ENRManager, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
@@ -51,7 +51,9 @@ class Crawler(BaseApplication):
             10_000
         )
 
-    async def fetch_enr_bucket(self, remote_enr: ENRAPI, bucket: int) -> Tuple[ENRAPI]:
+    async def fetch_enr_bucket(
+        self, remote_enr: ENRAPI, bucket: int
+    ) -> Tuple[ENRAPI, ...]:
         peer_id = remote_enr.node_id
 
         logger.debug(f"sending FindNode. nodeid={encode_hex(peer_id)} bucket={bucket}")
