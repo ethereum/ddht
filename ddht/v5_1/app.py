@@ -1,3 +1,5 @@
+import argparse
+
 from eth.db.backends.level import LevelDB
 from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
 from eth_keys import keys
@@ -14,6 +16,7 @@ from ddht.rpc import RPCServer
 from ddht.rpc_handlers import get_core_rpc_handlers
 from ddht.typing import AnyIPAddress
 from ddht.upnp import UPnPService
+from ddht.v5_1.abc import ClientAPI, NetworkAPI
 from ddht.v5_1.client import Client
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import v51_registry
@@ -35,6 +38,16 @@ def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
 
 
 class Application(BaseApplication):
+    client: ClientAPI
+    network: NetworkAPI
+
+    def __init__(self, args: argparse.Namespace, boot_info: BootInfo) -> None:
+        super().__init__(args, boot_info)
+        self._ready = trio.Event()
+
+    async def wait_ready(self) -> None:
+        await self._ready.wait()
+
     async def _update_enr_ip_from_upnp(
         self, enr_manager: ENRManager, upnp_service: UPnPService
     ) -> None:
@@ -86,19 +99,19 @@ class Application(BaseApplication):
 
         bootnodes = self._boot_info.bootnodes
 
-        client = Client(
+        self.client = Client(
             local_private_key=local_private_key,
             listen_on=listen_on,
             enr_db=enr_db,
             events=events,
             message_type_registry=message_type_registry,
         )
-        network = Network(client=client, bootnodes=bootnodes,)
+        self.network = Network(client=self.client, bootnodes=bootnodes,)
 
         if self._boot_info.is_rpc_enabled:
             handlers = merge(
-                get_core_rpc_handlers(enr_manager.enr, network.routing_table),
-                get_v51_rpc_handlers(network),
+                get_core_rpc_handlers(enr_manager.enr, self.network.routing_table),
+                get_v51_rpc_handlers(self.network),
             )
             rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
             self.manager.run_daemon_child_service(rpc_server)
@@ -112,6 +125,8 @@ class Application(BaseApplication):
             "Local ENR: seq=%d enr=%s", enr_manager.enr.sequence_number, enr_manager.enr
         )
 
-        self.manager.run_daemon_child_service(network)
+        self.manager.run_daemon_child_service(self.network)
+
+        self._ready.set()
 
         await self.manager.wait_finished()
