@@ -1,6 +1,6 @@
 import contextlib
 import logging
-from typing import Iterator, Set, Tuple, cast
+from typing import Iterator, Set, Tuple
 
 from eth_enr import ENRAPI, ENRDB, ENRManager, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
