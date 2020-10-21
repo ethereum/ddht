@@ -1,15 +1,17 @@
 import itertools
 import logging
+import secrets
 from typing import Collection, List, Optional, Set, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils.toolz import take
+from eth_utils.toolz import cons, first, take
+from lru import LRU
 import trio
 
-from ddht._utils import reduce_enrs
+from ddht._utils import every, reduce_enrs
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.kademlia import (
@@ -21,8 +23,9 @@ from ddht.kademlia import (
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
-from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage
+from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
@@ -39,6 +42,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
+
+        self._last_pong_at = LRU(2048)
+        self._routing_table_ready = trio.Event()
 
     @property
     def network(self) -> NetworkAPI:
@@ -58,6 +64,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
+
+        # Long running processes
+        self.manager.run_daemon_task(self._periodically_report_routing_table)
+        self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
+        self.manager.run_daemon_task(self._track_last_pong)
+        self.manager.run_daemon_task(self._manage_routing_table)
         self.manager.run_daemon_task(self._pong_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
 
@@ -66,6 +78,41 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     #
     # High Level API
     #
+    async def bond(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+    ) -> bool:
+        self.logger.debug(
+            "Bonding with %s", node_id.hex(),
+        )
+
+        try:
+            pong = await self.ping(node_id, endpoint=endpoint)
+        except trio.EndOfChannel:
+            self.logger.debug("Bonding with %s timed out during ping", node_id.hex())
+            return False
+
+        try:
+            enr = await self.lookup_enr(
+                node_id, enr_seq=pong.enr_seq, endpoint=endpoint
+            )
+        except trio.EndOfChannel:
+            self.logger.debug(
+                "Bonding with %s timed out during ENR retrieval", node_id.hex(),
+            )
+            return False
+
+        self.routing_table.update(enr.node_id)
+
+        self.logger.debug(
+            "Bonded with %s successfully", node_id.hex(),
+        )
+
+        self._routing_table_ready.set()
+        return True
+
+    async def _bond(self, node_id: NodeID, endpoint: Endpoint) -> None:
+        await self.bond(node_id, endpoint=endpoint)
+
     async def ping(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> PongPayload:
@@ -93,18 +140,22 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             enr for response in responses for enr in response.message.payload.enrs
         )
 
-    async def get_enr(
+    async def lookup_enr(
         self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
         try:
             enr = self.enr_db.get_enr(node_id)
+
+            if enr.sequence_number >= enr_seq:
+                return enr
         except KeyError:
-            enr = await self._fetch_enr(node_id, endpoint=endpoint)
-            self.enr_db.set_enr(enr)
-        else:
-            if enr_seq > enr.sequence_number:
-                enr = await self._fetch_enr(node_id, endpoint=endpoint)
-                self.enr_db.set_enr(enr)
+            if endpoint is None:
+                # we weren't given an endpoint and we don't have an enr which would give
+                # us an endpoint, there's no way to reach this node.
+                raise
+
+        enr = await self._fetch_enr(node_id, endpoint=endpoint)
+        self.enr_db.set_enr(enr)
 
         return enr
 
@@ -189,6 +240,21 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     #
     # Long Running Processes
     #
+    async def _periodically_report_routing_table(self) -> None:
+        async for _ in every(30, initial_delay=30):
+            non_empty_buckets = tuple(
+                (idx, bucket)
+                for idx, bucket in enumerate(reversed(self.routing_table.buckets))
+                if bucket
+            )
+            total_size = sum(len(bucket) for idx, bucket in non_empty_buckets)
+            bucket_info = "|".join(
+                tuple(f"{idx}:{len(bucket)}" for idx, bucket in non_empty_buckets)
+            )
+            self.logger.debug(
+                "routing-table-info: size=%d  buckets=%s", total_size, bucket_info,
+            )
+
     async def _pong_when_pinged(self) -> None:
         async with self.client.subscribe(PingMessage) as subscription:
             async for request in subscription:
@@ -247,6 +313,81 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     enrs=response_enrs,
                     request_id=request.request_id,
                 )
+
+    async def _ping_oldest_routing_table_entry(self) -> None:
+        await self._routing_table_ready.wait()
+
+        while self.manager.is_running:
+            # Here we preserve the lazy iteration while still checking that the
+            # iterable is not empty before passing it into `min` below which
+            # throws an ambiguous `ValueError` otherwise if the iterable is
+            # empty.
+            nodes_iter = self.routing_table.iter_all_random()
+            try:
+                first_node_id = first(nodes_iter)
+            except StopIteration:
+                await trio.sleep(ROUTING_TABLE_KEEP_ALIVE)
+                continue
+            else:
+                least_recently_ponged_node_id = min(
+                    cons(first_node_id, nodes_iter),
+                    key=lambda node_id: self._last_pong_at.get(node_id, 0),
+                )
+
+            too_old_at = trio.current_time() - ROUTING_TABLE_KEEP_ALIVE
+            try:
+                last_pong_at = self._last_pong_at[least_recently_ponged_node_id]
+            except KeyError:
+                pass
+            else:
+                if last_pong_at > too_old_at:
+                    await trio.sleep(last_pong_at - too_old_at)
+                    continue
+
+            did_bond = await self.bond(least_recently_ponged_node_id)
+            if not did_bond:
+                self.routing_table.remove(least_recently_ponged_node_id)
+
+    async def _track_last_pong(self) -> None:
+        async with self.client.subscribe(PongMessage) as subscription:
+            async for message in subscription:
+                self._last_pong_at[message.sender_node_id] = trio.current_time()
+
+    async def _manage_routing_table(self) -> None:
+        # First load all the bootnode ENRs into our database
+        for enr in self._bootnodes:
+            try:
+                self.enr_db.set_enr(enr)
+            except OldSequenceNumber:
+                pass
+
+        # Now repeatedly try to bond with each bootnode until one succeeds.
+        async with trio.open_nursery() as nursery:
+            while self.manager.is_running:
+                for enr in self._bootnodes:
+                    if enr.node_id == self.local_node_id:
+                        continue
+                    endpoint = Endpoint.from_enr(enr)
+                    nursery.start_soon(self._bond, enr.node_id, endpoint)
+
+                with trio.move_on_after(10):
+                    await self._routing_table_ready.wait()
+                    break
+
+        # TODO: Need better logic here for more quickly populating the
+        # routing table.  Should start off aggressively filling in the
+        # table, only backing off once the table contains some minimum
+        # number of records **or** searching for new records fails to find
+        # new nodes.  Maybe use a TokenBucket
+        async for _ in every(30):
+            async with trio.open_nursery() as nursery:
+                target_node_id = NodeID(secrets.token_bytes(32))
+                found_enrs = await self.recursive_find_nodes(target_node_id)
+                for enr in found_enrs:
+                    if enr.node_id == self.local_node_id:
+                        continue
+                    endpoint = Endpoint.from_enr(enr)
+                    nursery.start_soon(self._bond, enr.node_id, endpoint)
 
     #
     # Utility

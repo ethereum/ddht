@@ -127,6 +127,12 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     # High Level Request/Response
     #
     @abstractmethod
+    async def bond(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+    ) -> bool:
+        ...
+
+    @abstractmethod
     async def ping(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> PongPayload:
@@ -143,7 +149,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def get_enr(
+    async def lookup_enr(
         self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
         ...
