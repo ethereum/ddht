@@ -1,6 +1,6 @@
 import contextlib
 import logging
-from typing import Iterator, List, Set
+from typing import Iterator, Set, Tuple
 
 from eth_enr import ENRAPI, ENRDB, ENRManager, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
@@ -19,7 +19,7 @@ from ddht.v5.messages import FindNodeMessage
 logger = logging.getLogger("ddht.crawler")
 
 
-class StopScanning(Exception):
+class _StopScanning(Exception):
     pass
 
 
@@ -51,7 +51,7 @@ class Crawler(BaseApplication):
             10_000
         )
 
-    async def fetch_enr_bucket(self, remote_enr: ENRAPI, bucket: int) -> List[ENRAPI]:
+    async def fetch_enr_bucket(self, remote_enr: ENRAPI, bucket: int) -> Tuple[ENRAPI]:
         peer_id = remote_enr.node_id
 
         logger.debug(f"sending FindNode. nodeid={encode_hex(peer_id)} bucket={bucket}")
@@ -69,17 +69,19 @@ class Crawler(BaseApplication):
                     peer_id, find_node
                 )
 
-                return [enr for response in responses for enr in response.message.enrs]
+                return tuple(
+                    enr for response in responses for enr in response.message.enrs
+                )
         except trio.TooSlowError:
             logger.info(
                 f"no response from peer. nodeid={encode_hex(peer_id)} bucket={bucket}"
             )
-            raise StopScanning()
+            raise _StopScanning()
         except UnexpectedMessage:
             logger.exception(
                 "received a bad message from the peer. " f"nodeid={encode_hex(peer_id)}"
             )
-            raise StopScanning()
+            raise _StopScanning()
 
     async def scan_enr_buckets(self, remote_enr: ENRAPI) -> None:
         """
@@ -121,11 +123,12 @@ class Crawler(BaseApplication):
                 for enr in enrs:
                     await self.schedule_enr_to_be_visited(enr)
 
-                await trio.sleep(1)  # don't overburden this peer
-        except StopScanning:
+                await trio.sleep(0.1)  # don't overburden this peer
+        except _StopScanning:
             pass
         finally:
-            # we only send one packet per peer. do some cleanup now or we'll leak memory.
+            # once this coro finishes we will never talk to this peer again, do some
+            # cleanup now or we'll leak memory.
             self.client.discard_peer(remote_enr.node_id)
 
     async def read_from_queue_until_done(self) -> None:
@@ -159,8 +162,9 @@ class Crawler(BaseApplication):
 
     async def schedule_enr_to_be_visited(self, enr: ENRAPI) -> None:
         if enr.node_id in self.seen_nodeids:
-            # In order to be nicer on the network only send a single packet to each
-            # remote node.
+            # since each trip to a peer dumps their entire routing table there's no need
+            # to visit a peer twice. This assumes that nodeids don't move around between
+            # servers which is wrong but likely close enough.
             return
 
         if IP_V4_ADDRESS_ENR_KEY not in enr:

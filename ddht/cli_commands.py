@@ -29,7 +29,7 @@ async def do_main(boot_info: BootInfo) -> None:
 async def do_crawl(boot_info: BootInfo) -> None:
 
     if boot_info.protocol_version is not ProtocolVersion.v5:
-        raise Exception("Currently crawling is only supported on the v5 network.")
+        raise ValueError("Currently crawling is only supported on the v5 network.")
 
     crawler = Crawler(concurrency=32, boot_info=boot_info)
 
