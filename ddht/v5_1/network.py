@@ -8,7 +8,7 @@ from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils import to_tuple
+from eth_utils import ValidationError, to_tuple
 from eth_utils.toolz import cons, first, groupby, take
 from lru import LRU
 import trio
@@ -155,6 +155,23 @@ class Network(Service, NetworkAPI):
         responses = await self.client.find_nodes(
             node_id, endpoint, distances=distances, request_id=request_id
         )
+
+        # Validate that all responses are indeed at one of the
+        # specified distances.
+        for response in responses:
+            for enr in response.message.enrs:
+                if enr.node_id == node_id:
+                    if 0 not in distances:
+                        raise ValidationError(
+                            f"Invalid response: distance=0  expected={distances}"
+                        )
+                else:
+                    distance = compute_log_distance(enr.node_id, node_id)
+                    if distance not in distances:
+                        raise ValidationError(
+                            f"Invalid response: distance={distance}  expected={distances}"
+                        )
+
         return tuple(enr for response in responses for enr in response.message.enrs)
 
     async def talk(

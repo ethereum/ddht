@@ -4,6 +4,7 @@ import secrets
 
 from eth_enr import ENRManager
 from eth_enr.tools.factories import ENRFactory
+from eth_utils import ValidationError
 import pytest
 import trio
 
@@ -99,6 +100,41 @@ async def test_network_find_nodes_api(alice, bob):
         if enr.node_id != bob.node_id
     }
     assert response_distances == {256, 255}
+
+
+@pytest.mark.trio
+@pytest.mark.parametrize("response_enr", ("own", "wrong"))
+async def test_network_find_nodes_api_validates_response_distances(
+    alice, bob, bob_client, alice_network, response_enr
+):
+    if response_enr == "own":
+        enr_for_response = bob.enr
+    elif response_enr == "wrong":
+        for _ in range(200):
+            enr_for_response = ENRFactory()
+            if compute_log_distance(enr_for_response.node_id, bob.node_id) == 256:
+                break
+        else:
+            raise Exception("failed")
+    else:
+        raise Exception(f"unsupported param: {response_enr}")
+
+    async with bob.events.find_nodes_received.subscribe() as subscription:
+        async with trio.open_nursery() as nursery:
+
+            async def _respond():
+                request = await subscription.receive()
+                await bob_client.send_found_nodes(
+                    alice.node_id,
+                    alice.endpoint,
+                    enrs=(enr_for_response,),
+                    request_id=request.request_id,
+                )
+
+            nursery.start_soon(_respond)
+            with trio.fail_after(2):
+                with pytest.raises(ValidationError):
+                    await alice_network.find_nodes(bob.node_id, 255)
 
 
 @pytest.fixture

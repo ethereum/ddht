@@ -6,7 +6,6 @@ from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManager
 from eth_keys import keys
 from eth_typing import NodeID
-from eth_utils import ValidationError
 import trio
 
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, InboundMessage
@@ -18,7 +17,6 @@ from ddht.datagram import (
 )
 from ddht.endpoint import Endpoint
 from ddht.enr import partition_enrs
-from ddht.kademlia import compute_log_distance
 from ddht.message_registry import MessageTypeRegistry
 from ddht.request_tracker import RequestTracker
 from ddht.v5_1.abc import ClientAPI, EventsAPI
@@ -388,22 +386,6 @@ class Client(Service, ClientAPI):
                     # probably replaced with some sort of
                     # `SessionTerminated` exception.
                     raise Exception("Invalid `total` counter in response")
-
-                # Validate that all responses are indeed at one of the
-                # specified distances.
-                for response in responses:
-                    for enr in response.message.enrs:
-                        if enr.node_id == node_id:
-                            if 0 not in distances:
-                                raise ValidationError(
-                                    f"Invalid response: distance=0  expected={distances}"
-                                )
-                        else:
-                            distance = compute_log_distance(enr.node_id, node_id)
-                            if distance not in distances:
-                                raise ValidationError(
-                                    f"Invalid response: distance={distance}  expected={distances}"
-                                )
 
                 return responses
 
