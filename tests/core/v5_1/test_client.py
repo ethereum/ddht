@@ -213,12 +213,12 @@ async def test_client_request_response_find_nodes_found_nodes(
     checked_bucket_indexes = []
 
     for distance in range(256, 1, -1):
+        bucket = table.buckets[distance - 1]
+        if not len(bucket):
+            break
+
         async with trio.open_nursery() as nursery:
             async with bob.events.find_nodes_received.subscribe() as subscription:
-                bucket = table.buckets[distance - 1]
-                if not len(bucket):
-                    break
-
                 expected_enrs = tuple(bob.enr_db.get_enr(node_id) for node_id in bucket)
 
                 async def _send_response():

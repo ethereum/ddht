@@ -5,8 +5,18 @@ from ssz import BaseSedes
 
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
-from ddht.v5_1.alexandria.payloads import PingPayload, PongPayload
-from ddht.v5_1.alexandria.sedes import PingSedes, PongSedes
+from ddht.v5_1.alexandria.payloads import (
+    FindNodesPayload,
+    FoundNodesPayload,
+    PingPayload,
+    PongPayload,
+)
+from ddht.v5_1.alexandria.sedes import (
+    FindNodesSedes,
+    FoundNodesSedes,
+    PingSedes,
+    PongSedes,
+)
 
 TPayload = TypeVar("TPayload")
 
@@ -77,6 +87,34 @@ class PongMessage(AlexandriaMessage[PongPayload]):
     payload_type = PongPayload
 
     payload: PongPayload
+
+
+@register
+class FindNodesMessage(AlexandriaMessage[FindNodesPayload]):
+    message_id = 3
+    sedes = FindNodesSedes
+    payload_type = FindNodesPayload
+
+    payload: FindNodesPayload
+
+    @classmethod
+    def from_payload_args(
+        cls: Type[TAlexandriaMessage], payload_args: Any
+    ) -> TAlexandriaMessage:
+        # py-ssz uses an internal type for decoded `ssz.sedes.List` types that
+        # we don't need or want so we force it to a normal tuple type here.
+        distances = tuple(payload_args[0])
+        payload = cls.payload_type(distances)
+        return cls(payload)
+
+
+@register
+class FoundNodesMessage(AlexandriaMessage[FoundNodesPayload]):
+    message_id = 4
+    sedes = FoundNodesSedes
+    payload_type = FoundNodesPayload
+
+    payload: FoundNodesPayload
 
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:
