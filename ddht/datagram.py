@@ -10,6 +10,8 @@ from trio.socket import SocketType
 from ddht.constants import DISCOVERY_DATAGRAM_BUFFER_SIZE
 from ddht.endpoint import Endpoint
 
+dg_sender_logger = logging.getLogger("ddht.DatagramSender")
+
 
 #
 # Data structures
@@ -54,6 +56,11 @@ async def DatagramReceiver(
                 return
 
 
+async def send_datagram(sock: SocketType, datagram: bytes, endpoint: Endpoint) -> None:
+    dg_sender_logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
+    await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
+
+
 @as_service
 async def DatagramSender(
     manager: ManagerAPI,
@@ -61,9 +68,6 @@ async def DatagramSender(
     sock: SocketType,
 ) -> None:
     """Take datagrams from a channel and send them via a socket to their designated receivers."""
-    logger = logging.getLogger("ddht.DatagramSender")
-
     async with outbound_datagram_receive_channel:
         async for datagram, endpoint in outbound_datagram_receive_channel:
-            logger.debug("Sending %d bytes to %s", len(datagram), endpoint)
-            await sock.sendto(datagram, (inet_ntoa(endpoint.ip_address), endpoint.port))
+            await send_datagram(sock, datagram, endpoint)
