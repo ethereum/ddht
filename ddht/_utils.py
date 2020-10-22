@@ -10,6 +10,7 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Collection,
     Iterable,
     Optional,
     Tuple,
@@ -18,9 +19,11 @@ from typing import (
 )
 
 from async_generator import asynccontextmanager
+from eth_enr import ENRAPI
 from eth_keys import keys
 from eth_typing import NodeID
-from eth_utils import humanize_hash
+from eth_utils import humanize_hash, to_tuple
+from eth_utils.toolz import groupby
 import trio
 
 
@@ -132,3 +135,13 @@ TEnterValue = TypeVar("TEnterValue")
 @asynccontextmanager
 async def asyncnullcontext(enter_value: TEnterValue) -> AsyncIterator[TEnterValue]:
     yield enter_value
+
+
+@to_tuple
+def reduce_enrs(enrs: Collection[ENRAPI]) -> Iterable[ENRAPI]:
+    enrs_by_node_id = groupby(operator.attrgetter("node_id"), enrs)
+    for _, enr_group in enrs_by_node_id.items():
+        if len(enr_group) == 1:
+            yield enr_group[0]
+        else:
+            yield max(enr_group, key=operator.attrgetter("sequence_number"))

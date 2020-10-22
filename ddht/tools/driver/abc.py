@@ -31,7 +31,9 @@ class AlexandriaNodeAPI(ABC):
 
     @abstractmethod
     def network(
-        self, network: Optional[NetworkAPI] = None
+        self,
+        network: Optional[NetworkAPI] = None,
+        bootnodes: Optional[Collection[ENRAPI]] = None,
     ) -> AsyncContextManager[AlexandriaNetworkAPI]:
         ...
 
