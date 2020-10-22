@@ -48,7 +48,7 @@ async def main() -> None:
     logger.info(DDHT_HEADER)
 
     try:
-        await args.func(boot_info)
+        await args.func(args, boot_info)
     finally:
         if boot_info.is_ephemeral:
             shutil.rmtree(boot_info.base_dir)
