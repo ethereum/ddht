@@ -31,6 +31,7 @@ from ddht.v5_1.abc import (
     TalkProtocolAPI,
 )
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
+from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import (
     FindNodeMessage,
     PingMessage,
@@ -187,6 +188,9 @@ class Network(Service, NetworkAPI):
         response = await self.client.talk(
             node_id, endpoint, protocol, payload, request_id=request_id
         )
+        payload = response.message.payload
+        if not payload:
+            raise ProtocolNotSupported(protocol)
         return response.message.payload
 
     async def lookup_enr(

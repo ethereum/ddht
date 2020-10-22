@@ -11,7 +11,30 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     decode_message,
 )
+from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
+
+
+@pytest.mark.trio
+async def test_alexandria_client_handles_empty_response(
+    bob, bob_client, alice_alexandria_client
+):
+    async with bob_client.dispatcher.subscribe(TalkRequestMessage) as subscription:
+        async with trio.open_nursery() as nursery:
+
+            async def _respond_empty():
+                request = await subscription.receive()
+                await bob_client.send_talk_response(
+                    request.sender_node_id,
+                    request.sender_endpoint,
+                    payload=b"",
+                    request_id=request.request_id,
+                )
+
+            nursery.start_soon(_respond_empty)
+
+            with pytest.raises(ProtocolNotSupported):
+                await alice_alexandria_client.ping(bob.node_id, bob.endpoint)
 
 
 @pytest.mark.trio
