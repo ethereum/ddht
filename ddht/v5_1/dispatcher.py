@@ -352,7 +352,12 @@ class Dispatcher(Service, DispatcherAPI):
     async def send_message(self, message: AnyOutboundMessage) -> None:
         if message.receiver_node_id == self._pool.local_node_id:
             raise Exception("Cannot send message to self")
-        await self._outbound_message_send_channel.send(message)
+        try:
+            await self._outbound_message_send_channel.send(message)
+        except trio.BrokenResourceError:
+            if self.manager.is_cancelled:
+                await trio.sleep(1)
+            raise
 
     #
     # Request Response
