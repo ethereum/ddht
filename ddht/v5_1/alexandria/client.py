@@ -61,6 +61,8 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         self.request_tracker = RequestTracker()
         self.subscription_manager = SubscriptionManager()
 
+        network.add_talk_protocol(self)
+
         self._active_request_ids = set()
 
     #
