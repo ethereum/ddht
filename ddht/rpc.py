@@ -123,7 +123,7 @@ TResult = TypeVar("TResult")
 
 
 class RPCError(Exception):
-    ...
+    pass
 
 
 class RPCHandler(RPCHandlerAPI, Generic[TParams, TResult]):
