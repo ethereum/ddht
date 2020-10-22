@@ -35,7 +35,6 @@ class AlexandriaNode(AlexandriaNodeAPI):
         async with self._lock.acquire("AlexandriaNode.client(...)"):
             async with network_context as network:
                 alexandria_client = AlexandriaClient(network)
-                network.add_talk_protocol(alexandria_client)
                 async with background_trio_service(alexandria_client):
                     yield alexandria_client
 
@@ -56,6 +55,5 @@ class AlexandriaNode(AlexandriaNodeAPI):
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
                 alexandria_network = AlexandriaNetwork(network, ())
-                network.add_talk_protocol(alexandria_network)
                 async with background_trio_service(alexandria_network):
                     yield alexandria_network
