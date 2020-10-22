@@ -262,7 +262,7 @@ class KademliaRoutingTable(RoutingTableAPI):
 
         if not in_bucket and not in_replacement_cache:
             self.logger.debug(
-                "Not removing %s as it is neither present in the bucket nor the replacement cache",
+                "Not removing %s as it is neither present in bucket-%d nor the replacement cache",
                 encode_hex(node_id),
                 bucket_index,
             )
