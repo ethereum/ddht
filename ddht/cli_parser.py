@@ -142,3 +142,10 @@ crawl_parser = subparser.add_parser(
     help="Attempts to bond with as many nodes as possible and dumps all found ENRs",
 )
 crawl_parser.set_defaults(func=do_crawl)
+crawl_parser.add_argument(
+    "--concurrency",
+    type=int,
+    help="The concurrency level for crawling the network",
+    default=32,
+    dest="crawl_concurrency",
+)
