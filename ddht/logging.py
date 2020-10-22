@@ -59,8 +59,10 @@ def environment_to_log_levels(raw_levels: Optional[str]) -> Dict[Optional[str], 
 def setup_logging(
     logfile: pathlib.Path, file_log_level: int, stderr_level: int = None
 ) -> None:
-    stderr_level = stderr_level or logging.INFO
-    file_log_level = file_log_level or logging.DEBUG
+    if stderr_level is None:
+        stderr_level = logging.INFO
+    if file_log_level is None:
+        file_log_level = logging.DEBUG
 
     raw_environ_log_levels = os.environ.get("LOGLEVEL", None)
     environ_log_levels = environment_to_log_levels(raw_environ_log_levels)
@@ -81,6 +83,7 @@ def setup_stderr_logging(level: int) -> logging.StreamHandler:
     handler_stream.setFormatter(LOG_FORMATTER)
 
     logger = logging.getLogger()
+    logger.setLevel(level)
     logger.addHandler(handler_stream)
 
     return handler_stream
