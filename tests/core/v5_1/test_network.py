@@ -11,6 +11,7 @@ import trio
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
 from ddht.kademlia import compute_log_distance
 from ddht.v5_1.abc import TalkProtocolAPI
+from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
 
 
@@ -300,6 +301,15 @@ async def test_network_talk_api(alice, bob):
     assert response == b"test-response-payload"
 
 
+@pytest.mark.trio
+async def test_network_talk_api_not_supported(alice, bob, alice_network, bob_network):
+    with trio.fail_after(2):
+        with pytest.raises(ProtocolNotSupported):
+            await alice_network.talk(
+                bob.node_id, protocol=b"test", payload=b"test-payload",
+            )
+
+
 class ProtocolA(TalkProtocolAPI):
     protocol_id = b"a"
 
@@ -324,27 +334,26 @@ async def test_network_add_talk_protocol(alice):
 
 @pytest.mark.trio
 async def test_network_responds_to_unhandled_protocol_messages(
-    alice, bob, autojump_clock
+    alice, bob, autojump_clock, bob_client
 ):
     bob.enr_db.set_enr(alice.enr)
 
     async with alice.network() as alice_network:
-        async with bob.network() as bob_network:
-            with trio.fail_after(1):
-                response = await bob_network.talk(
-                    node_id=alice.node_id,
-                    protocol=ProtocolA.protocol_id,
-                    payload=b"payload-a",
-                    endpoint=alice.endpoint,
-                )
-            assert response == b""
+        with trio.fail_after(1):
+            response = await bob_client.talk(
+                node_id=alice.node_id,
+                protocol=ProtocolA.protocol_id,
+                payload=b"payload-a",
+                endpoint=alice.endpoint,
+            )
+        assert response.message.payload == b""
 
-            alice_network.add_talk_protocol(ProtocolA())
+        alice_network.add_talk_protocol(ProtocolA())
 
-            with pytest.raises(trio.EndOfChannel):
-                response = await bob_network.talk(
-                    node_id=alice.node_id,
-                    protocol=ProtocolA.protocol_id,
-                    payload=b"payload-a",
-                    endpoint=alice.endpoint,
-                )
+        with pytest.raises(trio.EndOfChannel):
+            response = await bob_client.talk(
+                node_id=alice.node_id,
+                protocol=ProtocolA.protocol_id,
+                payload=b"payload-a",
+                endpoint=alice.endpoint,
+            )
