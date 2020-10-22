@@ -9,7 +9,7 @@ from eth_typing import NodeID
 from eth_utils.toolz import take
 import trio
 
-from ddht._utils import humanize_node_id, reduce_enrs
+from ddht._utils import reduce_enrs
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.kademlia import (
@@ -118,7 +118,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         return reduce_enrs(enrs)[0]
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
-        self.logger.debug("Recursive find nodes: %s", humanize_node_id(target))
+        self.logger.debug("Recursive find nodes: %s", target.hex())
 
         queried_node_ids = set()
         unresponsive_node_ids = set()
@@ -165,7 +165,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 self.logger.debug(
                     "Starting lookup round %d for %s",
                     lookup_round_counter + 1,
-                    humanize_node_id(target),
+                    target.hex(),
                 )
                 async with trio.open_nursery() as nursery:
                     for peer in nodes_to_query:
@@ -173,7 +173,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             else:
                 self.logger.debug(
                     "Lookup for %s finished in %d rounds",
-                    humanize_node_id(target),
+                    target.hex(),
                     lookup_round_counter,
                 )
                 break
@@ -207,14 +207,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 if len(distances) != len(request.message.payload.distances):
                     self.logger.debug(
                         "Ignoring invalid FindNodesMessage from %s@%s: duplicate distances",
-                        humanize_node_id(request.sender_node_id),
+                        request.sender_node_id.hex(),
                         request.sender_endpoint,
                     )
                     continue
                 elif not distances:
                     self.logger.debug(
                         "Ignoring invalid FindNodesMessage from %s@%s: empty distances",
-                        humanize_node_id(request.sender_node_id),
+                        request.sender_node_id.hex(),
                         request.sender_endpoint,
                     )
                     continue
@@ -223,7 +223,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 ):
                     self.logger.debug(
                         "Ignoring invalid FindNodesMessage from %s@%s: distances: %s",
-                        humanize_node_id(request.sender_node_id),
+                        request.sender_node_id.hex(),
                         request.sender_endpoint,
                         distances,
                     )

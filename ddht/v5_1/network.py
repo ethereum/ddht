@@ -12,7 +12,7 @@ from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
 
-from ddht._utils import every, humanize_node_id, reduce_enrs
+from ddht._utils import every, reduce_enrs
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
@@ -103,9 +103,7 @@ class Network(Service, NetworkAPI):
         try:
             pong = await self.ping(node_id, endpoint=endpoint)
         except trio.EndOfChannel:
-            self.logger.debug(
-                "Bonding with %s timed out during ping", humanize_node_id(node_id)
-            )
+            self.logger.debug("Bonding with %s timed out during ping", node_id.hex())
             return False
 
         try:
@@ -114,8 +112,7 @@ class Network(Service, NetworkAPI):
             )
         except trio.EndOfChannel:
             self.logger.debug(
-                "Bonding with %s timed out during ENR retrieval",
-                humanize_node_id(node_id),
+                "Bonding with %s timed out during ENR retrieval", node_id.hex(),
             )
             return False
 
@@ -213,15 +210,14 @@ class Network(Service, NetworkAPI):
     ) -> ENRAPI:
         enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
         if not enrs:
-            h_node_id = humanize_node_id(node_id)
-            raise EmptyFindNodesResponse(f"{h_node_id} did not return its ENR")
+            raise EmptyFindNodesResponse(f"{node_id.hex()} did not return its ENR")
 
         # Assuming we're given enrs for a single node, this reduce returns the enr for
         # that node with the highest sequence number
         return reduce_enrs(enrs)[0]
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
-        self.logger.debug("Recursive find nodes: %s", humanize_node_id(target))
+        self.logger.debug("Recursive find nodes: %s", target.hex())
 
         queried_node_ids = set()
         unresponsive_node_ids = set()
@@ -268,7 +264,7 @@ class Network(Service, NetworkAPI):
                 self.logger.debug(
                     "Starting lookup round %d for %s",
                     lookup_round_counter + 1,
-                    humanize_node_id(target),
+                    target.hex(),
                 )
                 async with trio.open_nursery() as nursery:
                     for peer in nodes_to_query:
@@ -276,7 +272,7 @@ class Network(Service, NetworkAPI):
             else:
                 self.logger.debug(
                     "Lookup for %s finished in %d rounds",
-                    humanize_node_id(target),
+                    target.hex(),
                     lookup_round_counter,
                 )
                 break
@@ -424,14 +420,14 @@ class Network(Service, NetworkAPI):
                 if len(distances) != len(request.message.distances):
                     self.logger.debug(
                         "Ignoring invalid FindNodeMessage from %s@%s: duplicate distances",
-                        humanize_node_id(request.sender_node_id),
+                        request.sender_node_id.hex(),
                         request.sender_endpoint,
                     )
                     continue
                 elif not distances:
                     self.logger.debug(
                         "Ignoring invalid FindNodeMessage from %s@%s: empty distances",
-                        humanize_node_id(request.sender_node_id),
+                        request.sender_node_id.hex(),
                         request.sender_endpoint,
                     )
                     continue
@@ -440,7 +436,7 @@ class Network(Service, NetworkAPI):
                 ):
                     self.logger.debug(
                         "Ignoring invalid FindNodeMessage from %s@%s: distances: %s",
-                        humanize_node_id(request.sender_node_id),
+                        request.sender_node_id.hex(),
                         request.sender_endpoint,
                         distances,
                     )
