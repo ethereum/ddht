@@ -142,9 +142,29 @@ crawl_parser = subparser.add_parser(
     help="Attempts to bond with as many nodes as possible and dumps all found ENRs",
 )
 crawl_parser.set_defaults(func=do_crawl)
+
+
+class ValidateConcurrency(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        value: Any,
+        option_string: str = None,
+    ) -> None:
+        if value < 1:
+            parser.error(
+                "The value for --concurrency must be a a non-zero positive integer"
+            )
+            return
+
+        setattr(namespace, self.dest, value)
+
+
 crawl_parser.add_argument(
     "--concurrency",
     type=int,
+    action=ValidateConcurrency,
     help="The concurrency level for crawling the network",
     default=32,
     dest="crawl_concurrency",

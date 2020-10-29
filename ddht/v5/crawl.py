@@ -28,10 +28,6 @@ class Crawler(BaseApplication):
     def __init__(self, args: argparse.Namespace, boot_info: BootInfo) -> None:
         super().__init__(args, boot_info)
         self.concurrency = args.crawl_concurrency
-        if not self.concurrency > 0:
-            raise ValueError(
-                f"Concurrency value while crawling must be > 0: {self.concurrency}"
-            )
 
         self.enr_db = ENRDB(dict(), default_identity_scheme_registry)
 
