@@ -14,6 +14,14 @@ class DecodingError(BaseDDHTError):
     pass
 
 
+class ParseError(BaseDDHTError):
+    """
+    Raised as a generic error when trying to parse something.
+    """
+
+    pass
+
+
 class DecryptionError(BaseDDHTError):
     """
     Raised when a message could not be decrypted.
