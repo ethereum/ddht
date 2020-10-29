@@ -101,6 +101,10 @@ class Network(Service, NetworkAPI):
     async def bond(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> bool:
+        self.logger.debug(
+            "Bonding with %s", node_id.hex(),
+        )
+
         try:
             pong = await self.ping(node_id, endpoint=endpoint)
         except trio.EndOfChannel:
@@ -118,6 +122,10 @@ class Network(Service, NetworkAPI):
             return False
 
         self.routing_table.update(enr.node_id)
+
+        self.logger.debug(
+            "Bonded with %s successfully", node_id.hex(),
+        )
 
         self._routing_table_ready.set()
         return True
