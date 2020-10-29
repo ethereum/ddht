@@ -215,7 +215,11 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 )
                 try:
                     async with receive_channel:
-                        yield receive_channel
+                        try:
+                            yield receive_channel
+                        # Wrap EOC error with TSE to make the timeouts obvious
+                        except trio.EndOfChannel as err:
+                            raise trio.TooSlowError from err
                 finally:
                     nursery.cancel_scope.cancel()
 

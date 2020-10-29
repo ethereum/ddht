@@ -131,6 +131,16 @@ async def test_alexandria_client_send_find_nodes(
         assert message.payload.distances == (0, 255, 254)
 
 
+@pytest.mark.trio
+async def test_alexandria_client_find_nodes_timeout(
+    bob, alice_alexandria_client, autojump_clock,
+):
+    with pytest.raises(trio.TooSlowError):
+        await alice_alexandria_client.find_nodes(
+            bob.node_id, bob.endpoint, distances=(0, 255, 254),
+        )
+
+
 @pytest.mark.parametrize(
     "enrs",
     (
