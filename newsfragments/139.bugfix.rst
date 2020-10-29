@@ -1,0 +1,1 @@
+Update dispatcher timeouts to wrap EndOfChannel errors as TooSlowError.

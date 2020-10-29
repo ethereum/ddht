@@ -350,7 +350,7 @@ async def test_network_responds_to_unhandled_protocol_messages(
 
         alice_network.add_talk_protocol(ProtocolA())
 
-        with pytest.raises(trio.EndOfChannel):
+        with pytest.raises(trio.TooSlowError):
             response = await bob_client.talk(
                 node_id=alice.node_id,
                 protocol=ProtocolA.protocol_id,

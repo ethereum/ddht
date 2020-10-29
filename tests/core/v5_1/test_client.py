@@ -196,7 +196,7 @@ async def test_client_request_response_ping_pong(alice, bob, alice_client, bob_c
 @pytest.mark.trio
 async def test_client_ping_timeout(alice, bob_client, autojump_clock):
     with trio.fail_after(60):
-        with pytest.raises(trio.EndOfChannel):
+        with pytest.raises(trio.TooSlowError):
             await bob_client.ping(alice.node_id, alice.endpoint)
 
 
@@ -288,7 +288,7 @@ async def test_client_talk_request_response(alice, bob, alice_client, bob_client
 @pytest.mark.trio
 async def test_client_talk_request_response_timeout(alice, bob_client, autojump_clock):
     with trio.fail_after(60):
-        with pytest.raises(trio.EndOfChannel):
+        with pytest.raises(trio.TooSlowError):
             await bob_client.talk(
                 alice.node_id,
                 alice.endpoint,
