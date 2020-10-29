@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import logging
 from typing import Iterator, Set, Tuple
@@ -24,9 +25,9 @@ class _StopScanning(Exception):
 
 
 class Crawler(BaseApplication):
-    def __init__(self, concurrency: int, boot_info: BootInfo) -> None:
-        super().__init__(boot_info)
-        self.concurrency = concurrency
+    def __init__(self, args: argparse.Namespace, boot_info: BootInfo) -> None:
+        super().__init__(args, boot_info)
+        self.concurrency = args.crawl_concurrency
 
         self.enr_db = ENRDB(dict(), default_identity_scheme_registry)
 

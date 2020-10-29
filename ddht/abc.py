@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import argparse
 from collections import UserDict
 from typing import (
     TYPE_CHECKING,
@@ -303,5 +304,5 @@ class RequestTrackerAPI(ABC):
 
 class ApplicationAPI(ServiceAPI):
     @abstractmethod
-    def __init__(self, boot_info: BootInfo) -> None:
+    def __init__(self, args: argparse.Namespace, boot_info: BootInfo) -> None:
         ...
