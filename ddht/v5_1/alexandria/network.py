@@ -87,7 +87,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         try:
             pong = await self.ping(node_id, endpoint=endpoint)
-        except trio.EndOfChannel:
+        except trio.TooSlowError:
             self.logger.debug("Bonding with %s timed out during ping", node_id.hex())
             return False
 
@@ -95,7 +95,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             enr = await self.lookup_enr(
                 node_id, enr_seq=pong.enr_seq, endpoint=endpoint
             )
-        except trio.EndOfChannel:
+        except trio.TooSlowError:
             self.logger.debug(
                 "Bonding with %s timed out during ENR retrieval", node_id.hex(),
             )
@@ -182,7 +182,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             distance = compute_log_distance(node_id, target)
             try:
                 enrs = await self.find_nodes(node_id, distance)
-            except trio.EndOfChannel:
+            except trio.TooSlowError:
                 unresponsive_node_ids.add(node_id)
                 return
 
