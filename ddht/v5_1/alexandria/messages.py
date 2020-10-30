@@ -6,14 +6,18 @@ from ssz import BaseSedes
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
 from ddht.v5_1.alexandria.payloads import (
+    ContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
+    GetContentPayload,
     PingPayload,
     PongPayload,
 )
 from ddht.v5_1.alexandria.sedes import (
+    ContentSedes,
     FindNodesSedes,
     FoundNodesSedes,
+    GetContentSedes,
     PingSedes,
     PongSedes,
 )
@@ -115,6 +119,24 @@ class FoundNodesMessage(AlexandriaMessage[FoundNodesPayload]):
     payload_type = FoundNodesPayload
 
     payload: FoundNodesPayload
+
+
+@register
+class GetContentMessage(AlexandriaMessage[GetContentPayload]):
+    message_id = 5
+    sedes = GetContentSedes
+    payload_type = GetContentPayload
+
+    payload: GetContentPayload
+
+
+@register
+class ContentMessage(AlexandriaMessage[ContentPayload]):
+    message_id = 6
+    sedes = ContentSedes
+    payload_type = ContentPayload
+
+    payload: ContentPayload
 
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:

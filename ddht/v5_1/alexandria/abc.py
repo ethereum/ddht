@@ -3,7 +3,7 @@ from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tup
 
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
-from eth_typing import NodeID
+from eth_typing import Hash32, NodeID
 import trio
 
 from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
@@ -12,6 +12,7 @@ from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
+    ContentMessage,
     FoundNodesMessage,
     PongMessage,
     TAlexandriaMessage,
@@ -80,6 +81,31 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> int:
         ...
 
+    @abstractmethod
+    async def send_get_content(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_id: Hash32,
+        start_chunk_index: int,
+        num_chunks: int,
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_content(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        is_proof: bool,
+        payload: bytes,
+        request_id: bytes,
+    ) -> None:
+        ...
+
     #
     # High Level Request/Response
     #
@@ -96,6 +122,19 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         *,
         request_id: Optional[bytes] = None,
     ) -> Tuple[InboundMessage[FoundNodesMessage], ...]:
+        ...
+
+    @abstractmethod
+    async def get_content(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_id: Hash32,
+        start_chunk_index: int,
+        num_chunks: int,
+        request_id: Optional[bytes] = None,
+    ) -> ContentMessage:
         ...
 
 

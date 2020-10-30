@@ -1,6 +1,7 @@
 from typing import NamedTuple, Sequence, Tuple
 
 from eth_enr import ENR, ENRAPI
+from eth_typing import Hash32
 import rlp
 
 
@@ -30,3 +31,14 @@ class FoundNodesPayload(NamedTuple):
     def from_enrs(cls, total: int, enrs: Sequence[ENRAPI]) -> "FoundNodesPayload":
         encoded_enrs = tuple(rlp.encode(enr) for enr in enrs)
         return cls(total, encoded_enrs)
+
+
+class GetContentPayload(NamedTuple):
+    content_id: Hash32
+    start_chunk_index: int
+    num_chunks: int
+
+
+class ContentPayload(NamedTuple):
+    is_proof: bool
+    payload: bytes
