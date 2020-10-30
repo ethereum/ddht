@@ -1,6 +1,7 @@
 from typing import Iterable
 
 from eth_utils import to_tuple
+from eth_utils.toolz import sliding_window
 from ssz.constants import CHUNK_SIZE
 
 from ddht.v5_1.alexandria.constants import POWERS_OF_TWO
@@ -47,3 +48,22 @@ def get_chunk_count_for_data_length(length: int) -> int:
     if length == 0:
         return 0
     return (length + CHUNK_SIZE - 1) // CHUNK_SIZE  # type: ignore
+
+
+@to_tuple
+def filter_overlapping_paths(*paths: TreePath) -> Iterable[TreePath]:
+    """
+    Filter out any paths that are a prefix of another path.
+    """
+    if not paths:
+        return
+    sorted_paths = sorted(paths)
+    for left, right in sliding_window(2, sorted_paths):
+        if right[: len(left)] == left:
+            continue
+        else:
+            yield left
+
+    # Because of the use of `sliding_window` we need to manually yield the last
+    # path
+    yield sorted_paths[-1]

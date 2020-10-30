@@ -25,6 +25,7 @@ from ssz.sedes import List as ListSedes
 from ddht.v5_1.alexandria.partials._utils import (
     decompose_into_powers_of_two,
     display_path,
+    filter_overlapping_paths,
     get_chunk_count_for_data_length,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
@@ -108,13 +109,11 @@ class DataPartial:
         else:
             raise TypeError(f"Unsupported type: {type(index_or_slice)}")
 
-        data_length = end_at - start_at
-
         candidate_index = max(0, bisect.bisect_left(self._segments, (start_at,)) - 1)
         segment = self._segments[candidate_index]
         is_within_bounds = (
             segment.start_index <= start_at <= segment.end_index
-            and data_length <= len(segment.data)
+            and end_at <= segment.end_index
         )
         if not is_within_bounds:
             raise IndexError(
@@ -491,6 +490,63 @@ class Proof:
                 yield element_group[0]
             else:
                 yield ProofElement(path=path, value=merklize_elements(element_group))
+
+    def merge(self, other: "Proof") -> "Proof":
+        """
+        Merge this proof with the provided `other` proof.
+
+        Common proof elements are de-duplicated
+        """
+        if self.get_hash_tree_root() != other.get_hash_tree_root():
+            raise ValueError(
+                f"Mismatched roots: {self.get_hash_tree_root().hex()} != "
+                f"{other.get_hash_tree_root().hex()}"
+            )
+
+        all_self_elements_by_path = {el.path: el for el in self.elements}
+        all_other_elements_by_path = {el.path: el for el in other.elements}
+
+        all_self_paths = {el.path for el in self.elements}
+        all_other_paths = {el.path for el in other.elements}
+
+        paths_to_merge = sorted(all_self_paths ^ all_other_paths)
+
+        minimal_paths = filter_overlapping_paths(*paths_to_merge)
+
+        common_paths = all_self_paths & all_other_paths
+
+        # Verify that none of the common proof elements disagree on what the
+        # *value* should be at that position.
+        for path in common_paths:
+            element_from_self = all_self_elements_by_path[path]
+            element_from_other = all_other_elements_by_path[path]
+            if element_from_self.value != element_from_other.value:
+                #  This shouldn't be possible once know the two proofs have
+                #  matching state roots
+                raise Exception("Invariant")
+
+        common_elements = tuple(
+            all_self_elements_by_path[path] for path in common_paths
+        )
+        merged_elements_from_self = tuple(
+            all_self_elements_by_path[path]
+            for path in minimal_paths
+            if path in all_self_elements_by_path
+        )
+        merged_elements_from_other = tuple(
+            all_other_elements_by_path[path]
+            for path in minimal_paths
+            if path in all_other_elements_by_path
+        )
+
+        all_merged_elements = (
+            common_elements + merged_elements_from_self + merged_elements_from_other
+        )
+
+        proof = Proof(all_merged_elements, self.sedes)
+        if proof.get_hash_tree_root() != self.get_hash_tree_root():
+            raise Exception("Invariant: merged proofs resulted in new root")
+        return proof
 
 
 def merklize_elements(elements: Sequence[ProofElement]) -> Hash32:

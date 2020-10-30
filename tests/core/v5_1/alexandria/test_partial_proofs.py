@@ -711,3 +711,78 @@ def test_proof_get_minimal_proof_elements_mixed_depths():
         hash_eth2(CONTENT_512[384:448]) + hash_eth2(CONTENT_512[448:512])
     )
     assert elements_b[0].value == hash_eth2(hash_010 + hash_011)
+
+
+def test_ssz_partial_proof_merge():
+    full_proof = compute_proof(CONTENT_12345, sedes=short_content_sedes)
+
+    proof_a = full_proof.to_partial(0, 64)
+    proof_b = full_proof.to_partial(64, 64)
+
+    proof_a_data = proof_a.get_proven_data()
+    proof_b_data = proof_b.get_proven_data()
+
+    with pytest.raises(IndexError):
+        proof_a_data[64:128]
+    with pytest.raises(IndexError):
+        proof_b_data[0:64]
+    with pytest.raises(IndexError):
+        proof_a_data[0:128]
+    with pytest.raises(IndexError):
+        proof_b_data[0:128]
+
+    combined_proof = proof_a.merge(proof_b)
+    validate_proof(combined_proof)
+
+    combined_data = combined_proof.get_proven_data()
+
+    assert combined_data[0:128] == CONTENT_12345[0:128]
+
+
+@settings(max_examples=1000)
+@given(data=st.data())
+def test_ssz_partial_proof_merge_fuzzy(data):
+    content = data.draw(st.binary(min_size=0, max_size=GB))
+
+    full_proof = compute_proof(content, sedes=content_sedes)
+
+    slice_a_start = data.draw(
+        st.integers(min_value=0, max_value=max(0, len(content) - 1))
+    )
+    slice_a_stop = data.draw(
+        st.integers(min_value=slice_a_start, max_value=len(content))
+    )
+    data_slice_a = slice(slice_a_start, slice_a_stop)
+    slice_a_length = max(0, data_slice_a.stop - data_slice_a.start - 1)
+
+    slice_b_start = data.draw(
+        st.integers(min_value=0, max_value=max(0, len(content) - 1))
+    )
+    slice_b_stop = data.draw(
+        st.integers(min_value=slice_b_start, max_value=len(content))
+    )
+    data_slice_b = slice(slice_b_start, slice_b_stop)
+    slice_b_length = max(0, data_slice_b.stop - data_slice_b.start - 1)
+
+    partial_a = full_proof.to_partial(
+        start_at=data_slice_a.start, partial_data_length=slice_a_length,
+    )
+    partial_a_data = partial_a.get_proven_data()
+
+    partial_b = full_proof.to_partial(
+        start_at=data_slice_b.start, partial_data_length=slice_b_length,
+    )
+    partial_b_data = partial_b.get_proven_data()
+
+    combined_proof = partial_a.merge(partial_b)
+    assert combined_proof.get_hash_tree_root() == full_proof.get_hash_tree_root()
+
+    validate_proof(combined_proof)
+
+    combined_data = combined_proof.get_proven_data()
+
+    assert combined_data[data_slice_a] == partial_a_data[data_slice_a]
+    assert combined_data[data_slice_a] == content[data_slice_a]
+
+    assert combined_data[data_slice_b] == partial_b_data[data_slice_b]
+    assert combined_data[data_slice_b] == content[data_slice_b]
