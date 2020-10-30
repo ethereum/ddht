@@ -202,7 +202,7 @@ def group_by_subtree(
                     max(0, start_at - chunk_start_index) : start_at
                     - chunk_start_index
                     + bucket_size
-                ]  # noqa: E501
+                ]
                 for start_at in range(bucket_start_at, bucket_end_at + 1, bucket_size)
             )
 
