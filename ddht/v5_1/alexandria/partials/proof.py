@@ -1,17 +1,32 @@
 import bisect
 from dataclasses import dataclass
 import operator
-from typing import Any, Collection, Iterable, Optional, Sequence, Tuple, Union, overload
+from typing import (
+    IO,
+    Any,
+    Collection,
+    Iterable,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    overload,
+)
 
 from eth_typing import Hash32
 from eth_utils import ValidationError, to_tuple
+from eth_utils.toolz import cons, sliding_window
 from ssz.constants import CHUNK_SIZE, ZERO_HASHES
 from ssz.sedes import List as ListSedes
 
+from ddht.exceptions import ParseError
+from ddht.v5_1.alexandria.constants import POWERS_OF_TWO
+from ddht.v5_1.alexandria.leb128 import encode_leb128, parse_leb128
 from ddht.v5_1.alexandria.partials._utils import (
     decompose_into_powers_of_two,
     display_path,
     get_chunk_count_for_data_length,
+    get_longest_common_path,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
     chunk_index_to_path,
@@ -20,6 +35,7 @@ from ddht.v5_1.alexandria.partials.chunking import (
 )
 from ddht.v5_1.alexandria.partials.tree import ProofTree, construct_node_tree
 from ddht.v5_1.alexandria.partials.typing import TreePath
+from ddht.v5_1.alexandria.sedes import content_sedes
 
 
 @dataclass(frozen=True)
@@ -33,6 +49,112 @@ class ProofElement:
 
     def __str__(self) -> str:
         return f"{display_path(self.path)}: {self.value.hex()}"
+
+    def serialize(self, previous: Optional[TreePath]) -> bytes:
+        """
+        Proof elements are serialized in sequence, lexographically sorted.
+        Encoding is contextual on the previous encoded element.
+
+        We encode the path as follows.
+
+        path := path_head || path_tail
+
+        The `path_head` are the leading bits from the previous path that are
+        shared by this path.  `path_tail` are the remaining bits from this
+        path.
+
+        For example:
+
+        previous: (0, 0, 1, 1, 0, 0, 1, 1)
+        path:     (0, 0, 1, 1, 1, 0, 1, 1)
+
+        path_head = (0, 0, 1, 1)
+        path_tail = (1, 0, 1, 1)
+
+        Encoding of the path involves:
+
+        tail_length      := len(path_tail)
+        path_tail_as_int := sum(2**i for i in range(tail_length))
+        head_length := len(path_head)
+
+        Since path's are constrained to a total of 26 bits, we can account for
+        the full length in 5 bits (2**5 == 32).  The most bits we could need
+        for a path are when the path shares no bits with the previous path,
+        meaning 26 bits for the `path_tail`, and another 5 bits for the length,
+        and zero bits needed for the `head_length`.
+
+        We encode these three values together into a single little endian
+        encoded integer and then LEB128 encode them.
+
+        encoded_path := tail_length ^ shifted_path_as_int ^ shifted_head_length
+        shifted_path_as_int := path_as_int << 5
+        shifted_head_length := head_length << (5 + tail_length)
+
+        To decode, we apply the same process in reverse.  First, decode the
+        LEB128 encoded value.
+
+        The first 5 bits encode the `tail_length`.
+
+        Once the `tail_length` is known, we shift off that many bits to
+        determine the actual `path_tail`.
+
+        All of the remaining bits are the `head_length`.
+        """
+        if previous is None:
+            path = self.path
+            common_bits = 0
+        else:
+            common_path = get_longest_common_path(self.path, previous)
+            common_bits = len(common_path)
+            path = self.path[common_bits:]
+
+        path_length = len(path)
+
+        assert path_length < 32
+        assert common_bits < 32 - path_length.bit_length() - len(path)
+
+        path_as_int = sum(
+            power_of_two
+            for path_bit, power_of_two in zip(path, POWERS_OF_TWO[:path_length],)
+            if path_bit
+        )
+        full_encoded_path_as_int = (
+            path_length ^ (path_as_int << 5) ^ (common_bits << (5 + path_length))
+        )
+        return encode_leb128(full_encoded_path_as_int) + self.value
+
+    @classmethod
+    def deserialize(
+        cls, stream: IO[bytes], previous: Optional[TreePath]
+    ) -> "ProofElement":
+        """
+        Serialized proof elements can only be deserialized in the context of a
+        stream with access to path of the previously decoded element.
+
+        See the ``serialize(...)`` method for information on the format.
+        """
+        header_as_int = parse_leb128(stream)
+        value = stream.read(32)
+        if len(value) != 32:
+            raise ParseError("Premature end of stream")
+
+        path_length = header_as_int & 0b11111
+        path_as_int = (header_as_int >> 5) & (2 ** path_length - 1)
+        common_bits = header_as_int >> (5 + path_length)
+
+        partial_path = tuple(
+            bool(path_as_int & power_of_two)
+            for power_of_two in POWERS_OF_TWO[:path_length]
+        )
+        if common_bits:
+            if previous is None or len(previous) < common_bits:
+                raise Exception("Need previous path when common bits is not 0")
+            else:
+                full_path = previous[:common_bits] + partial_path
+        else:
+            full_path = partial_path
+
+        return cls(full_path, Hash32(value))
 
 
 @to_tuple
@@ -113,6 +235,31 @@ class DataPartial:
             raise TypeError(f"Unsupported type: {type(index_or_slice)}")
 
 
+@to_tuple
+def _parse_element_stream(stream: IO[bytes]) -> Iterable[ProofElement]:
+    """
+    Parse a stream of serialized `ProofEelement` objects.
+    """
+    previous_path = None
+    while True:
+        # TODO: in the event that the stream still hase a few bytes but they
+        # are insufficient to decode a full element and the stream is left
+        # empty, this will result in a false positive of successful decoding.
+        # We may need to create a thin wrapper around the stream to allow us to
+        # detect this situation if we want more strict decoding.
+        try:
+            element = ProofElement.deserialize(stream, previous=previous_path)
+        except ParseError:
+            remainder = stream.read()
+            if remainder:
+                raise
+            else:
+                break
+        else:
+            previous_path = element.path
+            yield element
+
+
 class Proof:
     """
     Representation of a merkle proof for an SSZ byte string (aka List[uint8,
@@ -163,6 +310,71 @@ class Proof:
             root_node = construct_node_tree(tree_data, (), self.path_bit_length)
             self._tree_cache = ProofTree(root_node)
         return self._tree_cache
+
+    def serialize(self) -> bytes:
+        # TODO: we can elimenate the need for the tree object by 1) directly
+        # fetching the length node since we know its path and 2) directly
+        # filtering the data elements out since we know the bounds on their
+        # paths.
+        tree = self.get_tree()
+        length = tree.get_data_length()
+        num_data_chunks = get_chunk_count_for_data_length(length)
+        last_data_chunk_index = max(0, num_data_chunks - 1)
+        last_data_chunk_path = chunk_index_to_path(
+            last_data_chunk_index, self.path_bit_length
+        )
+
+        data_nodes = tuple(
+            node for node in tree.walk(end_at=last_data_chunk_path) if node.is_terminal
+        )
+        data_only_elements = tuple(
+            ProofElement(path=node.path, value=node.get_value()) for node in data_nodes
+        )
+
+        serialized_elements = b"".join(
+            (
+                element.serialize(previous.path if previous is not None else None)
+                for previous, element in sliding_window(
+                    2,
+                    cons(
+                        None,
+                        sorted(data_only_elements, key=operator.attrgetter("path")),
+                    ),
+                )
+            )
+        )
+        return encode_leb128(length) + serialized_elements
+
+    @classmethod
+    def deserialize(
+        cls,
+        stream: IO[bytes],
+        hash_tree_root: Hash32,
+        sedes: ListSedes = content_sedes,
+    ) -> "Proof":
+        length = parse_leb128(stream)
+
+        data_elements = _parse_element_stream(stream)
+
+        num_data_chunks = get_chunk_count_for_data_length(length)
+        last_data_chunk_index = max(0, num_data_chunks - 1)
+
+        num_padding_chunks = sedes.chunk_count - max(1, num_data_chunks)
+
+        padding_elements = get_padding_elements(
+            last_data_chunk_index, num_padding_chunks, sedes.chunk_count.bit_length(),
+        )
+        assert not any(el.path == (True,) for el in data_elements)
+        assert not any(el.path == (True,) for el in padding_elements)
+        length_element = ProofElement(
+            path=(True,), value=Hash32(length.to_bytes(CHUNK_SIZE, "little"))
+        )
+
+        elements = data_elements + padding_elements + (length_element,)
+
+        proof = cls(hash_tree_root, elements, sedes)
+        validate_proof(proof)
+        return cls(hash_tree_root, elements, sedes)
 
     def to_partial(self, start_at: int, partial_data_length: int) -> "Proof":
         """
