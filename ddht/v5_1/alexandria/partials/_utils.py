@@ -1,6 +1,7 @@
 from typing import Iterable
 
 from eth_utils import to_tuple
+from eth_utils.toolz import sliding_window
 from ssz.constants import CHUNK_SIZE
 
 from ddht.v5_1.alexandria.constants import POWERS_OF_TWO
@@ -47,3 +48,15 @@ def get_chunk_count_for_data_length(length: int) -> int:
     if length == 0:
         return 0
     return (length + CHUNK_SIZE - 1) // CHUNK_SIZE  # type: ignore
+
+
+@to_tuple
+def merge_paths(*paths: TreePath) -> Iterable[TreePath]:
+    sorted_paths = sorted(paths)
+    for left, right in sliding_window(2, sorted_paths):
+        if right[:len(left)] == left:
+            continue
+        else:
+            yield left
+
+    yield from sorted_paths[-1:]

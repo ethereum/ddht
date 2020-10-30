@@ -27,6 +27,7 @@ from ddht.v5_1.alexandria.partials._utils import (
     display_path,
     get_chunk_count_for_data_length,
     get_longest_common_path,
+    merge_paths,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
     chunk_index_to_path,
@@ -555,6 +556,43 @@ class Proof:
                 yield (segment_start_index, data_segment)
         if not length:
             yield 0, b""
+
+    def merge(self, other: "Proof") -> "Proof":
+        if self.hash_tree_root != other.hash_tree_root:
+            raise ValueError(
+                f"Mismatched roots: {self.hash_tree_root.hex()} !+ {other.hash_tree_root.hex()}"
+            )
+
+        all_self_elements_by_path = {el.path: el for el in self.elements}
+        all_other_elements_by_path = {el.path: el for el in other.elements}
+
+        all_self_paths = {el.path for el in self.elements}
+        all_other_paths = {el.path for el in other.elements}
+
+        common_paths = all_self_paths & all_other_paths
+        paths_to_merge = sorted(all_self_paths ^ all_other_paths)
+
+        merged_paths = merge_paths(*paths_to_merge)
+
+        common_elements = tuple(all_self_elements_by_path[path] for path in common_paths)
+        merged_elements_from_self = tuple(
+            all_self_elements_by_path[path]
+            for path in merged_paths
+            if path in all_self_elements_by_path
+        )
+        merged_elements_from_other = tuple(
+            all_other_elements_by_path[path]
+            for path in merged_paths
+            if path in all_other_elements_by_path
+        )
+
+        all_merged_elements = (
+            common_elements + merged_elements_from_self + merged_elements_from_other
+        )
+
+        proof = Proof(self.hash_tree_root, all_merged_elements, self.sedes)
+        validate_proof(proof)
+        return proof
 
 
 def validate_proof(proof: Proof) -> None:

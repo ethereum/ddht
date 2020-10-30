@@ -5,6 +5,7 @@ from ddht.v5_1.alexandria.partials._utils import (
     display_path,
     get_chunk_count_for_data_length,
     get_longest_common_path,
+    merge_paths,
 )
 
 
@@ -74,4 +75,22 @@ def test_get_chunk_count_for_data_length(length, expected):
 )
 def test_display_path(path, expected):
     actual = display_path(path)
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "paths,expected",
+    (
+        (
+            (p(0, 0, 1), p(0, 0, 0), p(0, 0)),
+            (p(0, 0, 0), p(0, 0, 1)),
+        ),
+        (
+            (p(0, 0, 1), p(0,), p(0, 0, 0), p(0, 0)),
+            (p(0, 0, 0), p(0, 0, 1)),
+        ),
+    ),
+)
+def test_merge_paths(paths, expected):
+    actual = merge_paths(*paths)
     assert actual == expected
