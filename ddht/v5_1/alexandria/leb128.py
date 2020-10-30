@@ -40,6 +40,11 @@ def decode_leb128(data: bytes) -> int:
 
 
 def parse_leb128(data: bytes) -> Tuple[int, bytes]:
+    """
+    Decode a LEB128 encoded integer off of the head of some data, returning the
+    decoded integer and the remaining data that was not part of the encoded
+    value.
+    """
     data_iter = iter(data)
     value = functools.reduce(operator.or_, _parse_leb128(data_iter), 0,)
     remainder = bytes(data_iter)
@@ -48,6 +53,10 @@ def parse_leb128(data: bytes) -> Tuple[int, bytes]:
 
 @to_tuple
 def partition_leb128(data: bytes) -> Iterable[bytes]:
+    """
+    Given a set of LEB128 encoded values that have been concatenated together,
+    split them up into their individual encoded values.
+    """
     if not data:
         return
     last_idx = 0
