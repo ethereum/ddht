@@ -35,6 +35,9 @@ extras_require = {
     "alexandria": [
         "ssz>=0.2.4,<0.3",
     ],
+    "benchmark": [
+        "texttable==1.6.3",
+    ],
 }
 
 extras_require["dev"] = (
