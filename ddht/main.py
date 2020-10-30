@@ -1,4 +1,5 @@
 import logging
+import os
 import shutil
 
 from ddht.boot_info import BootInfo
@@ -46,6 +47,8 @@ async def main() -> None:
     setup_logging(log_file, args.log_level_file, args.log_level_stderr)
 
     logger.info(DDHT_HEADER)
+
+    logger.info("Started main process (pid=%d)", os.getpid())
 
     try:
         await args.func(args, boot_info)

@@ -6,18 +6,13 @@ from typing import Any
 from eth_enr import ENR
 
 from ddht import __version__
-from ddht.cli_commands import do_crawl, do_main
+from ddht.cli_commands import do_alexandria, do_crawl, do_main
 from ddht.constants import ProtocolVersion
 
 parser = argparse.ArgumentParser(description="Discovery V5 DHT")
 parser.set_defaults(func=do_main)
 
 parser.add_argument("--version", action="version", version=__version__)
-
-#
-# subparser for sub commands
-#
-subparser = parser.add_subparsers(dest="subcommand")
 
 #
 # Argument Groups
@@ -134,6 +129,15 @@ jsonrpc_parser.add_argument(
 )
 
 
+#############################
+#                           #
+# Subcommands go BELOW here #
+#                           #
+#############################
+
+subparser = parser.add_subparsers(dest="subcommand")
+
+
 #
 # Crawl Subcommand
 #
@@ -168,4 +172,30 @@ crawl_parser.add_argument(
     help="The concurrency level for crawling the network",
     default=32,
     dest="crawl_concurrency",
+)
+
+
+#
+# Alexandria Subcommand
+#
+alexandria_parser = subparser.add_parser(
+    "alexandria", help="Run the client as a node on the Alexandria network",
+)
+
+
+alexandria_parser.set_defaults(func=do_alexandria)
+
+alexandria_bootnodes_parser_group = alexandria_parser.add_mutually_exclusive_group()
+alexandria_bootnodes_parser_group.add_argument(
+    "--bootnode",
+    action=NormalizeAndAppendENR,
+    help="ENR for custom bootnode",
+    dest="alexandria_bootnodes",
+)
+alexandria_bootnodes_parser_group.add_argument(
+    "--no-bootstrap",
+    help="Start without any bootnodes",
+    action="store_const",
+    const=(),
+    dest="alexandria_bootnodes",
 )

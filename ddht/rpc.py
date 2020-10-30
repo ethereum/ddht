@@ -166,7 +166,7 @@ fallback_handler = UnknownMethodHandler()
 
 
 class RPCServer(Service):
-    logger = logging.getLogger("alexandria.rpc.RPCServer")
+    logger = logging.getLogger("ddht.RPCServer")
     _handlers: Dict[str, RPCHandlerAPI]
 
     def __init__(
