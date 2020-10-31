@@ -54,7 +54,7 @@ def get_chunk_count_for_data_length(length: int) -> int:
 def merge_paths(*paths: TreePath) -> Iterable[TreePath]:
     sorted_paths = sorted(paths)
     for left, right in sliding_window(2, sorted_paths):
-        if right[:len(left)] == left:
+        if right[: len(left)] == left:
             continue
         else:
             yield left

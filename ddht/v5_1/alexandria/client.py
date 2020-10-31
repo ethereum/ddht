@@ -16,7 +16,7 @@ from typing import (
 from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRAPI
-from eth_typing import Hash32, NodeID
+from eth_typing import NodeID
 from eth_utils import ValidationError
 import trio
 
@@ -49,6 +49,7 @@ from ddht.v5_1.alexandria.payloads import (
     PingPayload,
     PongPayload,
 )
+from ddht.v5_1.alexandria.typing import ContentID
 from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
@@ -322,13 +323,13 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: Hash32,
+        content_id: ContentID,
         start_chunk_index: int,
-        num_chunks: int,
+        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         message = GetContentMessage(
-            GetContentPayload(content_id, start_chunk_index, num_chunks)
+            GetContentPayload(content_id, start_chunk_index, max_chunks)
         )
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
@@ -410,13 +411,13 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: Hash32,
+        content_id: ContentID,
         start_chunk_index: int,
-        num_chunks: int,
+        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> ContentMessage:
         request = GetContentMessage(
-            GetContentPayload(content_id, start_chunk_index, num_chunks)
+            GetContentPayload(content_id, start_chunk_index, max_chunks)
         )
         response = await self._request(node_id, endpoint, request, ContentMessage)
         return response

@@ -3,6 +3,7 @@ from hypothesis import strategies as st
 import pytest
 from ssz import get_hash_tree_root
 
+from ddht.tools.factories.content import ContentFactory
 from ddht.v5_1.alexandria.constants import GB
 from ddht.v5_1.alexandria.partials.proof import (
     compute_proof,
@@ -76,17 +77,12 @@ r"""
     "content,data_slice",
     (
         # short cases
-        (b"", slice(0, 0)),
-        (b"\x00", slice(0, 0)),
         (b"\x00", slice(0, 1)),
-        (b"\x01", slice(0, 0)),
         (b"\x01", slice(0, 1)),
-        (b"\x00" * 32, slice(0, 0)),
         (b"\x00" * 32, slice(0, 1)),
         (b"\x00" * 32, slice(0, 32)),
         (b"\x00" * 33, slice(0, 0)),
         # longer content
-        (CONTENT_12345, slice(0, 0)),
         (CONTENT_12345, slice(0, 32)),
         (CONTENT_12345, slice(0, 31)),
         (CONTENT_12345, slice(1, 32)),
@@ -103,6 +99,12 @@ r"""
         (CONTENT_12345, slice(0, 160)),
         (CONTENT_12345, slice(128, 160)),
         (CONTENT_12345, slice(127, 160)),
+        # full content
+        (ContentFactory(512), slice(0, 32)),
+        (ContentFactory(512), slice(0, 512)),
+        (ContentFactory(512), slice(32, 512)),
+        (ContentFactory(512), slice(64, 512)),
+        (ContentFactory(512), slice(160, 512)),
     ),
 )
 def test_ssz_partial_proof_construction(content, data_slice):
@@ -126,7 +128,7 @@ def test_ssz_partial_proof_construction(content, data_slice):
 @settings(max_examples=1000)
 @given(data=st.data())
 def test_ssz_partial_proof_fuzzy(data):
-    content = data.draw(st.binary(min_size=0, max_size=GB))
+    content = data.draw(st.binary(min_size=1, max_size=GB))
 
     slice_start = data.draw(
         st.integers(min_value=0, max_value=max(0, len(content) - 1))
@@ -180,21 +182,25 @@ def test_ssz_partial_proof_merge():
 @settings(max_examples=1000)
 @given(data=st.data())
 def test_ssz_partial_proof_merge_fuzzy(data):
-    content = data.draw(st.binary(min_size=0, max_size=GB))
+    content = data.draw(st.binary(min_size=1, max_size=GB))
 
     full_proof = compute_proof(content, sedes=content_sedes)
 
     slice_a_start = data.draw(
         st.integers(min_value=0, max_value=max(0, len(content) - 1))
     )
-    slice_a_stop = data.draw(st.integers(min_value=slice_a_start, max_value=len(content)))
+    slice_a_stop = data.draw(
+        st.integers(min_value=slice_a_start, max_value=len(content))
+    )
     data_slice_a = slice(slice_a_start, slice_a_stop)
     slice_a_length = max(0, data_slice_a.stop - data_slice_a.start - 1)
 
     slice_b_start = data.draw(
         st.integers(min_value=0, max_value=max(0, len(content) - 1))
     )
-    slice_b_stop = data.draw(st.integers(min_value=slice_b_start, max_value=len(content)))
+    slice_b_stop = data.draw(
+        st.integers(min_value=slice_b_start, max_value=len(content))
+    )
     data_slice_b = slice(slice_b_start, slice_b_stop)
     slice_b_length = max(0, data_slice_b.stop - data_slice_b.start - 1)
 
@@ -220,3 +226,93 @@ def test_ssz_partial_proof_merge_fuzzy(data):
 
     assert combined_data[data_slice_b] == partial_b_data[data_slice_b]
     assert combined_data[data_slice_b] == content[data_slice_b]
+
+
+def test_ssz_proof_get_missing_segments_outer():
+    content = ContentFactory(192)
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+    length = len(content)
+
+    assert tuple(full_proof.get_missing_segments(length)) == ()
+
+    partial = full_proof.to_partial(64, 64)
+
+    missing_segments = tuple(partial.get_missing_segments(length))
+    assert len(missing_segments) == 2
+
+    (
+        (segment_a_start, segment_a_length),
+        (segment_b_start, segment_b_length),
+    ) = missing_segments
+    assert segment_a_start == 0
+    assert segment_a_length == 64
+
+    assert segment_b_start == 128
+    assert segment_b_length == 64
+
+
+def test_ssz_proof_get_missing_segments_only_head():
+    content = ContentFactory(512)
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+    length = len(content)
+
+    assert tuple(full_proof.get_missing_segments(length)) == ()
+
+    partial = full_proof.to_partial(160, 352)
+
+    missing_segments = tuple(partial.get_missing_segments(length))
+    assert len(missing_segments) == 1
+
+    segment_start, segment_length = missing_segments[0]
+    assert segment_start == 0
+    # The length is 128 instead of 160 because the segment just before the
+    # partial boundary gets included as part of the proof since the proof
+    # starts in the middle of two sibling leaf nodes.
+    assert segment_length == 128
+
+
+def test_ssz_proof_get_missing_segments_only_middle():
+    content = ContentFactory(512)
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+    length = len(content)
+
+    assert tuple(full_proof.get_missing_segments(length)) == ()
+
+    head_proof = full_proof.to_partial(0, 160)
+    tail_proof = full_proof.to_partial(352, 160)
+    partial = head_proof.merge(tail_proof)
+
+    missing_segments = tuple(partial.get_missing_segments(length))
+    assert len(missing_segments) == 1
+
+    segment_start, segment_length = missing_segments[0]
+    # The segmeent starts at 192 because the starting proof ends between two
+    # sibling nodes, causing an extra leaf node to be included.
+    assert segment_start == 192
+    # The length is 128 instead of 192 because the tail segment
+    # starts in the middle of two sibling leaves which causes one extra leaf
+    # to be included.
+    assert segment_length == 128
+
+
+def test_ssz_proof_get_missing_segments_last_chunk_not_full():
+    content = ContentFactory(180)  # 12 bytes short
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+    length = len(content)
+
+    assert tuple(full_proof.get_missing_segments(length)) == ()
+
+    partial = full_proof.to_partial(64, 64)
+
+    missing_segments = tuple(partial.get_missing_segments(length))
+    assert len(missing_segments) == 2
+
+    (
+        (segment_a_start, segment_a_length),
+        (segment_b_start, segment_b_length),
+    ) = missing_segments
+    assert segment_a_start == 0
+    assert segment_a_length == 64
+
+    assert segment_b_start == 128
+    assert segment_b_length == 52

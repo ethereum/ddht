@@ -81,14 +81,8 @@ def test_display_path(path, expected):
 @pytest.mark.parametrize(
     "paths,expected",
     (
-        (
-            (p(0, 0, 1), p(0, 0, 0), p(0, 0)),
-            (p(0, 0, 0), p(0, 0, 1)),
-        ),
-        (
-            (p(0, 0, 1), p(0,), p(0, 0, 0), p(0, 0)),
-            (p(0, 0, 0), p(0, 0, 1)),
-        ),
+        ((p(0, 0, 1), p(0, 0, 0), p(0, 0)), (p(0, 0, 0), p(0, 0, 1)),),
+        ((p(0, 0, 1), p(0,), p(0, 0, 0), p(0, 0)), (p(0, 0, 0), p(0, 0, 1)),),
     ),
 )
 def test_merge_paths(paths, expected):

@@ -6,6 +6,7 @@ from typing import (
     Any,
     Collection,
     Iterable,
+    NamedTuple,
     Optional,
     Sequence,
     Tuple,
@@ -30,6 +31,7 @@ from ddht.v5_1.alexandria.partials._utils import (
     merge_paths,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
+    MissingSegment,
     chunk_index_to_path,
     compute_chunks,
     path_to_left_chunk_index,
@@ -261,6 +263,11 @@ def _parse_element_stream(stream: IO[bytes]) -> Iterable[ProofElement]:
             yield element
 
 
+class DataSegment(NamedTuple):
+    start_at: int
+    data: bytes
+
+
 class Proof:
     """
     Representation of a merkle proof for an SSZ byte string (aka List[uint8,
@@ -388,12 +395,19 @@ class Proof:
         tree = self.get_tree()
         length = tree.get_data_length()
 
+        if start_at >= length:
+            raise Exception(
+                f"Starting point for partial is outside of data bounds: "
+                f"start_at={start_at} length={length}"
+            )
+
         # Ensure that we aren't requesting data that exceeds the overall length
         # of the underlying data.
         end_at = start_at + partial_data_length
         if end_at > length:
             raise Exception(
-                f"Cannot create partial that exceeds the data length: {end_at} > {length}"
+                f"Cannot create partial that exceeds the data length: "
+                f"end_at={end_at} length={length}"
             )
 
         # Compute the chunk indices and corresponding paths for the locations
@@ -468,7 +482,7 @@ class Proof:
         #
         # start-at : last_partial_chunk_index + 1
         # end-at   : N/A
-        if last_data_chunk_index + 1 <= self.sedes.chunk_count - 1:
+        if last_data_chunk_index + 1 <= self.sedes.chunk_count:
             first_padding_chunk_path = chunk_index_to_path(
                 last_data_chunk_index + 1, self.path_bit_length
             )
@@ -509,8 +523,62 @@ class Proof:
         segments = self.get_proven_data_segments(length)
         return DataPartial(length, segments)
 
+    @property
+    def is_complete(self) -> bool:
+        # TODO: something less than O(n) complexity
+        return (
+            len(tuple(self.get_missing_segments(self.get_tree().get_data_length())))
+            == 0
+        )
+
+    def has_chunk(self, chunk_index: int) -> bool:
+        path = chunk_index_to_path(chunk_index, self.path_bit_length)
+        # TODO: something less than O(n) complexity
+        return path in {el.path for el in self.elements}
+
     @to_tuple
-    def get_proven_data_segments(self, length: int) -> Iterable[Tuple[int, bytes]]:
+    def get_missing_segments(self, length: int) -> Iterable[MissingSegment]:
+        num_data_chunks = get_chunk_count_for_data_length(length)
+
+        last_data_chunk_index = max(0, num_data_chunks - 1)
+        last_data_chunk_path = chunk_index_to_path(
+            last_data_chunk_index, self.path_bit_length
+        )
+
+        last_data_chunk_size = length % CHUNK_SIZE or CHUNK_SIZE
+
+        tree = self.get_tree()
+
+        next_chunk_index = 0
+
+        for node in tree.walk(end_at=last_data_chunk_path):
+            if not node.is_leaf:
+                continue
+
+            chunk_index = path_to_left_chunk_index(node.path, self.path_bit_length)
+
+            # If the chunk index matches the expected next chunk index then we
+            # are in a data segment and should continue.  Otherwise we have
+            # skipped over some data and need to yield a segment.
+            if chunk_index > next_chunk_index:
+                yield MissingSegment(
+                    next_chunk_index * 32, (chunk_index - next_chunk_index) * 32,
+                )
+
+            next_chunk_index = chunk_index + 1
+
+        # To detect the case where we are missing the last segment, we look to see if
+        if next_chunk_index <= last_data_chunk_index:
+            last_segment_start = next_chunk_index * 32
+            last_segment_length = (
+                last_data_chunk_index * 32 + last_data_chunk_size - last_segment_start
+            )
+            yield MissingSegment(
+                last_segment_start, last_segment_length,
+            )
+
+    @to_tuple
+    def get_proven_data_segments(self, length: int) -> Iterable[DataSegment]:
         num_data_chunks = get_chunk_count_for_data_length(length)
 
         last_data_chunk_index = max(0, num_data_chunks - 1)
@@ -545,7 +613,7 @@ class Proof:
                 data_segment += chunk_data
             else:
                 if data_segment:
-                    yield (segment_start_index, data_segment)
+                    yield DataSegment(segment_start_index, data_segment)
                 data_segment = chunk_data
                 segment_start_index = chunk_index * CHUNK_SIZE
 
@@ -553,9 +621,9 @@ class Proof:
 
         if length:
             if data_segment:
-                yield (segment_start_index, data_segment)
+                yield DataSegment(segment_start_index, data_segment)
         if not length:
-            yield 0, b""
+            yield DataSegment(0, b"")
 
     def merge(self, other: "Proof") -> "Proof":
         if self.hash_tree_root != other.hash_tree_root:
@@ -574,7 +642,9 @@ class Proof:
 
         merged_paths = merge_paths(*paths_to_merge)
 
-        common_elements = tuple(all_self_elements_by_path[path] for path in common_paths)
+        common_elements = tuple(
+            all_self_elements_by_path[path] for path in common_paths
+        )
         merged_elements_from_self = tuple(
             all_self_elements_by_path[path]
             for path in merged_paths
@@ -626,18 +696,18 @@ def compute_proof_elements(
     yield from get_padding_elements(start_index, num_padding_chunks, path_bit_length)
 
 
-def compute_proof(data: bytes, sedes: ListSedes) -> Proof:
+def compute_proof(content: bytes, sedes: ListSedes) -> Proof:
     """
     Compute the full proof, including the mixed-in length value.
     """
-    chunks = compute_chunks(data)
+    chunks = compute_chunks(content)
 
     chunk_count = sedes.chunk_count
     path_bit_length = chunk_count.bit_length()
 
     data_elements = compute_proof_elements(chunks, chunk_count)
     length_element = ProofElement(
-        path=(True,), value=Hash32(len(data).to_bytes(CHUNK_SIZE, "little")),
+        path=(True,), value=Hash32(len(content).to_bytes(CHUNK_SIZE, "little")),
     )
     all_elements = data_elements + (length_element,)
     tree_data = tuple((el.path, el.value) for el in all_elements)

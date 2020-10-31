@@ -1,5 +1,6 @@
+import bisect
 import itertools
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, NamedTuple, Sequence, Tuple
 
 from eth_typing import Hash32
 from eth_utils import to_tuple
@@ -222,3 +223,51 @@ def group_by_subtree(
         chunks_to_process = next_chunks_to_process
 
     return tuple(sorted(final_groups))
+
+
+class MissingSegment(NamedTuple):
+    start_at: int
+    length: int
+
+    @property
+    def end_at(self) -> int:
+        return self.start_at + self.length
+
+    @to_tuple
+    def intersection(
+        self, segments: Sequence["MissingSegment"]
+    ) -> Iterable["MissingSegment"]:
+        """
+        Return the intersections between this segment and the provided segments.
+
+        The `segments` value **must** be sorted and non-overlapping.
+        """
+        insertion_indices = bisect.bisect(
+            tuple(other.end_at for other in segments), self.start_at
+        )
+        for other in segments[insertion_indices:]:
+            if other.start_at >= self.end_at or other.end_at <= self.start_at:
+                break
+            start_at = max(self.start_at, other.start_at)
+            end_at = min(self.end_at, other.end_at)
+            yield MissingSegment(start_at, end_at - start_at)
+
+
+@to_tuple
+def slice_segments_to_max_chunk_count(
+    segments: Sequence[MissingSegment], max_chunk_count: int
+) -> Iterable[MissingSegment]:
+    """
+    Given a set of missing segments, split them up into smaller sections if
+    necessary such that each section will fit within the specified
+    `max_chunk_count`.
+    """
+    max_segment_length = max_chunk_count * CHUNK_SIZE
+    for segment in segments:
+        if segment.length > max_segment_length:
+            segment_end_at = segment.start_at + segment.length
+            for start_at in range(segment.start_at, segment_end_at, max_segment_length):
+                sub_segment_end_at = min(segment_end_at, start_at + max_segment_length)
+                yield MissingSegment(start_at, sub_segment_end_at - start_at)
+        else:
+            yield segment

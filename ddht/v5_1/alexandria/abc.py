@@ -17,7 +17,9 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     TAlexandriaMessage,
 )
+from ddht.v5_1.alexandria.partials.proof import Proof
 from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.alexandria.typing import ContentID
 
 
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
@@ -87,9 +89,9 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: Hash32,
+        content_id: ContentID,
         start_chunk_index: int,
-        num_chunks: int,
+        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         ...
@@ -130,9 +132,9 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: Hash32,
+        content_id: ContentID,
         start_chunk_index: int,
-        num_chunks: int,
+        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> ContentMessage:
         ...
@@ -195,4 +197,29 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     @abstractmethod
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
+        ...
+
+    @abstractmethod
+    async def get_content_proof(
+        self,
+        node_id: NodeID,
+        *,
+        hash_tree_root: Hash32,
+        key: bytes,
+        start_chunk_index: int,
+        max_chunks: int,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> Proof:
+        ...
+
+    @abstractmethod
+    async def get_content_from_nodes(
+        self,
+        nodes: Collection[Tuple[NodeID, Optional[Endpoint]]],
+        *,
+        hash_tree_root: Hash32,
+        key: bytes,
+        concurrency: int = 4,
+    ) -> Proof:
         ...
