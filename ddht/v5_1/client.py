@@ -176,30 +176,35 @@ class Client(Service, ClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
+        enr_seq: Optional[int] = None,
         request_id: Optional[bytes] = None,
     ) -> bytes:
+        if enr_seq is None:
+            enr_seq = self.enr_manager.enr.sequence_number
+
         with self.request_tracker.reserve_request_id(
             node_id, request_id
         ) as message_request_id:
             message = AnyOutboundMessage(
-                PingMessage(message_request_id, self.enr_manager.enr.sequence_number),
-                endpoint,
-                node_id,
+                PingMessage(message_request_id, enr_seq), endpoint, node_id,
             )
             await self.dispatcher.send_message(message)
 
         return message_request_id
 
     async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, request_id: bytes,
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: bytes,
     ) -> None:
+        if enr_seq is None:
+            enr_seq = self.enr_manager.enr.sequence_number
+
         message = AnyOutboundMessage(
-            PongMessage(
-                request_id,
-                self.enr_manager.enr.sequence_number,
-                endpoint.ip_address,
-                endpoint.port,
-            ),
+            PongMessage(request_id, enr_seq, endpoint.ip_address, endpoint.port,),
             endpoint,
             node_id,
         )

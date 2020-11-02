@@ -246,13 +246,19 @@ class ClientAPI(ServiceAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
+        enr_seq: Optional[int] = None,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         ...
 
     @abstractmethod
     async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, request_id: bytes,
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: Optional[int] = None,
+        request_id: bytes,
     ) -> None:
         ...
 
