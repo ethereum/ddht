@@ -59,6 +59,7 @@ def bob_node_id_param(request, alice, bob, bob_network):
         "enode-missing-endpoint",
         "enode-bad-nodeid",
         "enr-without-prefix",
+        "enr-without-endpoint",
     )
 )
 def invalid_node_id(request, alice, bob, bob_network):
@@ -77,6 +78,11 @@ def invalid_node_id(request, alice, bob, bob_network):
         return f"enode://{too_short_nodeid.hex()}@{bob.endpoint}"
     elif request.param == "enr-without-prefix":
         return repr(bob.enr)[4:]
+    elif request.param == "enr-without-endpoint":
+        bob_network.enr_manager.update(
+            (b"ip", None), (b"udp", None), (b"tcp", None),
+        )
+        return repr(bob_network.enr_manager.enr)
     else:
         raise Exception(f"Unhandled param: {request.param}")
 
@@ -134,13 +140,19 @@ async def test_v51_rpc_findNodes(make_request, bob_node_id_param, alice, bob):
 
     # request with positional single distance
     enrs_at_0 = await make_request("discv5_findNodes", [bob_node_id_param, 0])
-    assert all(isinstance(ENR.from_repr(enr), ENR) for enr in enrs_at_0)
+
+    # verify that all of the returned ENR records can be parsed as valid ENRs
+    for enr_repr in enrs_at_0:
+        ENR.from_repr(enr_repr)
 
     # request with multiple distances
     enrs_at_some_distance = await make_request(
         "discv5_findNodes", [bob_node_id_param, tuple(distances)],
     )
-    assert all(isinstance(ENR.from_repr(enr), ENR) for enr in enrs_at_some_distance)
+
+    # verify that all of the returned ENR records can be parsed as valid ENRs
+    for enr_repr in enrs_at_some_distance:
+        ENR.from_repr(enr_repr)
 
 
 @pytest.mark.trio
@@ -195,4 +207,7 @@ async def test_v51_rpc_findNodes_w3(make_request, bob_node_id_param, alice, bob,
     enrs_at_some_distance = await trio.to_thread.run_sync(
         w3.discv5.find_nodes, bob_node_id_param, tuple(distances),
     )
-    assert all(isinstance(ENR.from_repr(enr), ENR) for enr in enrs_at_some_distance)
+
+    # verify that all of the returned ENR records can be parsed as valid ENRs
+    for enr_repr in enrs_at_some_distance:
+        ENR.from_repr(enr_repr)
