@@ -253,7 +253,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                         else:
                             await send_channel.send(response)
         if scope.cancelled_caught:
-            self.logger.warning(
+            self.logger.debug(
                 "Abandoned request response monitor: request=%s message_type=%s",
                 request,
                 response_message_type,

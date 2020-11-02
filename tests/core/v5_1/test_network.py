@@ -357,3 +357,70 @@ async def test_network_responds_to_unhandled_protocol_messages(
                 payload=b"payload-a",
                 endpoint=alice.endpoint,
             )
+
+
+@pytest.mark.trio
+async def test_network_bond_api(alice, bob, alice_network, bob_network):
+    with trio.fail_after(2):
+        result = await alice_network.bond(bob.node_id)
+        assert result is True
+
+
+@pytest.mark.trio
+async def test_network_bond_api_fetches_enr(alice, bob, alice_network, bob_network):
+    with trio.fail_after(2):
+        # ensure alice has the *old* version of bob's ENR
+        alice.enr_db.set_enr(bob.enr)
+
+        # create the new version of bob's ENR
+        bob_network.enr_manager.update((b"test", b"value"))
+        assert bob_network.enr_manager.enr.sequence_number > bob.enr.sequence_number
+
+        # do the bonding
+        result = await alice_network.bond(bob.node_id)
+        assert result is True
+
+        latest_bob_enr = bob_network.enr_manager.enr.sequence_number
+        assert alice.enr_db.get_enr(bob.node_id).sequence_number == latest_bob_enr
+
+
+@pytest.mark.trio
+async def test_network_bond_handles_ping_timeout(
+    alice, bob, alice_network, autojump_clock
+):
+    with trio.fail_after(30):
+        result = await alice_network.bond(bob.node_id)
+        assert result is False
+
+
+@pytest.mark.trio
+async def test_network_bond_handles_timeout_retrieving_ENR(
+    alice, bob, alice_network, bob_client, autojump_clock
+):
+    # ensure alice has the *old* version of bob's ENR
+    alice.enr_db.set_enr(bob.enr)
+
+    # create the new version of bob's ENR
+    bob_client.enr_manager.update((b"test", b"value"))
+    assert bob_client.enr_manager.enr.sequence_number > bob.enr.sequence_number
+
+    async with bob.events.ping_received.subscribe() as ping_subscription:
+        async with alice.events.pong_received.subscribe() as pong_subscription:
+            async with trio.open_nursery() as nursery:
+
+                async def _respond():
+                    request = await ping_subscription.receive()
+                    await bob_client.send_pong(
+                        request.sender_node_id,
+                        request.sender_endpoint,
+                        request_id=request.request_id,
+                    )
+
+                nursery.start_soon(_respond)
+
+                with trio.fail_after(30):
+                    result = await alice_network.bond(bob.node_id)
+                    assert result is False
+
+                with trio.fail_after(1):
+                    await pong_subscription.receive()

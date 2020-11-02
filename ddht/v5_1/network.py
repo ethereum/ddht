@@ -107,7 +107,7 @@ class Network(Service, NetworkAPI):
 
         try:
             pong = await self.ping(node_id, endpoint=endpoint)
-        except trio.EndOfChannel:
+        except trio.TooSlowError:
             self.logger.debug("Bonding with %s timed out during ping", node_id.hex())
             return False
 
@@ -115,9 +115,15 @@ class Network(Service, NetworkAPI):
             enr = await self.lookup_enr(
                 node_id, enr_seq=pong.enr_seq, endpoint=endpoint
             )
-        except trio.EndOfChannel:
+        except trio.TooSlowError:
             self.logger.debug(
                 "Bonding with %s timed out during ENR retrieval", node_id.hex(),
+            )
+            return False
+        except EmptyFindNodesResponse:
+            self.logger.debug(
+                "Bonding with %s failed due to them not returing their ENR record",
+                node_id.hex(),
             )
             return False
 
@@ -242,7 +248,7 @@ class Network(Service, NetworkAPI):
             distance = compute_log_distance(node_id, target)
             try:
                 enrs = await self.find_nodes(node_id, distance)
-            except trio.EndOfChannel:
+            except trio.TooSlowError:
                 unresponsive_node_ids.add(node_id)
                 return
 
@@ -304,6 +310,7 @@ class Network(Service, NetworkAPI):
         self.manager.run_daemon_child_service(self.client)
         await self.client.wait_listening()
 
+        self.manager.run_daemon_task(self._periodically_report_routing_table)
         self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
         self.manager.run_daemon_task(self._track_last_pong)
         self.manager.run_daemon_task(self._manage_routing_table)
