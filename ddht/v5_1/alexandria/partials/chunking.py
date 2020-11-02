@@ -13,8 +13,11 @@ from ddht.v5_1.alexandria.partials.typing import TreePath
 @to_tuple
 def compute_chunks(data: bytes) -> Iterable[Hash32]:
     """
-    An optimized version of SSZ chunk computation specifically for byte
+    An optimized version of SSZ chunking specifically for byte
     strings.
+
+    Takes the data and splits it into chunks of length 32.  The last chunk is
+    padded out to 32 bytes with null bytes `0x00` if it is not full.
     """
     if not data:
         yield ZERO_BYTES32

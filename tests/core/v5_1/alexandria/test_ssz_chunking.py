@@ -42,7 +42,7 @@ def test_ssz_compute_chunks(content):
         start_at = chunk_index * CHUNK_SIZE
         end_at = min(len(content), start_at + CHUNK_SIZE)
 
-        assert chunk == content[start_at:end_at].ljust(32, b"\x00")
+        assert chunk == content[start_at:end_at].ljust(CHUNK_SIZE, b"\x00")
 
         if chunk_index == expected_chunk_count - 1:
             padding_start_idx = len(content) % CHUNK_SIZE
