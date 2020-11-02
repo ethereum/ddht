@@ -1,10 +1,17 @@
 import ipaddress
 from socket import inet_ntoa
-from typing import Any, Iterable, Optional, Tuple, TypedDict
+from typing import Any, Iterable, List, Optional, Tuple, TypedDict
 
 from eth_enr import ENR
 from eth_typing import HexStr, NodeID
-from eth_utils import decode_hex, is_hex, remove_0x_prefix, to_dict
+from eth_utils import (
+    decode_hex,
+    is_hex,
+    is_integer,
+    is_list_like,
+    remove_0x_prefix,
+    to_dict,
+)
 
 from ddht.abc import RPCHandlerAPI
 from ddht.endpoint import Endpoint
@@ -16,6 +23,28 @@ class PongResponse(TypedDict):
     enr_seq: int
     packet_ip: str
     packet_port: int
+
+
+def extract_params(request: RPCRequest) -> List[Any]:
+    try:
+        params = request["params"]
+    except KeyError:
+        raise RPCError("Request missing `params` key")
+
+    if not is_list_like(params):
+        raise RPCError(
+            f"Params must be list-like: params-type={type(params)} params={params}"
+        )
+
+    return params
+
+
+def validate_params_length(params: List[Any], length: int) -> None:
+    if len(params) != length:
+        raise RPCError(
+            f"Endpoint expects {length} params: length={len(params)} "
+            f"params={params}"
+        )
 
 
 def is_hex_node_id(value: Any) -> bool:
@@ -51,48 +80,47 @@ def validate_endpoint(value: Any) -> None:
         raise RPCError(f"Invalid Endpoint: {value}")
 
 
+def validate_and_extract_destination(value: Any) -> Tuple[NodeID, Optional[Endpoint]]:
+    node_id: NodeID
+    endpoint: Optional[Endpoint]
+
+    if is_hex_node_id(value):
+        node_id = NodeID(decode_hex(value))
+        endpoint = None
+    elif value.startswith("enode://"):
+        raw_node_id, _, raw_endpoint = value[8:].partition("@")
+
+        validate_hex_node_id(raw_node_id)
+        validate_endpoint(raw_endpoint)
+
+        node_id = NodeID(decode_hex(raw_node_id))
+
+        raw_ip_address, _, raw_port = raw_endpoint.partition(":")
+        ip_address = ipaddress.ip_address(raw_ip_address)
+        port = int(raw_port)
+        endpoint = Endpoint(ip_address.packed, port)
+    elif value.startswith("enr:"):
+        enr = ENR.from_repr(value)
+        node_id = enr.node_id
+        endpoint = Endpoint.from_enr(enr)
+    else:
+        raise RPCError(f"Unrecognized node identifier: {value}")
+
+    return node_id, endpoint
+
+
 class PingHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], PongResponse]):
     def __init__(self, network: NetworkAPI) -> None:
         self._network = network
 
     def extract_params(self, request: RPCRequest) -> Tuple[NodeID, Optional[Endpoint]]:
-        try:
-            raw_params = request["params"]
-        except KeyError as err:
-            raise RPCError(f"Missiing call params: {err}")
+        raw_params = extract_params(request)
 
-        if len(raw_params) != 1:
-            raise RPCError(
-                f"`ddht_ping` endpoint expects a single parameter: "
-                f"Got {len(raw_params)} params: {raw_params}"
-            )
+        validate_params_length(raw_params, 1)
 
-        value = raw_params[0]
+        raw_destination = raw_params[0]
 
-        node_id: NodeID
-        endpoint: Optional[Endpoint]
-
-        if is_hex_node_id(value):
-            node_id = NodeID(decode_hex(value))
-            endpoint = None
-        elif value.startswith("enode://"):
-            raw_node_id, _, raw_endpoint = value[8:].partition("@")
-
-            validate_hex_node_id(raw_node_id)
-            validate_endpoint(raw_endpoint)
-
-            node_id = NodeID(decode_hex(raw_node_id))
-
-            raw_ip_address, _, raw_port = raw_endpoint.partition(":")
-            ip_address = ipaddress.ip_address(raw_ip_address)
-            port = int(raw_port)
-            endpoint = Endpoint(ip_address.packed, port)
-        elif value.startswith("enr:"):
-            enr = ENR.from_repr(value)
-            node_id = enr.node_id
-            endpoint = Endpoint.from_enr(enr)
-        else:
-            raise RPCError(f"Unrecognized node identifier: {value}")
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
 
         return node_id, endpoint
 
@@ -106,6 +134,56 @@ class PingHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], PongResponse]):
         )
 
 
+def _is_valid_distance(value: Any) -> bool:
+    return is_integer(value) and 0 <= value <= 256
+
+
+def validate_and_normalize_distances(value: Any) -> Tuple[int, ...]:
+    if _is_valid_distance(value):
+        return (value,)
+    elif (
+        is_list_like(value)
+        and value
+        and all(_is_valid_distance(element) for element in value)
+    ):
+        return tuple(value)
+    else:
+        raise RPCError(
+            f"Distances must be either a single integer distance or a non-empty list of "
+            f"distances: {value}"
+        )
+
+
+FindNodesRPCParams = Tuple[NodeID, Optional[Endpoint], Tuple[int, ...]]
+
+
+class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> FindNodesRPCParams:
+        raw_params = extract_params(request)
+
+        if len(raw_params) != 2:
+            raise RPCError(
+                f"`discv5_findNodes` endpoint expects two parameter: "
+                f"Got {len(raw_params)} params: {raw_params}"
+            )
+
+        raw_destination, raw_distances = raw_params
+
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        distances = validate_and_normalize_distances(raw_distances)
+
+        return node_id, endpoint, distances
+
+    async def do_call(self, params: FindNodesRPCParams) -> Tuple[str, ...]:
+        node_id, endpoint, distances = params
+        enrs = await self._network.find_nodes(node_id, *distances, endpoint=endpoint)
+        return tuple(repr(enr) for enr in enrs)
+
+
 @to_dict
 def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerAPI]]:
     yield ("discv5_ping", PingHandler(network))
+    yield ("discv5_findNodes", FindNodesHandler(network))

@@ -1,5 +1,5 @@
 import ipaddress
-from typing import Any, Callable, List, Mapping, NamedTuple, Tuple, Union
+from typing import Any, Callable, List, Mapping, NamedTuple, Sequence, Tuple, Union
 
 from eth_utils import add_0x_prefix, encode_hex, remove_0x_prefix
 
@@ -93,16 +93,16 @@ class RPC:
     routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
 
     ping = RPCEndpoint("discv5_ping")
+    findNodes = RPCEndpoint("discv5_findNodes")
 
 
-def ping_munger(
-    module: Any, identifier: Union[ENRAPI, str, bytes, NodeID, HexStr]
-) -> List[str]:
+NodeIDIdentifier = Union[ENRAPI, str, bytes, NodeID, HexStr]
+
+
+def normalize_node_id_identifier(identifier: NodeIDIdentifier) -> str:
     """
-    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
-
     Normalizes the any of the following inputs into the appropriate payload for
-    the ``discv5_ping` JSON-RPC API endpoint.
+    representing a `NodeID` over a JSON-RPC API endpoint.
 
     - An ENR object
     - The string representation of an ENR
@@ -114,20 +114,49 @@ def ping_munger(
     formats.
     """
     if isinstance(identifier, ENRAPI):
-        return [repr(identifier)]
+        return repr(identifier)
     elif isinstance(identifier, bytes):
         if len(identifier) == 32:
-            return [encode_hex(identifier)]
+            return encode_hex(identifier)
         raise ValueError(f"Unrecognized node identifier: {identifier!r}")
     elif isinstance(identifier, str):
         if identifier.startswith("enode://") or identifier.startswith("enr:"):
-            return [identifier]
+            return identifier
         elif len(remove_0x_prefix(HexStr(identifier))) == 64:
-            return [add_0x_prefix(HexStr(identifier))]
+            return add_0x_prefix(HexStr(identifier))
         else:
             raise ValueError(f"Unrecognized node identifier: {identifier}")
     else:
         raise ValueError(f"Unrecognized node identifier: {identifier}")
+
+
+def ping_munger(module: Any, identifier: NodeIDIdentifier,) -> List[str]:
+    """
+    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
+
+    Normalizes the inputs for the `discv5_ping` JSON-RPC endpoint
+    """
+    return [normalize_node_id_identifier(identifier)]
+
+
+def find_nodes_munger(
+    module: Any,
+    identifier: NodeIDIdentifier,
+    distance_or_distances: Union[int, Sequence[int]],
+) -> Tuple[str, Union[int, Sequence[int]]]:
+    """
+    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
+
+    Normalizes the inputs for the `discv5_findNodes` JSON-RPC endpoint
+    """
+    return (
+        normalize_node_id_identifier(identifier),
+        distance_or_distances,
+    )
+
+
+def find_nodes_response_formatter(enr_reprs: Sequence[str]) -> Tuple[ENRAPI, ...]:
+    return tuple(ENR.from_repr(enr_repr) for enr_repr in enr_reprs)
 
 
 # TODO: why does mypy think ModuleV2 is of `Any` type?
@@ -145,8 +174,15 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         result_formatters=lambda method: TableInfo.from_rpc_response,
     )
 
-    ping: Method[Callable[[Union[NodeID, ENRAPI, HexStr, str]], PongPayload]] = Method(
+    ping: Method[Callable[[NodeIDIdentifier], PongPayload]] = Method(
         RPC.ping,
         result_formatters=lambda method: PongPayload.from_rpc_response,
         mungers=[ping_munger],
+    )
+    find_nodes: Method[
+        Callable[[NodeIDIdentifier, Union[int, Sequence[int]]], Tuple[ENRAPI, ...]]
+    ] = Method(
+        RPC.findNodes,
+        result_formatters=lambda method: find_nodes_response_formatter,
+        mungers=[find_nodes_munger],
     )
