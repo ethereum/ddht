@@ -6,7 +6,9 @@ import trio
 
 from ddht.kademlia import KademliaRoutingTable
 from ddht.v5_1.alexandria.messages import (
+    ContentMessage,
     FindNodesMessage,
+    GetContentMessage,
     PingMessage,
     PongMessage,
     decode_message,
@@ -65,16 +67,17 @@ async def test_alexandria_client_send_pong(bob, bob_network, alice_alexandria_cl
 async def test_alexandria_client_ping_request_response(
     alice, bob, bob_network, alice_alexandria_client, bob_alexandria_client,
 ):
-    async def _respond():
-        request = await subscription.receive()
-        await bob_alexandria_client.send_pong(
-            alice.node_id,
-            alice.endpoint,
-            enr_seq=bob.enr.sequence_number,
-            request_id=request.request_id,
-        )
-
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_pong(
+                alice.node_id,
+                alice.endpoint,
+                enr_seq=bob.enr.sequence_number,
+                request_id=request.request_id,
+            )
+
         async with trio.open_nursery() as nursery:
             nursery.start_soon(_respond)
 
@@ -96,18 +99,19 @@ async def test_alexandria_api_ping_request_response_request_id_mismatch(
     bob_alexandria_client,
     autojump_clock,
 ):
-    async def _respond_wrong_request_id():
-        await subscription.receive()
-        await bob_alexandria_client.send_pong(
-            alice.node_id,
-            alice.endpoint,
-            enr_seq=bob.enr.sequence_number,
-            request_id=alice_network.client.request_tracker.get_free_request_id(
-                bob.node_id
-            ),
-        )
-
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+
+        async def _respond_wrong_request_id():
+            await subscription.receive()
+            await bob_alexandria_client.send_pong(
+                alice.node_id,
+                alice.endpoint,
+                enr_seq=bob.enr.sequence_number,
+                request_id=alice_network.client.request_tracker.get_free_request_id(
+                    bob.node_id
+                ),
+            )
+
         async with trio.open_nursery() as nursery:
             nursery.start_soon(_respond_wrong_request_id)
 
@@ -229,3 +233,84 @@ async def test_client_request_response_find_nodes_found_nodes(
                 assert found_node_ids == expected_node_ids
 
     assert len(checked_bucket_indexes) > 4
+
+
+@pytest.mark.trio
+async def test_alexandria_client_send_get_content(
+    bob, bob_network, alice_alexandria_client
+):
+    content_id = b"unicornsrainbowsuniconrsrainbows"
+    start_chunk_index = 5
+    num_chunks = 16
+
+    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+        await alice_alexandria_client.send_get_content(
+            bob.node_id,
+            bob.endpoint,
+            content_id=content_id,
+            start_chunk_index=start_chunk_index,
+            num_chunks=num_chunks,
+        )
+        with trio.fail_after(1):
+            talk_response = await subscription.receive()
+        message = decode_message(talk_response.message.payload)
+        assert isinstance(message, GetContentMessage)
+        assert message.payload.content_id == content_id
+        assert message.payload.start_chunk_index == start_chunk_index
+        assert message.payload.num_chunks == num_chunks
+
+
+@pytest.mark.trio
+async def test_alexandria_client_send_content(
+    bob, bob_network, alice_alexandria_client
+):
+
+    async with bob_network.dispatcher.subscribe(TalkResponseMessage) as subscription:
+        await alice_alexandria_client.send_content(
+            bob.node_id,
+            bob.endpoint,
+            is_proof=True,
+            payload=b"test",
+            request_id=b"\x01",
+        )
+        with trio.fail_after(1):
+            talk_response = await subscription.receive()
+        message = decode_message(talk_response.message.payload)
+        assert isinstance(message, ContentMessage)
+        assert message.payload.is_proof is True
+        assert message.payload.payload == b"test"
+
+
+@pytest.mark.trio
+async def test_alexandria_client_get_content(
+    alice, bob, bob_network, alice_alexandria_client, bob_alexandria_client,
+):
+    content_id = b"unicornsrainbowsuniconrsrainbows"
+
+    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_content(
+                request.sender_node_id,
+                request.sender_endpoint,
+                is_proof=False,
+                payload=b"test",
+                request_id=request.request_id,
+            )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                content_message = await alice_alexandria_client.get_content(
+                    bob.node_id,
+                    bob.endpoint,
+                    content_id=content_id,
+                    start_chunk_index=0,
+                    num_chunks=1,
+                )
+
+                assert isinstance(content_message, ContentMessage)
+                assert content_message.payload.is_proof is False
+                assert content_message.payload.payload == b"test"

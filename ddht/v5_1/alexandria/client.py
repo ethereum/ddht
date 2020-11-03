@@ -16,7 +16,7 @@ from typing import (
 from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRAPI
-from eth_typing import NodeID
+from eth_typing import Hash32, NodeID
 from eth_utils import ValidationError
 import trio
 
@@ -32,16 +32,20 @@ from ddht.v5_1.alexandria.abc import AlexandriaClientAPI
 from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
+    ContentMessage,
     FindNodesMessage,
     FoundNodesMessage,
+    GetContentMessage,
     PingMessage,
     PongMessage,
     TAlexandriaMessage,
     decode_message,
 )
 from ddht.v5_1.alexandria.payloads import (
+    ContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
+    GetContentPayload,
     PingPayload,
     PongPayload,
 )
@@ -313,6 +317,37 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
 
         return num_batches
 
+    async def send_get_content(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_id: Hash32,
+        start_chunk_index: int,
+        num_chunks: int,
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        message = GetContentMessage(
+            GetContentPayload(content_id, start_chunk_index, num_chunks)
+        )
+        return await self._send_request(
+            node_id, endpoint, message, request_id=request_id
+        )
+
+    async def send_content(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        is_proof: bool,
+        payload: bytes,
+        request_id: bytes,
+    ) -> None:
+        message = ContentMessage(ContentPayload(is_proof, payload))
+        return await self._send_response(
+            node_id, endpoint, message, request_id=request_id
+        )
+
     #
     # High Level Request/Response
     #
@@ -369,6 +404,22 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                             )
 
             return responses
+
+    async def get_content(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_id: Hash32,
+        start_chunk_index: int,
+        num_chunks: int,
+        request_id: Optional[bytes] = None,
+    ) -> ContentMessage:
+        request = GetContentMessage(
+            GetContentPayload(content_id, start_chunk_index, num_chunks)
+        )
+        response = await self._request(node_id, endpoint, request, ContentMessage)
+        return response
 
     #
     # Long Running Processes to manage subscriptions
