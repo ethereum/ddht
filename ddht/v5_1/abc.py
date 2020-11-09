@@ -221,6 +221,7 @@ class DispatcherAPI(ServiceAPI):
 
 
 class ClientAPI(ServiceAPI):
+    local_private_key: keys.PrivateKey
     enr_manager: ENRManagerAPI
     events: EventsAPI
     dispatcher: DispatcherAPI
