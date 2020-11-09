@@ -147,7 +147,7 @@ class Network(Service, NetworkAPI):
         request_id: Optional[bytes] = None,
     ) -> PongMessage:
         if endpoint is None:
-            endpoint = self._endpoint_for_node_id(node_id)
+            endpoint = await self.endpoint_for_node_id(node_id)
         response = await self.client.ping(node_id, endpoint, request_id=request_id)
         return response.message
 
@@ -162,7 +162,7 @@ class Network(Service, NetworkAPI):
             raise TypeError("Must provide at least one distance")
 
         if endpoint is None:
-            endpoint = self._endpoint_for_node_id(node_id)
+            endpoint = await self.endpoint_for_node_id(node_id)
         responses = await self.client.find_nodes(
             node_id, endpoint, distances=distances, request_id=request_id
         )
@@ -195,7 +195,7 @@ class Network(Service, NetworkAPI):
         request_id: Optional[bytes] = None,
     ) -> bytes:
         if endpoint is None:
-            endpoint = self._endpoint_for_node_id(node_id)
+            endpoint = await self.endpoint_for_node_id(node_id)
         response = await self.client.talk(
             node_id, endpoint, protocol, payload, request_id=request_id
         )
@@ -207,16 +207,27 @@ class Network(Service, NetworkAPI):
     async def lookup_enr(
         self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
     ) -> ENRAPI:
+        if node_id == self.local_node_id:
+            raise Exception(f"Cannot lookup local ENR: node_id={node_id.hex()}")
+
         try:
             enr = self.enr_db.get_enr(node_id)
-
-            if enr.sequence_number >= enr_seq:
-                return enr
         except KeyError:
             if endpoint is None:
-                # we weren't given an endpoint and we don't have an enr which would give
-                # us an endpoint, there's no way to reach this node.
-                raise
+                enrs_close_to_node_id = await self.recursive_find_nodes(node_id)
+                if not enrs_close_to_node_id:
+                    raise KeyError(f"Could not find ENR: node_id={node_id.hex()}")
+
+                closest_enr = enrs_close_to_node_id[0]
+                if closest_enr.node_id == node_id:
+                    endpoint = Endpoint.from_enr(closest_enr)
+                else:
+                    # we weren't given an endpoint and we don't have an enr which would give
+                    # us an endpoint, there's no way to reach this node.
+                    raise KeyError(f"Could not find ENR: node_id={node_id.hex()}")
+        else:
+            if enr.sequence_number >= enr_seq:
+                return enr
 
         enr = await self._fetch_enr(node_id, endpoint=endpoint)
         self.enr_db.set_enr(enr)
@@ -245,7 +256,11 @@ class Network(Service, NetworkAPI):
         async def do_lookup(node_id: NodeID) -> None:
             queried_node_ids.add(node_id)
 
-            distance = compute_log_distance(node_id, target)
+            if node_id == target:
+                distance = 0
+            else:
+                distance = compute_log_distance(node_id, target)
+
             try:
                 enrs = await self.find_nodes(node_id, distance)
             except trio.TooSlowError:
@@ -302,6 +317,31 @@ class Network(Service, NetworkAPI):
                 key=lambda enr: compute_distance(enr.node_id, target),
             )
         )
+
+    async def get_nodes_near(
+        self, target: NodeID, max_nodes: int = 32
+    ) -> Tuple[NodeID, ...]:
+        enrs_from_recursive_find = await self.recursive_find_nodes(target)
+
+        for enr in enrs_from_recursive_find:
+            self.enr_db.set_enr(enr)
+
+        node_ids_from_routing_table = tuple(
+            self.routing_table.iter_nodes_around(target)
+        )
+        node_ids_from_recursive_find = tuple(
+            enr.node_id
+            for enr in enrs_from_recursive_find
+            if enr.node_id != self.local_node_id
+        )
+
+        node_ids_by_distance = tuple(
+            sorted(
+                node_ids_from_routing_table + node_ids_from_recursive_find,
+                key=lambda node_id: compute_distance(target, node_id),
+            )
+        )
+        return node_ids_by_distance[:max_nodes]
 
     #
     # Long Running Processes
@@ -494,6 +534,10 @@ class Network(Service, NetworkAPI):
     #
     # Utility
     #
-    def _endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
-        enr = self.enr_db.get_enr(node_id)
+    async def endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
+        try:
+            enr = self.enr_db.get_enr(node_id)
+        except KeyError:
+            enr = await self.lookup_enr(node_id)
+
         return Endpoint.from_enr(enr)

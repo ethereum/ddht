@@ -188,11 +188,5 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def lookup_enr(
-        self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
-    ) -> ENRAPI:
-        ...
-
-    @abstractmethod
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         ...

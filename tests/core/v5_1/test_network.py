@@ -9,7 +9,7 @@ import pytest
 import trio
 
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
-from ddht.kademlia import compute_log_distance
+from ddht.kademlia import compute_distance, compute_log_distance
 from ddht.v5_1.abc import TalkProtocolAPI
 from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
@@ -229,6 +229,27 @@ async def test_network_lookup_many_enr_response(bob, alice_network, alice, bob_c
 
 
 @pytest.mark.trio
+async def test_network_lookup_fallback_to_recursive_find_nodes(
+    tester, bob, alice_network, alice, bob_network
+):
+    carol = tester.node()
+
+    with trio.fail_after(2):
+        await alice_network.bond(bob.node_id)
+
+    with pytest.raises(KeyError):
+        await alice_network.lookup_enr(carol.node_id)
+
+    async with carol.network():
+        # now add carol to bob's routing table
+        bob.enr_db.set_enr(carol.enr)
+        bob_network.routing_table.update(carol.node_id)
+
+        with trio.fail_after(2):
+            await alice_network.lookup_enr(carol.node_id)
+
+
+@pytest.mark.trio
 async def test_network_recursive_find_nodes(tester, alice, bob):
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(bob.network())
@@ -424,3 +445,43 @@ async def test_network_bond_handles_timeout_retrieving_ENR(
 
                 with trio.fail_after(1):
                     await pong_subscription.receive()
+
+
+@pytest.mark.trio
+async def test_network_get_nodes_near(
+    tester, alice, bob, alice_network, bob_network, autojump_clock
+):
+    await alice_network.bond(bob.node_id)
+
+    await bob_network.bond(alice.node_id)
+
+    nodes = tuple(tester.node() for _ in range(40))
+    enrs = tuple(node.enr for node in nodes)
+
+    enrs_by_distance = tuple(
+        sorted(enrs, key=lambda enr: compute_distance(enr.node_id, bob.node_id))
+    )
+
+    target = enrs_by_distance[0]
+    enrs_for_bob = enrs_by_distance[1:10]
+    enrs_for_alice = enrs_by_distance[10:20]
+
+    bob.enr_db.set_enr(target)
+    bob_network.routing_table.update(target.node_id)
+    for enr in enrs_for_bob:
+        bob.enr_db.set_enr(enr)
+        bob_network.routing_table.update(enr.node_id)
+    for enr in enrs_for_alice:
+        alice.enr_db.set_enr(enr)
+        alice_network.routing_table.update(enr.node_id)
+
+    node_ids_near_target = await alice_network.get_nodes_near(
+        target.node_id, max_nodes=20
+    )
+
+    assert node_ids_near_target[0] == target.node_id
+
+    node_ids_from_alice = {enr.node_id for enr in enrs_for_alice}
+    assert node_ids_from_alice.issubset(node_ids_near_target)
+
+    assert bob.node_id in node_ids_near_target
