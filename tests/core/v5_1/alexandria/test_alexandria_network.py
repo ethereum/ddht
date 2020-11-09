@@ -137,11 +137,11 @@ async def test_alexandria_network_get_content_proof_api(
             with trio.fail_after(2):
                 partial = await alice_alexandria_network.get_content_proof(
                     bob.node_id,
-                    bob.endpoint,
                     hash_tree_root=proof.hash_tree_root,
                     key=b"\x01",
                     start_chunk_index=0,
                     max_chunks=16,
+                    endpoint=bob.endpoint,
                 )
                 validate_proof(partial)
                 partial_data = partial.get_proven_data()

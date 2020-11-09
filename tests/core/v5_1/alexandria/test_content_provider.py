@@ -85,7 +85,9 @@ async def test_content_provider_restricts_max_chunks(
     db = {content_id: content}
     proof = compute_proof(content, sedes=content_sedes)
 
-    content_provider = ContentProvider(bob_alexandria_client, db, max_chunks_per_request=16)
+    content_provider = ContentProvider(
+        bob_alexandria_client, db, max_chunks_per_request=16
+    )
     async with background_trio_service(content_provider):
         # this ensures that the subscription is in place.
         await content_provider.ready()
@@ -100,10 +102,11 @@ async def test_content_provider_restricts_max_chunks(
                 endpoint=bob.endpoint,
             )
             validate_proof(proof)
-            num_leaf_chunks = len(tuple(
-                node
-                for node
-                in proof.get_tree().walk()
-                if node.is_leaf and node.path != (True,)
-            ))
+            num_leaf_chunks = len(
+                tuple(
+                    node
+                    for node in proof.get_tree().walk()
+                    if node.is_leaf and node.path != (True,)
+                )
+            )
             assert num_leaf_chunks == 16
