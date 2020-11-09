@@ -56,7 +56,7 @@ class Client(Service, ClientAPI):
         events: EventsAPI = None,
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
-        self._local_private_key = local_private_key
+        self.local_private_key = local_private_key
 
         self.listen_on = listen_on
         self._listening = trio.Event()
@@ -102,7 +102,7 @@ class Client(Service, ClientAPI):
         self.events = events
 
         self.pool = Pool(
-            local_private_key=self._local_private_key,
+            local_private_key=self.local_private_key,
             local_node_id=self.enr_manager.enr.node_id,
             enr_db=self.enr_db,
             outbound_envelope_send_channel=self._outbound_envelope_send_channel,

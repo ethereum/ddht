@@ -16,6 +16,7 @@ from typing import (
 from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRAPI
+from eth_keys import keys
 from eth_typing import Hash32, NodeID
 from eth_utils import ValidationError
 import trio
@@ -68,6 +69,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         network.add_talk_protocol(self)
 
         self._active_request_ids = set()
+
+    @property
+    def local_private_key(self) -> keys.PrivateKey:
+        return self.network.client.local_private_key
 
     #
     # Service API
