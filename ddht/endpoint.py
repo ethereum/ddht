@@ -4,7 +4,7 @@ from typing import NamedTuple
 from eth_enr import ENRAPI
 from eth_enr.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 
-from ddht.exceptions import MissingEndpoint
+from ddht.exceptions import MissingEndpointFields
 
 
 class Endpoint(NamedTuple):
@@ -19,7 +19,7 @@ class Endpoint(NamedTuple):
         try:
             ip_address = enr[IP_V4_ADDRESS_ENR_KEY]
             port = enr[UDP_PORT_ENR_KEY]
-        except KeyError:
-            raise MissingEndpoint("Missing endpoint address information: ")
+        except KeyError as err:
+            raise MissingEndpointFields(f"Missing endpoint address information: {err}")
 
         return Endpoint(ip_address, port)

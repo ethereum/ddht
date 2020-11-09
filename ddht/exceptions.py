@@ -62,10 +62,10 @@ class EmptyFindNodesResponse(BaseDDHTError):
     pass
 
 
-class MissingEndpoint(BaseDDHTError):
+class MissingEndpointFields(BaseDDHTError):
     """
-    Raised when trying to extract an ``ddht.endpoint.Endpoint`` from an ENR
-    record that is missing the necessary fields
+    Raised when trying to extract and `Endpoint` from an ENR record when the
+    ENR record is missing the necessary fields
     """
 
     pass
