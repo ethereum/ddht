@@ -506,3 +506,11 @@ class NetworkAPI(ServiceAPI):
     @abstractmethod
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         ...
+
+    @abstractmethod
+    async def get_nodes_near(self, target: NodeID) -> Tuple[NodeID, ...]:
+        ...
+
+    @abstractmethod
+    async def endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
+        ...

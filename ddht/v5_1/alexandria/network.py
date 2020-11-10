@@ -92,7 +92,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             return False
 
         try:
-            enr = await self.lookup_enr(
+            enr = await self.network.lookup_enr(
                 node_id, enr_seq=pong.enr_seq, endpoint=endpoint
             )
         except trio.TooSlowError:
@@ -117,7 +117,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> PongPayload:
         if endpoint is None:
-            endpoint = self._endpoint_for_node_id(node_id)
+            endpoint = await self.network.endpoint_for_node_id(node_id)
         response = await self.client.ping(node_id, endpoint=endpoint)
         return response.payload
 
@@ -132,41 +132,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             raise TypeError("Must provide at least one distance")
 
         if endpoint is None:
-            endpoint = self._endpoint_for_node_id(node_id)
+            endpoint = await self.network.endpoint_for_node_id(node_id)
         responses = await self.client.find_nodes(
             node_id, endpoint, distances=distances, request_id=request_id
         )
         return tuple(
             enr for response in responses for enr in response.message.payload.enrs
         )
-
-    async def lookup_enr(
-        self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
-    ) -> ENRAPI:
-        try:
-            enr = self.enr_db.get_enr(node_id)
-
-            if enr.sequence_number >= enr_seq:
-                return enr
-        except KeyError:
-            if endpoint is None:
-                # we weren't given an endpoint and we don't have an enr which would give
-                # us an endpoint, there's no way to reach this node.
-                raise
-
-        enr = await self._fetch_enr(node_id, endpoint=endpoint)
-        self.enr_db.set_enr(enr)
-
-        return enr
-
-    async def _fetch_enr(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint]
-    ) -> ENRAPI:
-        enrs = await self.find_nodes(node_id, 0, endpoint=endpoint)
-        if not enrs:
-            raise Exception("Invalid response")
-        # This reduce accounts for
-        return reduce_enrs(enrs)[0]
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         self.logger.debug("Recursive find nodes: %s", target.hex())
@@ -388,10 +360,3 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                         continue
                     endpoint = Endpoint.from_enr(enr)
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
-
-    #
-    # Utility
-    #
-    def _endpoint_for_node_id(self, node_id: NodeID) -> Endpoint:
-        enr = self.enr_db.get_enr(node_id)
-        return Endpoint.from_enr(enr)
