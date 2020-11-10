@@ -30,7 +30,7 @@ from ddht.request_tracker import RequestTracker
 from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI
-from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID
+from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID, MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
     ContentMessage,
@@ -50,7 +50,7 @@ from ddht.v5_1.alexandria.payloads import (
     PingPayload,
     PongPayload,
 )
-from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
+from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
 
@@ -312,9 +312,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         request_id: bytes,
     ) -> int:
 
-        enr_batches = partition_enrs(
-            enrs, max_payload_size=FOUND_NODES_MAX_PAYLOAD_SIZE
-        )
+        enr_batches = partition_enrs(enrs, max_payload_size=MAX_PAYLOAD_SIZE,)
         num_batches = len(enr_batches)
         for batch in enr_batches:
             message = FoundNodesMessage(FoundNodesPayload.from_enrs(num_batches, batch))
