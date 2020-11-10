@@ -11,11 +11,47 @@ class RemoveResource(Exception):
 
 
 class ResourceQueue(Container[TResource]):
+    """
+    Allow some set of "worker" processes to share the underlying resources,
+    ensuring that any given resource is only in use by a single worker at any
+    given time.
+
+    .. code-block:: python
+
+        things = (thing_1, thing_2, ...)
+        queue = ResourceQueue(things)
+
+        async def worker():
+            while True:
+                # within the following async context block the `resource` is
+                # reserved for this worker.
+                async with queue.reserve() as resource:
+
+                    # We typically want to do something with the resource.
+                    do_work(resource)  # do
+
+                    # We can remove the resource from the queue
+                    if done_with(resource):
+                        queue.remove()
+
+                    # We can add new resources to the queue
+                    if has_new_resources(resource):
+                        new_resource = ...  #
+                        queue.add(new_resource)
+
+                # Upon exiting the context block the resource is automatically
+                # added back into the queue (unless it was explicitely
+                # removed).
+    """
+
     resources: Set[TResource]
 
     def __init__(
-        self, resources: Collection[TResource], max_resource_count: int = 256
+        self, resources: Collection[TResource], max_resource_count: int = None,
     ) -> None:
+        if max_resource_count is None:
+            max_resource_count = len(resources)
+
         if len(resources) > max_resource_count:
             raise ValueError(
                 f"Number of resources exceeds maximum: {len(resources)} > {max_resource_count}"
@@ -42,6 +78,9 @@ class ResourceQueue(Container[TResource]):
 
     @asynccontextmanager
     async def reserve(self) -> AsyncIterator[TResource]:
+        # Fetch a new resource from the queue.  If the resource is no longer
+        # part of the tracked resources discard it and move onto the next
+        # resource in the queue.
         while True:
             resource = await self._receive.receive()
             if resource in self:
@@ -52,5 +91,8 @@ class ResourceQueue(Container[TResource]):
         try:
             yield resource
         finally:
+            # The resource could have been removed during the context block so
+            # only add it back to the queue if it is still part of the tracked
+            # resources.
             if resource in self:
                 await self._send.send(resource)
