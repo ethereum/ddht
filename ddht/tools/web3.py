@@ -19,7 +19,7 @@ from web3.types import RPCEndpoint
 from ddht.rpc_handlers import BucketInfo as BucketInfoDict
 from ddht.rpc_handlers import NodeInfoResponse, TableInfoResponse
 from ddht.typing import AnyIPAddress
-from ddht.v5_1.rpc_handlers import PongResponse
+from ddht.v5_1.rpc_handlers import PongResponse, SendPingResponse
 
 
 class NodeInfo(NamedTuple):
@@ -88,11 +88,20 @@ class PongPayload(NamedTuple):
         )
 
 
+class SendPingPayload(NamedTuple):
+    request_id: int
+
+    @classmethod
+    def from_rpc_response(cls, response: SendPingResponse) -> "SendPingPayload":
+        return cls(request_id=response["request_id"],)
+
+
 class RPC:
     nodeInfo = RPCEndpoint("discv5_nodeInfo")
     routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
 
     ping = RPCEndpoint("discv5_ping")
+    sendPing = RPCEndpoint("discv5_sendPing")
     findNodes = RPCEndpoint("discv5_findNodes")
 
 
@@ -101,7 +110,7 @@ NodeIDIdentifier = Union[ENRAPI, str, bytes, NodeID, HexStr]
 
 def normalize_node_id_identifier(identifier: NodeIDIdentifier) -> str:
     """
-    Normalizes the any of the following inputs into the appropriate payload for
+    Normalizes any of the following inputs into the appropriate payload for
     representing a `NodeID` over a JSON-RPC API endpoint.
 
     - An ENR object
@@ -134,7 +143,7 @@ def ping_munger(module: Any, identifier: NodeIDIdentifier,) -> List[str]:
     """
     See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
 
-    Normalizes the inputs for the `discv5_ping` JSON-RPC endpoint
+    Normalizes the inputs for the `discv5_ping` and `discv5_sendPing` JSON-RPC endpoints
     """
     return [normalize_node_id_identifier(identifier)]
 
@@ -177,6 +186,11 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
     ping: Method[Callable[[NodeIDIdentifier], PongPayload]] = Method(
         RPC.ping,
         result_formatters=lambda method: PongPayload.from_rpc_response,
+        mungers=[ping_munger],
+    )
+    send_ping: Method[Callable[[NodeIDIdentifier], SendPingPayload]] = Method(
+        RPC.sendPing,
+        result_formatters=lambda method: SendPingPayload.from_rpc_response,
         mungers=[ping_munger],
     )
     find_nodes: Method[

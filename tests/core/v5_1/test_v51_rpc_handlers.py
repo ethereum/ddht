@@ -114,7 +114,7 @@ async def test_v51_rpc_ping(make_request, bob_node_id_param, alice, bob):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_ping_invalid_node_id(make_request, invalid_node_id, alice, bob):
+async def test_v51_rpc_ping_invalid_node_id(make_request, invalid_node_id):
     with pytest.raises(Exception, match="'error':"):
         await make_request("discv5_ping", [invalid_node_id])
     with pytest.raises(Exception, match="'error':"):
@@ -127,6 +127,28 @@ async def test_v51_rpc_ping_web3(make_request, bob_node_id_param_w3, alice, bob,
     assert pong.enr_seq == bob.enr.sequence_number
     assert pong.packet_ip == ipaddress.ip_address(alice.endpoint.ip_address)
     assert pong.packet_port == alice.endpoint.port
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_ping(make_request, bob_node_id_param):
+    response = await make_request("discv5_sendPing", [bob_node_id_param])
+    assert response["request_id"] > 0
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_ping_invalid_node_id(make_request, invalid_node_id):
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendPing", [invalid_node_id])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendPing", [])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_ping_web3(
+    make_request, bob_node_id_param_w3, alice, bob, w3
+):
+    response = await trio.to_thread.run_sync(w3.discv5.send_ping, bob_node_id_param_w3)
+    assert response.request_id > 0
 
 
 @pytest.mark.trio
