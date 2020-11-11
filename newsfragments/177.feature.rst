@@ -1,0 +1,1 @@
+Add support for discv5_sendPong json rpc endpoint.
