@@ -6,6 +6,7 @@ from eth_enr import ENR
 from eth_typing import HexStr, NodeID
 from eth_utils import (
     decode_hex,
+    encode_hex,
     is_hex,
     is_integer,
     is_list_like,
@@ -23,6 +24,10 @@ class PongResponse(TypedDict):
     enr_seq: int
     packet_ip: str
     packet_port: int
+
+
+class SendPingResponse(TypedDict):
+    request_id: HexStr
 
 
 def extract_params(request: RPCRequest) -> List[Any]:
@@ -134,6 +139,28 @@ class PingHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], PongResponse]):
         )
 
 
+class SendPingHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], SendPingResponse]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> Tuple[NodeID, Optional[Endpoint]]:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 1)
+        raw_destination = raw_params[0]
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        return node_id, endpoint
+
+    async def do_call(
+        self, params: Tuple[NodeID, Optional[Endpoint]]
+    ) -> SendPingResponse:
+        node_id, endpoint = params
+        if endpoint is None:
+            enr = await self._network.lookup_enr(node_id)
+            endpoint = Endpoint.from_enr(enr)
+        request_id = await self._network.client.send_ping(node_id, endpoint)
+        return SendPingResponse(request_id=encode_hex(request_id))
+
+
 def _is_valid_distance(value: Any) -> bool:
     return is_integer(value) and 0 <= value <= 256
 
@@ -187,3 +214,4 @@ class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
 def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerAPI]]:
     yield ("discv5_ping", PingHandler(network))
     yield ("discv5_findNodes", FindNodesHandler(network))
+    yield ("discv5_sendPing", SendPingHandler(network))
