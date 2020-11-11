@@ -13,6 +13,7 @@ from ddht.kademlia import compute_log_distance
 from ddht.rpc import RPCServer
 from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.tools.web3 import DiscoveryV5Module
+from ddht.v5_1.messages import PingMessage
 from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
 
@@ -117,6 +118,10 @@ async def test_v51_rpc_ping(make_request, bob_node_id_param, alice, bob):
 async def test_v51_rpc_ping_invalid_node_id(make_request, invalid_node_id):
     with pytest.raises(Exception, match="'error':"):
         await make_request("discv5_ping", [invalid_node_id])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_ping_missing_node_id(make_request):
     with pytest.raises(Exception, match="'error':"):
         await make_request("discv5_ping", [])
 
@@ -130,25 +135,37 @@ async def test_v51_rpc_ping_web3(make_request, bob_node_id_param_w3, alice, bob,
 
 
 @pytest.mark.trio
-async def test_v51_rpc_send_ping(make_request, bob_node_id_param):
-    response = await make_request("discv5_sendPing", [bob_node_id_param])
-    assert response["request_id"] > 0
+async def test_v51_rpc_send_ping(make_request, bob_node_id_param, bob_network):
+    async with bob_network.client.dispatcher.subscribe(PingMessage) as subscription:
+        response = await make_request("discv5_sendPing", [bob_node_id_param])
+        with trio.fail_after(2):
+            request = await subscription.receive()
+        assert encode_hex(request.message.request_id) == response["request_id"]
 
 
 @pytest.mark.trio
 async def test_v51_rpc_send_ping_invalid_node_id(make_request, invalid_node_id):
     with pytest.raises(Exception, match="'error':"):
         await make_request("discv5_sendPing", [invalid_node_id])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_ping_missing_node_id(make_request):
     with pytest.raises(Exception, match="'error':"):
         await make_request("discv5_sendPing", [])
 
 
 @pytest.mark.trio
 async def test_v51_rpc_send_ping_web3(
-    make_request, bob_node_id_param_w3, alice, bob, w3
+    make_request, w3, bob_network, bob_node_id_param_w3
 ):
-    response = await trio.to_thread.run_sync(w3.discv5.send_ping, bob_node_id_param_w3)
-    assert response.request_id > 0
+    async with bob_network.client.dispatcher.subscribe(PingMessage) as subscription:
+        response = await trio.to_thread.run_sync(
+            w3.discv5.send_ping, bob_node_id_param_w3
+        )
+        with trio.fail_after(2):
+            request = await subscription.receive()
+    assert encode_hex(request.message.request_id) == response.request_id
 
 
 @pytest.mark.trio

@@ -6,12 +6,12 @@ from eth_enr import ENR
 from eth_typing import HexStr, NodeID
 from eth_utils import (
     decode_hex,
+    encode_hex,
     is_hex,
     is_integer,
     is_list_like,
     remove_0x_prefix,
     to_dict,
-    to_int,
 )
 
 from ddht.abc import RPCHandlerAPI
@@ -27,7 +27,7 @@ class PongResponse(TypedDict):
 
 
 class SendPingResponse(TypedDict):
-    request_id: int
+    request_id: HexStr
 
 
 def extract_params(request: RPCRequest) -> List[Any]:
@@ -158,7 +158,7 @@ class SendPingHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], SendPingResp
             enr = await self._network.lookup_enr(node_id)
             endpoint = Endpoint.from_enr(enr)
         request_id = await self._network.client.send_ping(node_id, endpoint)
-        return SendPingResponse(request_id=to_int(request_id))
+        return SendPingResponse(request_id=encode_hex(request_id))
 
 
 def _is_valid_distance(value: Any) -> bool:

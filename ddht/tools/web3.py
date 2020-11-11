@@ -89,7 +89,7 @@ class PongPayload(NamedTuple):
 
 
 class SendPingPayload(NamedTuple):
-    request_id: int
+    request_id: HexStr
 
     @classmethod
     def from_rpc_response(cls, response: SendPingResponse) -> "SendPingPayload":
