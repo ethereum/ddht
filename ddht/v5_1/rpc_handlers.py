@@ -1,8 +1,10 @@
 from socket import inet_ntoa
 from typing import Any, Iterable, List, Optional, Tuple, TypedDict
 
+from eth_enr import ENR
+from eth_enr.abc import ENRAPI
 from eth_typing import HexStr, NodeID
-from eth_utils import decode_hex, encode_hex, is_list_like, to_dict
+from eth_utils import ValidationError, decode_hex, encode_hex, is_list_like, to_dict
 
 from ddht.abc import RPCHandlerAPI
 from ddht.endpoint import Endpoint
@@ -25,8 +27,8 @@ class SendPingResponse(TypedDict):
     request_id: HexStr
 
 
-class SendPongResponse(TypedDict):
-    pass
+class GetENRResponse(TypedDict):
+    enr_repr: str
 
 
 def extract_params(request: RPCRequest) -> List[Any]:
@@ -139,9 +141,63 @@ class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
         return tuple(repr(enr) for enr in enrs)
 
 
+class GetENRHandler(RPCHandler[NodeID, GetENRResponse]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> NodeID:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 1)
+        raw_destination = raw_params[0]
+        node_id, _ = validate_and_extract_destination(raw_destination)
+        return node_id
+
+    async def do_call(self, params: NodeID) -> GetENRResponse:
+        response = self._network.enr_db.get_enr(params)
+        return GetENRResponse(enr_repr=repr(response))
+
+
+class SetENRHandler(RPCHandler[ENRAPI, None]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> ENRAPI:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 1)
+        enr_repr = raw_params[0]
+        try:
+            enr = ENR.from_repr(enr_repr)
+        except ValidationError:
+            raise RPCError(f"Invalid ENR repr: {enr_repr}")
+        return enr
+
+    async def do_call(self, params: ENRAPI) -> None:
+        self._network.enr_db.set_enr(params)
+        return None
+
+
+class DeleteENRHandler(RPCHandler[NodeID, None]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> NodeID:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 1)
+        raw_destination = raw_params[0]
+        node_id, _ = validate_and_extract_destination(raw_destination)
+        return node_id
+
+    async def do_call(self, params: NodeID) -> None:
+        self._network.enr_db.delete_enr(params)
+        return None
+
+
 @to_dict
 def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerAPI]]:
     yield ("discv5_ping", PingHandler(network))
     yield ("discv5_findNodes", FindNodesHandler(network))
     yield ("discv5_sendPing", SendPingHandler(network))
     yield ("discv5_sendPong", SendPongHandler(network))
+    yield ("discv5_getENR", GetENRHandler(network))
+    yield ("discv5_deleteENR", DeleteENRHandler(network))
+    yield ("discv5_setENR", SetENRHandler(network))
