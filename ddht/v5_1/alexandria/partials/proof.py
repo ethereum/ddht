@@ -1,22 +1,34 @@
+import bisect
 from dataclasses import dataclass
+import functools
 import operator
 from typing import Any, Collection, Iterable, Optional, Sequence, Tuple
 
 from eth_typing import Hash32
-from eth_utils import to_tuple
+from eth_utils import ValidationError, to_tuple
+from eth_utils.toolz import groupby, sliding_window
 from ssz.constants import CHUNK_SIZE, ZERO_HASHES
+from ssz.hash import hash_eth2
 from ssz.sedes import List as ListSedes
 
 from ddht.v5_1.alexandria.partials._utils import (
     decompose_into_powers_of_two,
     display_path,
+    get_chunk_count_for_data_length,
 )
 from ddht.v5_1.alexandria.partials.chunking import chunk_index_to_path, compute_chunks
-from ddht.v5_1.alexandria.partials.tree import ProofTree, construct_node_tree
 from ddht.v5_1.alexandria.partials.typing import TreePath
 
 
-@dataclass(frozen=True)
+class BrokenTree(Exception):
+    """
+    Exception signaling that there is something wrong with the merkle tree.
+    """
+
+    ...
+
+
+@dataclass(frozen=True, eq=True, order=True)
 class ProofElement:
     path: TreePath
     value: Hash32
@@ -39,46 +51,217 @@ class Proof:
     sedes: ListSedes
     # TODO: footgun.  Without performing verification (validate_proof(proof))
     # we don't know this value is actually valid.
-    hash_tree_root: Hash32
     elements: Tuple[ProofElement, ...]
 
-    _tree_cache: Optional[ProofTree] = None
-
-    def __init__(
-        self,
-        hash_tree_root: Hash32,
-        elements: Collection[ProofElement],
-        sedes: ListSedes,
-        tree: Optional[ProofTree] = None,
-    ) -> None:
-        self.hash_tree_root = hash_tree_root
-        self.elements = tuple(sorted(elements, key=operator.attrgetter("path")))
+    def __init__(self, elements: Collection[ProofElement], sedes: ListSedes,) -> None:
+        self.elements = tuple(sorted(elements))
+        self._paths = tuple(el.path for el in self.elements)
         self.sedes = sedes
-        self._tree_cache = tree
 
     def __eq__(self, other: Any) -> bool:
         if type(self) is not type(other):
             return False
         else:
-            return (  # type: ignore
-                self.hash_tree_root == other.hash_tree_root
-                and self.elements == other.elements
-            )
+            return self.elements == other.elements  # type: ignore
+
+    def __hash__(self) -> int:
+        return hash((self.elements, self.sedes))
+
+    @functools.lru_cache
+    def get_hash_tree_root(self) -> Hash32:
+        return merklize_elements(self.elements)
+
+    @functools.lru_cache
+    def get_element(self, path: TreePath) -> ProofElement:
+        """
+        Retrieve a single element by its path.
+        """
+        candidate_index = bisect.bisect_left(self._paths, path)
+        candidate = self.elements[candidate_index]
+        if candidate.path == path:
+            return candidate
+        else:
+            raise IndexError(f"No proof element for path: {display_path(path)}")
+
+    @functools.lru_cache
+    def get_content_length(self) -> int:
+        """
+        Retrieve the content length
+        """
+        length_element = self.get_element((True,))
+        return int.from_bytes(length_element.value, "little")
+
+    @functools.lru_cache
+    def get_last_data_chunk_index(self) -> int:
+        """
+        Compute the index of the last data chunck.
+        """
+        length = self.get_content_length()
+        num_data_chunks = get_chunk_count_for_data_length(length)
+        return max(0, num_data_chunks - 1)
+
+    @functools.lru_cache
+    def get_last_data_chunk_path(self) -> TreePath:
+        """
+        Compute the `TreePath` of the last data chunck.
+        """
+        return chunk_index_to_path(
+            self.get_last_data_chunk_index(), self.path_bit_length
+        )
+
+    def get_data_elements(self) -> Tuple[ProofElement, ...]:
+        """
+        Return all of the proof elements that are part of the section of the
+        merkle tree that houses the actual content data.
+        """
+        return self.get_elements(
+            right=self.get_last_data_chunk_path(), right_inclusive=True
+        )
+
+    @functools.lru_cache
+    def get_first_padding_chunk_index(self) -> int:
+        """
+        Return the index of the first padding chunk.
+
+        Raise `IndexError` if the tree has no padding.
+        """
+        last_data_chunk_index = self.get_last_data_chunk_index()
+        if last_data_chunk_index == self.sedes.chunk_count - 1:
+            raise IndexError("Full tree.  No padding")
+        return last_data_chunk_index + 1
+
+    @functools.lru_cache
+    def get_first_padding_chunk_path(self) -> TreePath:
+        """
+        Return the path of the first padding chunk.
+
+        Raise `IndexError` if the tree has no padding.
+        """
+        return chunk_index_to_path(
+            self.get_first_padding_chunk_index(), self.path_bit_length
+        )
+
+    def get_padding_elements(self) -> Tuple[ProofElement, ...]:
+        """
+        Return all of the elements from the tree that are purely padding.
+        """
+        return self.get_elements(
+            self.get_last_data_chunk_path(), (True,), left_inclusive=False
+        )
+
+    def get_elements(
+        self,
+        left: Optional[TreePath] = None,
+        right: Optional[TreePath] = None,
+        left_inclusive: bool = True,
+        right_inclusive: bool = False,
+    ) -> Tuple[ProofElement, ...]:
+        """
+        Return the elements from the proof bounded by the `left` and `right`
+        paths.
+
+        The `left_inclusive` and `right_inclusive` dictate whether the
+        node at the given `left/right` path should be included in the results.
+        """
+        if left is None and right is None:
+            return self.elements
+        elif left is None:
+            if right_inclusive:
+                right_index = bisect.bisect_right(self._paths, right)
+            else:
+                right_index = bisect.bisect_left(self._paths, right)
+            return self.elements[:right_index]
+        elif right is None:
+            if left_inclusive:
+                left_index = bisect.bisect_left(self._paths, left)
+            else:
+                left_index = bisect.bisect_right(self._paths, left)
+
+            return self.elements[left_index:]
+        else:
+            if right_inclusive:
+                right_index = bisect.bisect_right(self._paths, right)
+            else:
+                right_index = bisect.bisect_left(self._paths, right)
+
+            if left_inclusive:
+                left_index = bisect.bisect_left(self._paths, left)
+            else:
+                left_index = bisect.bisect_right(self._paths, left)
+
+            return self.elements[left_index:right_index]
+
+    @functools.lru_cache
+    @to_tuple
+    def get_elements_under(self, path: TreePath) -> Iterable[ProofElement]:
+        """
+        Return all of the proof elements whos path begins with the given path.
+        """
+        start_index = bisect.bisect_left(self._paths, path)
+        path_depth = len(path)
+        for el in self.elements[start_index:]:
+            if el.path[:path_depth] == path:
+                yield el
+            else:
+                break
 
     @property
     def path_bit_length(self) -> int:
+        """
+        The maximum valid length for any path in this proof.
+        """
         return self.sedes.chunk_count.bit_length()  # type: ignore
 
-    def get_tree(self) -> ProofTree:
-        # TODO: Measure cost of tree construction.  The tree is useful for
-        # proof construction but it's probably more expensive than is necessary
-        # for verifying state root.  Also, it uses a lot of recursive
-        # algorithms which aren't very efficient.
-        if self._tree_cache is None:
-            tree_data = tuple((el.path, el.value) for el in self.elements)
-            root_node = construct_node_tree(tree_data, (), self.path_bit_length)
-            self._tree_cache = ProofTree(root_node)
-        return self._tree_cache
+
+def merklize_elements(elements: Sequence[ProofElement]) -> Hash32:
+    """
+    Given a set of `ProofElement` compute the `hash_tree_root`.
+    """
+    elements_by_depth = groupby(operator.attrgetter("depth"), elements)
+    max_depth = max(elements_by_depth.keys())
+
+    for depth in range(max_depth, 0, -1):
+        try:
+            elements_at_depth = sorted(elements_by_depth.pop(depth))
+        except KeyError:
+            continue
+
+        sibling_pairs = tuple(
+            (left, right)
+            for left, right in sliding_window(2, elements_at_depth)
+            if left.path[:-1] == right.path[:-1]
+        )
+        parents = tuple(
+            ProofElement(path=left.path[:-1], value=hash_eth2(left.value + right.value))
+            for left, right in sibling_pairs
+        )
+
+        if not elements_by_depth:
+            if len(parents) == 1:
+                return parents[0].value
+            else:
+                raise BrokenTree("Multiple root nodes")
+        else:
+            elements_by_depth.setdefault(depth - 1, [])
+            elements_by_depth[depth - 1].extend(parents)
+    else:
+        raise BrokenTree("Unable to fully collapse tree within 32 rounds")
+
+
+def validate_proof(proof: Proof) -> None:
+    try:
+        proof.get_hash_tree_root()
+    except BrokenTree as err:
+        raise ValidationError(str(err)) from err
+
+
+def is_proof_valid(proof: Proof) -> bool:
+    try:
+        proof.get_hash_tree_root()
+    except BrokenTree:
+        return False
+    else:
+        return True
 
 
 @to_tuple
@@ -110,31 +293,70 @@ def compute_proof(data: bytes, sedes: ListSedes) -> Proof:
     chunks = compute_chunks(data)
 
     chunk_count = sedes.chunk_count
-    path_bit_length = chunk_count.bit_length()
 
-    data_elements = compute_proof_elements(chunks, chunk_count)
+    proof_elements = compute_proof_elements(chunks, chunk_count)
     length_element = ProofElement(
         path=(True,), value=Hash32(len(data).to_bytes(CHUNK_SIZE, "little")),
     )
-    all_elements = data_elements + (length_element,)
-    tree_data = tuple((el.path, el.value) for el in all_elements)
+    all_elements = proof_elements + (length_element,)
 
-    root_node = construct_node_tree(tree_data, (), path_bit_length)
-    tree = ProofTree(root_node)
-    hash_tree_root = tree.get_hash_tree_root()
-
-    return Proof(hash_tree_root, all_elements, sedes, tree=tree)
+    return Proof(all_elements, sedes)
 
 
 @to_tuple
 def get_padding_elements(
     start_index: int, num_padding_chunks: int, path_bit_length: int
 ) -> Iterable[ProofElement]:
-    """
+    r"""
     Get the padding elements for a proof.
-    By decomposing the number of chunks needed into the powers of two which
-    make up the number we can construct the minimal right hand sub-tree(s)
-    needed to pad the hash tree.
+
+
+    0:                           X
+                                / \
+                              /     \
+                            /         \
+                          /             \
+                        /                 \
+                      /                     \
+                    /                         \
+    1:             0                           1
+                 /   \                       /   \
+               /       \                   /       \
+             /           \               /           \
+    2:      0             1             0             1
+           / \           / \           / \           / \
+          /   \         /   \         /   \         /   \
+    3:   0     1       0     1       0     1       0     1
+        / \   / \     / \   / \     / \   / \     / \   / \
+    4: 0   1 0   1   0   1 0   1   0   1 0   1   0   1 0   1
+
+                                                      |<--->|
+                                                      [  2  ]
+                                                    |<----->|
+                                                    [1][  2 ]
+                                                |<-PADDING->|
+                                                [    4      ]
+                                            |<---PADDING--->|
+                                            [1] [    4      ]
+                                        |<-----PADDING----->|
+                                        [  2  ] [    4      ]
+                                      |<------PADDING------>|
+                                      [1][  2 ] [    4      ]
+                                  |<--------PADDING-------->|
+                                  [            8            ]
+
+    Padding is always on the right-hand-side of the tree.
+
+    One nice property of the binary tree is that we can very efficiently
+    determine the minimal set of subtree nodes needed to represent the full
+    padding.
+
+    We do this by computing the total number of padding nodes, and then
+    decomposing that into the powers of two needed to make up that number.
+
+    These determine our subtrees.  The bit-length of each number tells us how
+    many levels of zero hashes we will need, and we use a pre-computed set of
+    these hashes for efficiency sake.
     """
     for power_of_two in decompose_into_powers_of_two(num_padding_chunks):
         depth = power_of_two.bit_length() - 1
