@@ -468,6 +468,7 @@ async def test_network_get_nodes_near(
 
     bob.enr_db.set_enr(target)
     bob_network.routing_table.update(target.node_id)
+
     for enr in enrs_for_bob:
         bob.enr_db.set_enr(enr)
         bob_network.routing_table.update(enr.node_id)
@@ -476,12 +477,15 @@ async def test_network_get_nodes_near(
         alice_network.routing_table.update(enr.node_id)
 
     node_ids_near_target = await alice_network.get_nodes_near(
-        target.node_id, max_nodes=20
+        target.node_id, max_nodes=30
     )
 
     assert node_ids_near_target[0] == target.node_id
 
     node_ids_from_alice = {enr.node_id for enr in enrs_for_alice}
+    node_ids_from_bob = {enr.node_id for enr in enrs_for_bob}
+
     assert node_ids_from_alice.issubset(node_ids_near_target)
+    assert node_ids_from_bob.issubset(node_ids_near_target)
 
     assert bob.node_id in node_ids_near_target

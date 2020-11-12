@@ -39,6 +39,19 @@ from ddht.v5_1.messages import (
     TalkRequestMessage,
 )
 
+NEIGHBORHOOD_DISTANCES = (
+    # First bucket is combined (128 + 64 + 32) since these will rarely be
+    # occupied.
+    tuple(range(1, 224)),
+    # Next few buckets drop in size by about half each time.
+    tuple(range(224, 240)),
+    tuple(range(240, 248)),
+    (248, 249, 250, 251),
+    (252, 253, 254),
+    # This last one is 3/4 of the network
+    (255, 256),
+)
+
 
 class Network(Service, NetworkAPI):
     logger = logging.getLogger("ddht.Network")
@@ -321,6 +334,13 @@ class Network(Service, NetworkAPI):
     async def get_nodes_near(
         self, target: NodeID, max_nodes: int = 32
     ) -> Tuple[NodeID, ...]:
+        """
+        Lookup nodes in the target area of the routing table.
+
+        Unlike `recursive_find_nodes` which is good at finding the very closest
+        node, this function aims to find as many nodes that are as close to the
+        `target` as possible.
+        """
         enrs_from_recursive_find = await self.recursive_find_nodes(target)
 
         for enr in enrs_from_recursive_find:
@@ -341,7 +361,39 @@ class Network(Service, NetworkAPI):
                 key=lambda node_id: compute_distance(target, node_id),
             )
         )
-        return node_ids_by_distance[:max_nodes]
+
+        node_ids_from_neighborhood = []
+
+        async def _do_find_nodes(node_id: NodeID, distances: Tuple[int, ...]) -> None:
+            try:
+                found_enrs = await self.find_nodes(node_id, *distances,)
+            except trio.TooSlowError:
+                return
+            else:
+                for enr in found_enrs:
+                    if enr.node_id == self.local_node_id:
+                        continue
+                    self.enr_db.set_enr(enr)
+                    node_ids_from_neighborhood.append(enr.node_id)
+
+        for distances in NEIGHBORHOOD_DISTANCES:
+            async with trio.open_nursery() as nursery:
+                for node_id in node_ids_by_distance:
+                    nursery.start_soon(_do_find_nodes, node_id, distances)
+
+            if len(node_ids_from_neighborhood) > max_nodes:
+                break
+
+        all_node_ids = (
+            node_ids_from_recursive_find
+            + node_ids_from_routing_table
+            + tuple(node_ids_from_neighborhood)
+        )
+
+        all_node_ids_by_distance = tuple(
+            sorted(all_node_ids, key=lambda node_id: compute_distance(target, node_id),)
+        )
+        return all_node_ids_by_distance[:max_nodes]
 
     #
     # Long Running Processes
@@ -513,6 +565,7 @@ class Network(Service, NetworkAPI):
                     else:
                         raise Exception("Should be unreachable")
 
+                self.logger.info("SERVING: %s -> %d", distances, len(response_enrs))
                 await self.client.send_found_nodes(
                     request.sender_node_id,
                     request.sender_endpoint,
