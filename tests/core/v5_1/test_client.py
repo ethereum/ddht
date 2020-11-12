@@ -313,7 +313,14 @@ async def test_client_handles_malformed_datagrams(
                 await bob_client._outbound_datagram_send_channel.send(
                     OutboundDatagram(datagram_bytes, alice.endpoint)
                 )
+
+                # Give the node a minute to crash if it's going to crash
+                for _ in range(100):
+                    await trio.lowlevel.checkpoint()
+
                 request_id = await bob_client.send_ping(alice.node_id, alice.endpoint)
 
-                ping = await subscription.receive()
+                # Now fetch the ping message that still should have come through.
+                with trio.fail_after(1):
+                    ping = await subscription.receive()
                 assert ping.message.request_id == request_id
