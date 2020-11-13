@@ -45,7 +45,6 @@ def test_ssz_full_proofs(data):
 short_content_sedes = ByteList(max_length=32 * 16)
 
 CONTENT_12345 = b"\x01" * 32 + b"\x02" * 32 + b"\x03" * 32 + b"\x04" * 32 + b"\x05" * 32
-CONTENT_512 = bytes((i % 256 for i in range(512)))
 r"""
                 Tree for CONTENT_12345
 
@@ -73,6 +72,8 @@ r"""
 
   |<-----DATA---->| |<-----------PADDING-------------->|
 """
+
+CONTENT_512 = bytes((i % 256 for i in range(512)))
 
 
 @pytest.mark.parametrize(
