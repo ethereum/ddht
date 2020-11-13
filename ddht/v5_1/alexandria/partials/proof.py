@@ -38,6 +38,7 @@ from ddht.v5_1.alexandria.partials._utils import (
     get_longest_common_path,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
+    MissingSegment,
     chunk_index_to_path,
     compute_chunks,
     group_by_subtree,
@@ -797,6 +798,59 @@ class Proof:
                 yield DataSegment(segment_start_index, data_segment)
         if not length:
             yield DataSegment(0, b"")
+
+    #
+    # Missing Data API
+    #
+    @property
+    def is_complete(self) -> bool:
+        content_length = self.get_content_length()
+        content_chunk_count = get_chunk_count_for_data_length(content_length)
+
+        return len(self.get_data_elements()) == content_chunk_count
+
+    @functools.lru_cache
+    def has_chunk(self, chunk_index: int) -> bool:
+        path = chunk_index_to_path(chunk_index, self.path_bit_length)
+        try:
+            self.get_element(path)
+        except IndexError:
+            return False
+        else:
+            return True
+
+    @to_tuple
+    def get_missing_segments(self) -> Iterable[MissingSegment]:
+        next_chunk_index = 0
+
+        for element in self.get_data_elements():
+            if element.depth != self.path_bit_length:
+                continue
+
+            chunk_index = path_to_left_chunk_index(element.path, self.path_bit_length)
+
+            # If the chunk index matches the expected next chunk index then we
+            # are in a data segment and should continue.  Otherwise we have
+            # skipped over some data and need to yield a segment.
+            if chunk_index > next_chunk_index:
+                yield MissingSegment(
+                    next_chunk_index * 32, (chunk_index - next_chunk_index) * 32,
+                )
+
+            next_chunk_index = chunk_index + 1
+
+        last_data_chunk_index = self.get_last_data_chunk_index()
+        last_data_chunk_size = self.get_content_length() % CHUNK_SIZE or CHUNK_SIZE
+
+        # To detect the case where we are missing the last segment, we look to see if
+        if next_chunk_index <= last_data_chunk_index:
+            last_segment_start = next_chunk_index * 32
+            last_segment_length = (
+                last_data_chunk_index * 32 + last_data_chunk_size - last_segment_start
+            )
+            yield MissingSegment(
+                last_segment_start, last_segment_length,
+            )
 
 
 def merklize_elements(elements: Sequence[ProofElement]) -> Hash32:
