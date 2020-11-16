@@ -19,7 +19,7 @@ from web3.types import RPCEndpoint
 from ddht.rpc_handlers import BucketInfo as BucketInfoDict
 from ddht.rpc_handlers import NodeInfoResponse, TableInfoResponse
 from ddht.typing import AnyIPAddress
-from ddht.v5_1.rpc_handlers import PongResponse, SendPingResponse
+from ddht.v5_1.rpc_handlers import PongResponse, SendPingResponse, SendPongResponse
 
 
 class NodeInfo(NamedTuple):
@@ -96,12 +96,19 @@ class SendPingPayload(NamedTuple):
         return cls(request_id=response["request_id"],)
 
 
+class SendPongPayload(NamedTuple):
+    @classmethod
+    def from_rpc_response(cls, response: SendPongResponse) -> None:
+        return None
+
+
 class RPC:
     nodeInfo = RPCEndpoint("discv5_nodeInfo")
     routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
 
     ping = RPCEndpoint("discv5_ping")
     sendPing = RPCEndpoint("discv5_sendPing")
+    sendPong = RPCEndpoint("discv5_sendPong")
     findNodes = RPCEndpoint("discv5_findNodes")
 
 
@@ -148,6 +155,20 @@ def ping_munger(module: Any, identifier: NodeIDIdentifier,) -> List[str]:
     return [normalize_node_id_identifier(identifier)]
 
 
+def send_pong_munger(
+    module: Any, identifier: NodeIDIdentifier, request_id: HexStr
+) -> Tuple[str, HexStr]:
+    """
+    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
+
+    Normalizes the inputs for the `discv5_sendPong` JSON-RPC endpoints
+    """
+    return (
+        normalize_node_id_identifier(identifier),
+        request_id,
+    )
+
+
 def find_nodes_munger(
     module: Any,
     identifier: NodeIDIdentifier,
@@ -192,6 +213,11 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.sendPing,
         result_formatters=lambda method: SendPingPayload.from_rpc_response,
         mungers=[ping_munger],
+    )
+    send_pong: Method[Callable[[NodeIDIdentifier], SendPongPayload]] = Method(
+        RPC.sendPong,
+        result_formatters=lambda method: SendPongPayload.from_rpc_response,
+        mungers=[send_pong_munger],
     )
     find_nodes: Method[
         Callable[[NodeIDIdentifier, Union[int, Sequence[int]]], Tuple[ENRAPI, ...]]

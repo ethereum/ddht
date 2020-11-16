@@ -1,4 +1,5 @@
 import ipaddress
+import secrets
 from socket import inet_ntoa
 
 from async_service import background_trio_service
@@ -13,7 +14,7 @@ from ddht.kademlia import compute_log_distance
 from ddht.rpc import RPCServer
 from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.tools.web3 import DiscoveryV5Module
-from ddht.v5_1.messages import PingMessage
+from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
 
@@ -166,6 +167,51 @@ async def test_v51_rpc_send_ping_web3(
         with trio.fail_after(2):
             request = await subscription.receive()
     assert encode_hex(request.message.request_id) == response.request_id
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_pong(make_request, bob_network, bob_node_id_param):
+    request_id = encode_hex(secrets.token_bytes(4))
+
+    async with bob_network.client.dispatcher.subscribe(PongMessage) as subscription:
+        response = await make_request(
+            "discv5_sendPong", [bob_node_id_param, request_id]
+        )
+
+        with trio.fail_after(2):
+            request = await subscription.receive()
+
+        assert response is None
+        assert encode_hex(request.message.request_id) == request_id
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_pong_invalid_node_id(make_request, invalid_node_id):
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendPong", [invalid_node_id])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_pong_missing_node_id(make_request):
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendPong", [])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_send_pong_web3(
+    make_request, w3, bob_network, bob_node_id_param_w3,
+):
+    request_id = encode_hex(secrets.token_bytes(4))
+
+    async with bob_network.client.dispatcher.subscribe(PongMessage) as subscription:
+        response = await trio.to_thread.run_sync(
+            w3.discv5.send_pong, bob_node_id_param_w3, request_id
+        )
+        with trio.fail_after(2):
+            request = await subscription.receive()
+
+        assert response is None
+        assert encode_hex(request.message.request_id) == request_id
 
 
 @pytest.mark.trio

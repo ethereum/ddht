@@ -2,7 +2,7 @@ from socket import inet_ntoa
 from typing import Any, Iterable, List, Optional, Tuple, TypedDict
 
 from eth_typing import HexStr, NodeID
-from eth_utils import encode_hex, is_list_like, to_dict
+from eth_utils import decode_hex, encode_hex, is_list_like, to_dict
 
 from ddht.abc import RPCHandlerAPI
 from ddht.endpoint import Endpoint
@@ -23,6 +23,10 @@ class PongResponse(TypedDict):
 
 class SendPingResponse(TypedDict):
     request_id: HexStr
+
+
+class SendPongResponse(TypedDict):
+    pass
 
 
 def extract_params(request: RPCRequest) -> List[Any]:
@@ -86,6 +90,30 @@ class SendPingHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], SendPingResp
         return SendPingResponse(request_id=encode_hex(request_id))
 
 
+class SendPongHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint], HexStr], None]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(
+        self, request: RPCRequest
+    ) -> Tuple[NodeID, Optional[Endpoint], HexStr]:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 2)
+        raw_destination, request_id = raw_params
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        return node_id, endpoint, request_id
+
+    async def do_call(self, params: Tuple[NodeID, Optional[Endpoint], HexStr]) -> None:
+        node_id, endpoint, request_id = params
+        if endpoint is None:
+            enr = await self._network.lookup_enr(node_id)
+            endpoint = Endpoint.from_enr(enr)
+        response = await self._network.client.send_pong(
+            node_id, endpoint, request_id=decode_hex(request_id)
+        )
+        return response
+
+
 FindNodesRPCParams = Tuple[NodeID, Optional[Endpoint], Tuple[int, ...]]
 
 
@@ -96,11 +124,7 @@ class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
     def extract_params(self, request: RPCRequest) -> FindNodesRPCParams:
         raw_params = extract_params(request)
 
-        if len(raw_params) != 2:
-            raise RPCError(
-                f"`discv5_findNodes` endpoint expects two parameter: "
-                f"Got {len(raw_params)} params: {raw_params}"
-            )
+        validate_params_length(raw_params, 2)
 
         raw_destination, raw_distances = raw_params
 
@@ -120,3 +144,4 @@ def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerA
     yield ("discv5_ping", PingHandler(network))
     yield ("discv5_findNodes", FindNodesHandler(network))
     yield ("discv5_sendPing", SendPingHandler(network))
+    yield ("discv5_sendPong", SendPongHandler(network))
