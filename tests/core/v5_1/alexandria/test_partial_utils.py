@@ -3,6 +3,7 @@ import pytest
 from ddht.v5_1.alexandria.partials._utils import (
     decompose_into_powers_of_two,
     display_path,
+    filter_overlapping_paths,
     get_chunk_count_for_data_length,
     get_longest_common_path,
 )
@@ -74,4 +75,16 @@ def test_get_chunk_count_for_data_length(length, expected):
 )
 def test_display_path(path, expected):
     actual = display_path(path)
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "paths,expected",
+    (
+        ((p(0, 0, 1), p(0, 0, 0), p(0, 0)), (p(0, 0, 0), p(0, 0, 1)),),
+        ((p(0, 0, 1), p(0,), p(0, 0, 0), p(0, 0)), (p(0, 0, 0), p(0, 0, 1)),),
+    ),
+)
+def test_filter_overlapping_paths(paths, expected):
+    actual = filter_overlapping_paths(*paths)
     assert actual == expected
