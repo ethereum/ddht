@@ -110,7 +110,7 @@ class Application(BaseApplication):
 
         if self._boot_info.is_rpc_enabled:
             handlers = merge(
-                get_core_rpc_handlers(enr_manager.enr, self.network.routing_table),
+                get_core_rpc_handlers(enr_manager, self.network.routing_table),
                 get_v51_rpc_handlers(self.network),
             )
             rpc_server = RPCServer(self._boot_info.ipc_path, handlers)

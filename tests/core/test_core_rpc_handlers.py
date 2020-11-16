@@ -1,8 +1,10 @@
 import json
 
 from async_service import background_trio_service
-from eth_enr.tools.factories import ENRFactory
-from eth_utils import decode_hex
+from eth_enr.enr_db import ENRDB
+from eth_enr.enr_manager import ENRManager
+from eth_enr.tools.factories import PrivateKeyFactory
+from eth_utils import decode_hex, to_bytes
 import pytest
 import trio
 from web3 import IPCProvider, Web3
@@ -16,8 +18,14 @@ from ddht.tools.web3 import DiscoveryV5Module
 
 
 @pytest.fixture
-def enr():
-    return ENRFactory()
+def enr_manager():
+    enr_db = ENRDB({})
+    return ENRManager(PrivateKeyFactory(), enr_db)
+
+
+@pytest.fixture
+def enr(enr_manager):
+    return enr_manager.enr
 
 
 @pytest.fixture
@@ -26,8 +34,8 @@ def routing_table(enr):
 
 
 @pytest.fixture
-async def rpc_server(ipc_path, routing_table, enr):
-    server = RPCServer(ipc_path, get_core_rpc_handlers(enr, routing_table))
+async def rpc_server(ipc_path, routing_table, enr_manager):
+    server = RPCServer(ipc_path, get_core_rpc_handlers(enr_manager, routing_table))
     async with background_trio_service(server):
         await server.wait_serving()
         yield server
@@ -43,6 +51,70 @@ async def test_rpc_nodeInfo(make_request, enr):
     node_info = await make_request("discv5_nodeInfo")
     assert decode_hex(node_info["node_id"]) == enr.node_id
     assert node_info["enr"] == repr(enr)
+
+
+@pytest.mark.trio
+async def test_rpc_updateNodeInfo(make_request, enr_manager):
+    # add a kv pair
+    first_response = await make_request("discv5_updateNodeInfo", [("foo", "bar")])
+    assert first_response is None
+    assert enr_manager.enr._kv_pairs[b"foo"] == b"bar"
+    assert enr_manager.enr.sequence_number == 2
+
+    # update a kv pair
+    second_response = await make_request("discv5_updateNodeInfo", [("foo", "xyz")])
+    assert second_response is None
+    assert enr_manager.enr._kv_pairs[b"foo"] == b"xyz"
+    assert enr_manager.enr.sequence_number == 3
+
+    # test with multiple kv_pairs, and remove 'foo' key
+    third_response = await make_request(
+        "discv5_updateNodeInfo", [("foo", None), ("bar", 123)]
+    )
+    assert third_response is None
+    assert b"foo" not in enr_manager.enr._kv_pairs
+    assert enr_manager.enr._kv_pairs[b"bar"] == to_bytes(123)
+    assert enr_manager.enr.sequence_number == 4
+
+
+@pytest.mark.trio
+async def test_rpc_updateNodeInfo_web3(w3, enr_manager, rpc_server):
+    with trio.fail_after(2):
+        await trio.to_thread.run_sync(w3.discv5.update_node_info, ("foo", "bar"))
+    assert b"foo" in enr_manager.enr._kv_pairs
+
+    with trio.fail_after(2):
+        await trio.to_thread.run_sync(
+            w3.discv5.update_node_info, ("foo", None), ("abc", 123)
+        )
+    assert b"foo" not in enr_manager.enr._kv_pairs
+    assert b"abc" in enr_manager.enr._kv_pairs
+
+
+@pytest.mark.parametrize(
+    "kv_pair",
+    (
+        1,
+        "abc",
+        b"abc",
+        (None, "xyz"),
+        ("abc", "xyz", "123"),
+        {"abc": "123", "xyz": "123"},
+    ),
+)
+@pytest.mark.trio
+async def test_rpc_updateNodeInfo_invalid_kv_pairs(make_request, kv_pair):
+    with pytest.raises(Exception):
+        await make_request("discv5_updateNodeInfo", [kv_pair])
+
+    with pytest.raises(Exception):
+        await trio.to_thread.run_sync(w3.discv5.update_node_info, kv_pair)
+
+
+@pytest.mark.trio
+async def test_rpc_updateNodeInfo_missing_kv_pairs(make_request):
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_updateNodeInfo", [])
 
 
 @pytest.mark.parametrize(
