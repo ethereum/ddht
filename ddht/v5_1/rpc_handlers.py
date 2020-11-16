@@ -3,6 +3,7 @@ from typing import Any, Iterable, List, Optional, Tuple, TypedDict
 
 from eth_enr import ENR
 from eth_enr.abc import ENRAPI
+from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import HexStr, NodeID
 from eth_utils import ValidationError, decode_hex, encode_hex, is_list_like, to_dict
 
@@ -172,7 +173,10 @@ class SetENRHandler(RPCHandler[ENRAPI, None]):
         return enr
 
     async def do_call(self, params: ENRAPI) -> None:
-        self._network.enr_db.set_enr(params)
+        try:
+            self._network.enr_db.set_enr(params)
+        except OldSequenceNumber as exc:
+            raise RPCError(f"Invalid ENR, outdated sequence number: {exc}.")
         return None
 
 

@@ -172,6 +172,12 @@ async def test_v51_rpc_get_enr_web3(make_request, bob, bob_node_id_param_w3, w3)
 
 
 @pytest.mark.trio
+async def test_v51_rpc_get_enr_web3_unseen_node_id(make_request, new_enr, w3):
+    with pytest.raises(Exception, match="Unexpected Error"):
+        await trio.to_thread.run_sync(w3.discv5.get_enr, repr(new_enr))
+
+
+@pytest.mark.trio
 async def test_v51_rpc_set_enr(make_request, new_enr):
     set_enr_response = await make_request("discv5_setENR", [repr(new_enr)])
     assert set_enr_response is None
@@ -195,6 +201,16 @@ async def test_v51_rpc_set_enr_web3(make_request, w3, new_enr):
 
     response_two = await trio.to_thread.run_sync(w3.discv5.get_enr, repr(new_enr))
     assert response_two.enr == new_enr
+
+
+@pytest.mark.trio
+async def test_v51_rpc_set_enr_web3_duplicate(make_request, w3, new_enr):
+    response = await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
+    assert response is None
+
+    new_enr._sequence_number = new_enr._sequence_number - 1
+    with pytest.raises(Exception, match="Invalid ENR"):
+        await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
 
 
 @pytest.mark.trio
