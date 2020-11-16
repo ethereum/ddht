@@ -17,15 +17,24 @@ from typing import (
 
 from eth_typing import Hash32
 from eth_utils import ValidationError, to_tuple
-from eth_utils.toolz import groupby, sliding_window
+from eth_utils.toolz import accumulate, cons, groupby, sliding_window
 from ssz.constants import CHUNK_SIZE, ZERO_HASHES
 from ssz.hash import hash_eth2
 from ssz.sedes import List as ListSedes
 
+from ddht.exceptions import ParseError
+from ddht.v5_1.alexandria.constants import POWERS_OF_TWO
+from ddht.v5_1.alexandria.leb128 import (
+    decode_leb128,
+    encode_leb128,
+    parse_leb128,
+    partition_leb128,
+)
 from ddht.v5_1.alexandria.partials._utils import (
     decompose_into_powers_of_two,
     display_path,
     get_chunk_count_for_data_length,
+    get_longest_common_path,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
     chunk_index_to_path,
@@ -34,6 +43,120 @@ from ddht.v5_1.alexandria.partials.chunking import (
     path_to_left_chunk_index,
 )
 from ddht.v5_1.alexandria.partials.typing import TreePath
+from ddht.v5_1.alexandria.sedes import content_sedes
+
+
+def serialize_path(previous: TreePath, path: TreePath) -> bytes:
+    """
+    Tree paths are serialized in sequence, lexicographically sorted.
+    Encoding is contextual on the previous encoded element.
+
+    We encode the path as follows.
+
+    path := path_head || path_tail
+
+    The `path_head` are the leading bits from the previous path that are
+    shared by this path.  `path_tail` are the remaining bits from this
+    path.
+
+    For example:
+
+    previous: (0, 0, 1, 1, 0, 0, 1, 1)
+    path:     (0, 0, 1, 1, 1, 0, 1, 1)
+
+    path_head = (0, 0, 1, 1)
+    path_tail = (1, 0, 1, 1)
+
+    Encoding of the path involves:
+
+    tail_length      := len(path_tail)
+    path_tail_as_int := sum(2**i for i in range(tail_length) if path_tail[i])
+    head_length := len(path_head)
+
+    Since path's are constrained to a total of 26 bits, we can account for
+    the full length in 5 bits (2**5 == 32).  The most bits we could need
+    for a path are when the path shares no bits with the previous path,
+    meaning 26 bits for the `path_tail`, and another 5 bits for the length,
+    and zero bits needed for the `head_length`.
+
+    We encode these three values together into a single little endian
+    encoded integer and then LEB128 encode them.
+
+    encoded_path := tail_length ^ shifted_path_as_int ^ shifted_head_length
+    shifted_path_as_int := path_as_int << 5
+    shifted_head_length := head_length << (5 + tail_length)
+
+    To decode, we apply the same process in reverse.  First, decode the
+    LEB128 encoded value.
+
+    The first 5 bits encode the `tail_length`.
+
+    Once the `tail_length` is known, we shift off that many bits to
+    determine the actual `path_tail`.
+
+    All of the remaining bits are the `head_length`.
+    """
+    if previous is None:
+        path_tail = path
+        common_bits = 0
+    else:
+        common_path = get_longest_common_path(path, previous)
+        common_bits = len(common_path)
+        path_tail = path[common_bits:]
+
+    path_tail_length = len(path_tail)
+
+    if path_tail_length >= 32:
+        raise Exception("Invariant")
+    if common_bits >= 32 - path_tail_length.bit_length() - len(path_tail):
+        raise Exception("Invariant")
+
+    path_as_int = sum(
+        power_of_two
+        for path_bit, power_of_two in zip(path_tail, POWERS_OF_TWO)
+        if path_bit
+    )
+    encoded_path_as_int = (
+        path_tail_length ^ (path_as_int << 5) ^ (common_bits << (5 + path_tail_length))
+    )
+    return encode_leb128(encoded_path_as_int)
+
+
+def deserialize_path(previous: TreePath, encoded_path: bytes) -> TreePath:
+    header_as_int = decode_leb128(encoded_path)
+
+    path_length = header_as_int & 0b11111
+    path_as_int = (header_as_int >> 5) & (2 ** path_length - 1)
+    common_bits = header_as_int >> (5 + path_length)
+
+    partial_path = tuple(
+        bool(path_as_int & power_of_two) for power_of_two in POWERS_OF_TWO[:path_length]
+    )
+    if common_bits:
+        if previous is None or len(previous) < common_bits:
+            raise Exception("Need previous path when common bits is not 0")
+        else:
+            full_path = previous[:common_bits] + partial_path
+    else:
+        full_path = partial_path
+
+    return full_path
+
+
+def serialize_paths(paths: Sequence[TreePath]) -> bytes:
+    return b"".join(
+        (
+            serialize_path(previous, path)
+            for previous, path in sliding_window(2, cons((), paths))
+        )
+    )
+
+
+def deserialize_paths(data: bytes) -> Tuple[TreePath, ...]:
+    # Parse the remaining data ase the encoded paths.  The `[1:]` at the
+    # end here is just an implementation detail for how `accumulate` works,
+    # resulting in an extra element that isn't needed.
+    return tuple(accumulate(deserialize_path, partition_leb128(data), ()))[1:]
 
 
 class BrokenTree(Exception):
@@ -304,6 +427,117 @@ class Proof:
         The maximum valid length for any path in this proof.
         """
         return self.sedes.chunk_count.bit_length()  # type: ignore
+
+    def serialize(self) -> bytes:
+        """
+        Proof serialization is the concatenation of:
+
+        - the LEB128 encoded `content_length`
+        - the LEB128 encoded number of nodes
+        - the concatenated encoded node paths
+        - the concatenated node values
+
+        The proof elements are lexicographically sorted by their paths which
+        maximizes path compression.
+        """
+        # First we need to get all of the elements that are part of the "content"
+        data_elements = self.get_data_elements()
+        if not data_elements:
+            raise Exception("Invariant")
+
+        # Ensure that the nodes are sorted by path which maximizes space
+        # savings when serializing the paths.
+        sorted_data_elements = tuple(sorted(data_elements))
+
+        # Pull off all of the paths and serialize them.  We drop the first part
+        # of the path since it is always `(False,)` for every data element.
+        paths = tuple(element.path[1:] for element in sorted_data_elements)
+        values = tuple(element.value for element in sorted_data_elements)
+
+        # The paths get serialized together for maximal compression.  See
+        # `serialize_path` for more information on how the path elements are
+        # compressed.
+        serialized_paths = serialize_paths(paths)
+
+        # The values are simply concatenated together
+        serialized_values = b"".join(values)
+
+        # The length and total number of serialized nodes are both LEB128
+        # encoded.
+        encoded_length = encode_leb128(self.get_content_length())
+
+        encoded_element_count = encode_leb128(len(values))
+
+        # The final serialized form is the concatenation of the four parts.
+        return b"".join(
+            (
+                encoded_length,
+                encoded_element_count,
+                serialized_values,
+                serialized_paths,
+            )
+        )
+
+    @classmethod
+    def deserialize(cls, data: bytes, sedes: ListSedes = content_sedes,) -> "Proof":
+        # Extract the content length and the number of serialized nodes.
+        length, remainder = parse_leb128(data)
+        num_values, values_and_paths = parse_leb128(remainder)
+
+        # Validate that there is enough data for the expected number of nodes.
+        if len(values_and_paths) < CHUNK_SIZE * num_values:
+            raise ParseError("Insufficient data for number of encoded values")
+
+        # Extract the the node values which are each 32-bytes in length.
+        serialized_values = values_and_paths[: CHUNK_SIZE * num_values]
+        values = tuple(
+            Hash32(serialized_values[left:right])
+            for left, right in sliding_window(
+                2, range(0, len(serialized_values) + 1, CHUNK_SIZE)
+            )
+        )
+
+        # The remainder of the data is the serialized paths.
+        serialized_paths = values_and_paths[CHUNK_SIZE * num_values :]
+
+        # Parse the remaining data ase the encoded paths.  The `[1:]` at the
+        # end here is just an implementation detail for how `accumulate` works,
+        # resulting in an extra element that isn't needed.
+        paths = deserialize_paths(serialized_paths)
+
+        if not paths:
+            raise ParseError("No nodes")
+        elif len(paths) != len(values):
+            raise ParseError(
+                f"Number of paths does not match number of values: {len(paths)} "
+                f"!= {len(values)}"
+            )
+
+        # Re-assemble the `ProofElement`, tacking the `(False,)` prefix back
+        # onto all of the decoted paths.
+        data_elements = tuple(
+            ProofElement((False,) + path, value) for path, value in zip(paths, values)
+        )
+
+        # Next we need to re-generate the padding elements.
+        num_data_chunks = get_chunk_count_for_data_length(length)
+        last_data_chunk_index = max(0, num_data_chunks - 1)
+
+        num_padding_chunks = sedes.chunk_count - max(1, num_data_chunks)
+
+        padding_elements = get_padding_elements(
+            last_data_chunk_index, num_padding_chunks, sedes.chunk_count.bit_length(),
+        )
+        length_element = ProofElement(
+            path=(True,), value=Hash32(length.to_bytes(CHUNK_SIZE, "little"))
+        )
+
+        elements = data_elements + padding_elements + (length_element,)
+
+        # Re-assembly the proof and return it.
+        proof = cls(elements, sedes)
+        validate_proof(proof)
+        return proof
 
     def to_partial(self, start_at: int, partial_data_length: int) -> "Proof":
         """
