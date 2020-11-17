@@ -16,17 +16,17 @@ from ddht.v5_1.alexandria.sedes import ByteList, content_sedes
 
 
 @settings(max_examples=1000)
-@given(data=st.binary(min_size=0, max_size=GB))
-@example(data=b"")
-@example(data=b"\x00" * 31)
-@example(data=b"\x00" * 32)
-@example(data=b"\x00" * 33)
-@example(data=b"\x00" * 63)
-@example(data=b"\x00" * 64)
-@example(data=b"\x00" * 65)
-def test_ssz_full_proofs(data):
-    expected_hash_tree_root = get_hash_tree_root(data, sedes=content_sedes)
-    proof = compute_proof(data, sedes=content_sedes)
+@given(content=st.binary(min_size=0, max_size=GB))
+@example(content=b"")
+@example(content=b"\x00" * 31)
+@example(content=b"\x00" * 32)
+@example(content=b"\x00" * 33)
+@example(content=b"\x00" * 63)
+@example(content=b"\x00" * 64)
+@example(content=b"\x00" * 65)
+def test_ssz_full_proofs(content):
+    expected_hash_tree_root = get_hash_tree_root(content, sedes=content_sedes)
+    proof = compute_proof(content, sedes=content_sedes)
 
     validate_proof(proof)
     assert is_proof_valid(proof)
@@ -37,10 +37,10 @@ def test_ssz_full_proofs(data):
     assert len(proven_data_segments) == 1
     start_index, proven_data = proven_data_segments[0]
     assert start_index == 0
-    assert proven_data == data
+    assert proven_data == content
 
     proven_data = proof.get_proven_data()
-    assert proven_data[0 : len(data)] == data
+    assert proven_data[0 : len(content)] == content
 
 
 short_content_sedes = ByteList(max_length=32 * 16)
