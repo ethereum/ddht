@@ -115,6 +115,14 @@ class GetENRPayload(NamedTuple):
         return cls(enr=ENR.from_repr(response["enr_repr"]))
 
 
+class UpdateENRPayload(NamedTuple):
+    enr: ENRAPI
+
+    @classmethod
+    def from_rpc_response(cls, response: NodeInfoResponse) -> "UpdateENRPayload":
+        return cls(enr=ENR.from_repr(response["enr"]))
+
+
 class EmptyResponse(TypedDict):
     pass
 
@@ -240,7 +248,7 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
     )
     update_node_info: Method[Callable[[], NodeInfo]] = Method(
         RPC.updateNodeInfo,
-        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        result_formatters=lambda method: UpdateENRPayload.from_rpc_response,
         mungers=[kv_pair_munger],
     )
     get_routing_table_info: Method[Callable[[], TableInfo]] = Method(

@@ -4,7 +4,15 @@ from eth_enr import ENRAPI
 from eth_enr.abc import ENRManagerAPI
 from eth_enr.typing import ENR_KV
 from eth_typing import HexStr
-from eth_utils import encode_hex, is_integer, is_text, to_bytes, to_dict, to_tuple
+from eth_utils import (
+    encode_hex,
+    is_hex,
+    is_integer,
+    is_text,
+    to_bytes,
+    to_dict,
+    to_tuple,
+)
 
 from ddht.abc import RoutingTableAPI, RPCHandlerAPI, RPCRequest
 from ddht.rpc import RPCError, RPCHandler
@@ -98,29 +106,30 @@ def normalize_and_validate_kv_pairs(
         if len(kv_pair) != 2:
             raise RPCError(f"Invalid kv_pair length: {len(kv_pair)}.")
 
-        if not is_text(kv_pair[0]):
+        raw_key, raw_value = kv_pair
+        if not is_hex(raw_key):
             raise RPCError(
-                f"Key: {kv_pair[0]} is type: {type(kv_pair[0])}. Keys be text."
+                f"Key: {raw_key} is type: {type(raw_key)}. Keys must be hex-encoded strings."
             )
-        key = to_bytes(text=kv_pair[0])
+        key = to_bytes(hexstr=raw_key)
 
         value: Union[bytes, None]
-        if is_text(kv_pair[1]):
-            value = to_bytes(text=kv_pair[1])
-        elif is_integer(kv_pair[1]):
-            value = to_bytes(kv_pair[1])
-        elif kv_pair[1] is None:
+        if not raw_value:
             value = None
+        elif is_integer(raw_value):
+            value = to_bytes(raw_value)
+        elif is_text(raw_value) and is_hex(raw_value):
+            value = to_bytes(hexstr=raw_value)
         else:
             raise RPCError(
-                f"Value: {kv_pair[1]} is type: {type(kv_pair[1])}. "
-                "Values must be text, integer, or None."
+                f"Value: {raw_value} is type: {type(raw_value)}. "
+                "Values must be hex-str, integer, or None."
             )
 
         yield key, value
 
 
-class UpdateNodeInfoHandler(RPCHandler[Tuple[ENR_KV, ...], None]):
+class UpdateNodeInfoHandler(RPCHandler[Tuple[ENR_KV, ...], NodeInfoResponse]):
     _node_id_hex: HexStr
 
     def __init__(self, enr_manager: ENRManagerAPI) -> None:
@@ -131,9 +140,12 @@ class UpdateNodeInfoHandler(RPCHandler[Tuple[ENR_KV, ...], None]):
         kv_pairs = normalize_and_validate_kv_pairs(raw_params)
         return kv_pairs
 
-    async def do_call(self, params: Tuple[ENR_KV, ...]) -> None:
+    async def do_call(self, params: Tuple[ENR_KV, ...]) -> NodeInfoResponse:
         self._enr_manager.update(*params)
-        return None
+        return NodeInfoResponse(
+            node_id=encode_hex(self._enr_manager.enr.node_id),
+            enr=repr(self._enr_manager.enr),
+        )
 
 
 @to_dict
