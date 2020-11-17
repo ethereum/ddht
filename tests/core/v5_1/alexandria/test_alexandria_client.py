@@ -275,7 +275,7 @@ async def test_alexandria_client_send_content(
             bob.node_id,
             bob.endpoint,
             is_proof=True,
-            payload=b"test",
+            payload=b"test-payload",
             request_id=b"\x01",
         )
         with trio.fail_after(1):
@@ -283,7 +283,7 @@ async def test_alexandria_client_send_content(
         message = decode_message(talk_response.message.payload)
         assert isinstance(message, ContentMessage)
         assert message.payload.is_proof is True
-        assert message.payload.payload == b"test"
+        assert message.payload.payload == b"test-payload"
 
 
 @pytest.mark.trio
@@ -300,7 +300,7 @@ async def test_alexandria_client_get_content(
                 request.sender_node_id,
                 request.sender_endpoint,
                 is_proof=False,
-                payload=b"test",
+                payload=b"test-payload",
                 request_id=request.request_id,
             )
 
@@ -318,7 +318,7 @@ async def test_alexandria_client_get_content(
 
                 assert isinstance(content_message, ContentMessage)
                 assert content_message.payload.is_proof is False
-                assert content_message.payload.payload == b"test"
+                assert content_message.payload.payload == b"test-payload"
 
 
 @pytest.mark.trio

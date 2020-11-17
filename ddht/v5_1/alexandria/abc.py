@@ -72,6 +72,12 @@ class BroadcastLogAPI(ABC):
         ...
 
 
+class ContentProviderAPI(ServiceAPI):
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI
@@ -225,6 +231,9 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
 class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     client: AlexandriaClientAPI
     routing_table: RoutingTableAPI
+
+    content_storage: ContentStorageAPI
+    content_provider: ContentProviderAPI
 
     @property
     @abstractmethod
