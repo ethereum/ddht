@@ -1,31 +1,39 @@
-import itertools
 import logging
 import secrets
-from typing import Collection, List, Optional, Set, Tuple
+from typing import Collection, List, Optional, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils.toolz import cons, first, take
+from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
 
-from ddht._utils import every, reduce_enrs
+from ddht._utils import every
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.kademlia import (
-    KademliaRoutingTable,
-    compute_distance,
-    compute_log_distance,
-    iter_closest_nodes,
-)
+from ddht.kademlia import KademliaRoutingTable
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.payloads import PongPayload
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
+from ddht.v5_1.network import common_get_nodes_near, common_recursive_find_nodes
+
+NEIGHBORHOOD_DISTANCES = (
+    # First bucket is combined (128 + 64 + 32) since these will rarely be
+    # occupied.
+    tuple(range(1, 224)),
+    # Next few buckets drop in size by about half each time.
+    tuple(range(224, 240)),
+    tuple(range(240, 248)),
+    (248, 249, 250, 251),
+    (252, 253, 254),
+    # This last one is 3/4 of the network
+    (255, 256),
+)
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
@@ -118,7 +126,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     ) -> PongPayload:
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
-        response = await self.client.ping(node_id, endpoint=endpoint)
+
+        response = await self.client.ping(node_id, endpoint=endpoint,)
         return response.payload
 
     async def find_nodes(
@@ -141,73 +150,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
-        self.logger.debug("Recursive find nodes: %s", target.hex())
+        return await common_recursive_find_nodes(self, target)
 
-        queried_node_ids = set()
-        unresponsive_node_ids = set()
-        received_enrs: List[ENRAPI] = []
-        received_node_ids: Set[NodeID] = set()
-
-        async def do_lookup(node_id: NodeID) -> None:
-            queried_node_ids.add(node_id)
-
-            distance = compute_log_distance(node_id, target)
-            try:
-                enrs = await self.find_nodes(node_id, distance)
-            except trio.TooSlowError:
-                unresponsive_node_ids.add(node_id)
-                return
-
-            for enr in enrs:
-                received_node_ids.add(enr.node_id)
-                try:
-                    self.enr_db.set_enr(enr)
-                except OldSequenceNumber:
-                    received_enrs.append(self.enr_db.get_enr(enr.node_id))
-                else:
-                    received_enrs.append(enr)
-
-        for lookup_round_counter in itertools.count():
-            candidates = iter_closest_nodes(
-                target, self.routing_table, received_node_ids
-            )
-            responsive_candidates = itertools.dropwhile(
-                lambda node: node in unresponsive_node_ids, candidates
-            )
-            closest_k_candidates = take(
-                self.routing_table.bucket_size, responsive_candidates
-            )
-            closest_k_unqueried_candidates = (
-                candidate
-                for candidate in closest_k_candidates
-                if candidate not in queried_node_ids and candidate != self.local_node_id
-            )
-            nodes_to_query = tuple(take(3, closest_k_unqueried_candidates))
-
-            if nodes_to_query:
-                self.logger.debug(
-                    "Starting lookup round %d for %s",
-                    lookup_round_counter + 1,
-                    target.hex(),
-                )
-                async with trio.open_nursery() as nursery:
-                    for peer in nodes_to_query:
-                        nursery.start_soon(do_lookup, peer)
-            else:
-                self.logger.debug(
-                    "Lookup for %s finished in %d rounds",
-                    target.hex(),
-                    lookup_round_counter,
-                )
-                break
-
-        # now sort and return the ENR records in order of closesness to the target.
-        return tuple(
-            sorted(
-                reduce_enrs(received_enrs),
-                key=lambda enr: compute_distance(enr.node_id, target),
-            )
-        )
+    async def get_nodes_near(
+        self, target: NodeID, max_nodes: int = 32
+    ) -> Tuple[NodeID, ...]:
+        return await common_get_nodes_near(self, target, max_nodes=max_nodes)
 
     #
     # Long Running Processes

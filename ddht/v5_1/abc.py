@@ -1,6 +1,15 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tuple, Type
+from typing import (
+    Any,
+    AsyncContextManager,
+    Collection,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Type,
+)
 import uuid
 
 from async_service import ServiceAPI
@@ -410,6 +419,34 @@ class ClientAPI(ServiceAPI):
 
 class TalkProtocolAPI(ABC):
     protocol_id: bytes
+
+
+class NetworkProtocol(Protocol):
+    logger: logging.Logger
+    routing_table: RoutingTableAPI
+
+    @property
+    def local_node_id(self) -> NodeID:
+        ...
+
+    @property
+    def enr_db(self) -> ENRDatabaseAPI:
+        ...
+
+    async def find_nodes(
+        self,
+        node_id: NodeID,
+        *distances: int,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[ENRAPI, ...]:
+        ...
+
+    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
+        ...
+
+    async def get_nodes_near(self, target: NodeID) -> Tuple[NodeID, ...]:
+        ...
 
 
 class NetworkAPI(ServiceAPI):
