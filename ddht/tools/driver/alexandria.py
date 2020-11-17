@@ -58,6 +58,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
         self,
         network: Optional[NetworkAPI] = None,
         bootnodes: Optional[Collection[ENRAPI]] = None,
+        max_advertisement_count: int = 32,
     ) -> AsyncIterator[AlexandriaNetworkAPI]:
         network_context: AsyncContextManager[NetworkAPI]
 
@@ -74,6 +75,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
                     bootnodes=(),
                     content_storage=self.content_storage,
                     advertisement_db=self.advertisement_db,
+                    max_advertisement_count=max_advertisement_count,
                 )
                 async with background_trio_service(alexandria_network):
                     await alexandria_network.ready()

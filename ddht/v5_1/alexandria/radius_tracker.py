@@ -35,7 +35,7 @@ class RadiusTracker(Service, RadiusTrackerAPI):
 
     async def get_advertisement_radius(self, node_id: NodeID) -> int:
         if node_id == self._network.local_node_id:
-            raise Exception("Cannot query local node id")
+            return self._network.local_advertisement_radius
         elif node_id in self._node_ad_radius:
             return self._node_ad_radius[node_id]
         else:

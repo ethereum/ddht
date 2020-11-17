@@ -149,6 +149,24 @@ class AdvertisementDatabaseAPI(ABC):
         ...
 
 
+class AdvertisementManagerAPI(ServiceAPI):
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+    @abstractmethod
+    def check_interest(self, advertisement: Advertisement) -> bool:
+        ...
+
+    @abstractmethod
+    async def validate_advertisement(self, advertisement: Advertisement) -> None:
+        ...
+
+    @abstractmethod
+    async def handle_advertisement(self, advertisement: Advertisement) -> bool:
+        ...
+
+
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI
@@ -357,6 +375,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     advertisement_db: AdvertisementDatabaseAPI
     advertisement_provider: AdvertisementProviderAPI
+    advertisement_manager: AdvertisementManagerAPI
 
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
@@ -403,6 +422,12 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     async def bond(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> bool:
+        ...
+
+    @abstractmethod
+    async def lookup_enr(
+        self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
+    ) -> ENRAPI:
         ...
 
     @abstractmethod

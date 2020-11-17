@@ -76,16 +76,18 @@ class Advertisement(NamedTuple):
         )
 
     @property
+    def signing_msg(self) -> bytes:
+        return create_advertisement_signing_message(
+            self.content_id, self.hash_tree_root, self.expires_at,
+        )
+
+    @property
     def is_expired(self) -> bool:
         return datetime.datetime.utcnow() > self.expires_at
 
     @property
     def public_key(self) -> keys.PublicKey:
-        return self.signature.recover_public_key_from_msg(
-            create_advertisement_signing_message(
-                self.content_id, self.hash_tree_root, self.expires_at,
-            )
-        )
+        return self.signature.recover_public_key_from_msg(self.signing_msg)
 
     @property
     def node_id(self) -> NodeID:
@@ -114,13 +116,22 @@ class Advertisement(NamedTuple):
             signature_s=signature.s,
         )
 
-    def verify(self, public_key: keys.PublicKey) -> None:
+    @property
+    def is_valid(self) -> bool:
+        try:
+            self.node_id
+        except BadSignature:
+            return False
+        else:
+            return True
+
+    def verify(self) -> None:
         verify_advertisement_signature(
             content_id=self.content_id,
             hash_tree_root=self.hash_tree_root,
             expires_at=self.expires_at,
             signature=self.signature,
-            public_key=public_key,
+            public_key=self.public_key,
         )
 
     def to_sedes_payload(self) -> Tuple[ContentKey, Hash32, int, int, int, int]:

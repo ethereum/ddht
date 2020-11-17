@@ -35,15 +35,48 @@ def test_advertisement_creation():
 
     assert ad.public_key == private_key.public_key
 
-    ad.verify(private_key.public_key)
+    assert ad.is_valid
+    ad.verify()
 
     expected_node_id = keccak(private_key.public_key.to_bytes())
     assert ad.node_id == expected_node_id
 
-    wrong_key = PrivateKeyFactory()
+
+@pytest.mark.xfail
+def test_advertisement_with_invalid_signature():
+    base = AdvertisementFactory()
+
+    ad = AdvertisementFactory(
+        signature_v=base.signature_v,
+        signature_r=base.signature_r,
+        signature_s=base.signature_s,
+    )
+    assert ad.signature_v == base.signature_v
+    assert ad.signature_r == base.signature_r
+    assert ad.signature_s == base.signature_s
+
+    assert not ad.is_valid
 
     with pytest.raises(BadSignature):
-        ad.verify(wrong_key.public_key)
+        ad.node_id
+    with pytest.raises(BadSignature):
+        ad.public_key
+    with pytest.raises(BadSignature):
+        ad.verify()
+
+
+def test_advertisement_with_malformed_signature():
+    ad = AdvertisementFactory(
+        signature_v=1, signature_r=1357924680, signature_s=2468013579,
+    )
+
+    assert not ad.is_valid
+
+    with pytest.raises(BadSignature):
+        ad.node_id
+
+    with pytest.raises(BadSignature):
+        ad.public_key
 
 
 def test_advertisement_to_and_from_sedes_payload():
