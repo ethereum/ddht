@@ -1,5 +1,14 @@
-from abc import abstractmethod
-from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tuple, Type
+from abc import ABC, abstractmethod
+from typing import (
+    Any,
+    AsyncContextManager,
+    Collection,
+    Iterable,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+)
 
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
@@ -19,6 +28,32 @@ from ddht.v5_1.alexandria.messages import (
 )
 from ddht.v5_1.alexandria.payloads import PongPayload
 from ddht.v5_1.alexandria.typing import ContentKey
+
+
+class ContentStorageAPI(ABC):
+    @abstractmethod
+    def has_content(self, content_key: ContentKey) -> bool:
+        ...
+
+    @abstractmethod
+    def get_content(self, content_key: ContentKey) -> bytes:
+        ...
+
+    @abstractmethod
+    def set_content(self, content_key: ContentKey, content: bytes) -> None:
+        ...
+
+    @abstractmethod
+    def delete_content(self, content_key: ContentKey) -> None:
+        ...
+
+    @abstractmethod
+    def enumerate_keys(
+        self,
+        start_key: Optional[ContentKey] = None,
+        end_key: Optional[ContentKey] = None,
+    ) -> Iterable[ContentKey]:
+        ...
 
 
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
