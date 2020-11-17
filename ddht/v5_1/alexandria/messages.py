@@ -47,9 +47,12 @@ class AlexandriaMessage(Generic[TPayload]):
         return b"".join(
             (
                 UINT8_TO_BYTES[self.message_id],
-                ssz.encode(self.payload, sedes=self.sedes),
+                ssz.encode(self.get_payload_for_encoding(), sedes=self.sedes),
             )
         )
+
+    def get_payload_for_encoding(self) -> Any:
+        return self.payload
 
     @classmethod
     def from_payload_args(
