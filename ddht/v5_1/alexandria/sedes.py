@@ -28,8 +28,8 @@ byte_list = ByteList(max_length=2048)
 uint40 = UInt(40)
 
 
-PingSedes = Container(field_sedes=(uint32,))
-PongSedes = Container(field_sedes=(uint32,))
+PingSedes = Container(field_sedes=(uint32, uint256))
+PongSedes = Container(field_sedes=(uint32, uint256))
 
 FindNodesSedes = Container(field_sedes=(List(uint16, max_length=256),))
 FoundNodesSedes = Container(field_sedes=(uint8, List(byte_list, max_length=32)))

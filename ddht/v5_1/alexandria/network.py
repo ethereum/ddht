@@ -171,12 +171,28 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         await self.bond(node_id, endpoint=endpoint)
 
     async def ping(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+        self,
+        node_id: NodeID,
+        *,
+        enr_seq: Optional[int] = None,
+        advertisement_radius: Optional[int] = None,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
     ) -> PongPayload:
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
+        if enr_seq is None:
+            enr_seq = self.network.enr_manager.enr.sequence_number
+        if advertisement_radius is None:
+            advertisement_radius = self.local_advertisement_radius
 
-        response = await self.client.ping(node_id, endpoint=endpoint,)
+        response = await self.client.ping(
+            node_id,
+            enr_seq=enr_seq,
+            advertisement_radius=advertisement_radius,
+            endpoint=endpoint,
+            request_id=request_id,
+        )
         return response.payload
 
     async def find_nodes(
@@ -478,6 +494,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     request.sender_node_id,
                     request.sender_endpoint,
                     enr_seq=self.enr_manager.enr.sequence_number,
+                    advertisement_radius=self.local_advertisement_radius,
                     request_id=request.request_id,
                 )
                 enr = await self.network.lookup_enr(

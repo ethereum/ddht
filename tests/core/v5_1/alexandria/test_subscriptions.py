@@ -11,7 +11,10 @@ async def test_alexandria_client_subscription_via_talk_request(
 ):
     async with bob_alexandria_client.subscribe(PingMessage) as subscription:
         await alice_alexandria_client.send_ping(
-            bob.node_id, bob.endpoint, enr_seq=alice.enr.sequence_number,
+            bob.node_id,
+            bob.endpoint,
+            enr_seq=alice.enr.sequence_number,
+            advertisement_radius=1234,
         )
 
         with trio.fail_after(1):
@@ -19,6 +22,7 @@ async def test_alexandria_client_subscription_via_talk_request(
 
         assert isinstance(message.message, PingMessage)
         assert message.message.payload.enr_seq == alice.enr.sequence_number
+        assert message.message.payload.advertisement_radius == 1234
 
 
 @pytest.mark.trio
@@ -34,6 +38,7 @@ async def test_alexandria_client_subscription_via_talk_response(
                     bob.node_id,
                     bob.endpoint,
                     enr_seq=alice.enr.sequence_number,
+                    advertisement_radius=1234,
                     request_id=b"\x01\x02",
                 )
 
@@ -41,6 +46,7 @@ async def test_alexandria_client_subscription_via_talk_response(
 
             assert isinstance(message.message, PongMessage)
             assert message.message.payload.enr_seq == alice.enr.sequence_number
+            assert message.message.payload.advertisement_radius == 1234
 
 
 @pytest.mark.trio
@@ -48,7 +54,7 @@ async def test_alexandria_client_subscription_via_talk_request_protocol_mismatch
     alice_network, alice, bob, bob_alexandria_client, autojump_clock
 ):
     async with bob_alexandria_client.subscribe(PingMessage) as subscription:
-        message = PingMessage(PingPayload(alice.enr.sequence_number))
+        message = PingMessage(PingPayload(alice.enr.sequence_number, 1234))
         data_payload = message.to_wire_bytes()
         await alice_network.client.send_talk_request(
             bob.node_id,
@@ -66,7 +72,7 @@ async def test_alexandria_client_subscription_via_talk_response_unknown_request_
     alice_network, alice, bob, bob_alexandria_client, autojump_clock
 ):
     async with bob_alexandria_client.subscribe(PongMessage) as subscription:
-        message = PongMessage(PongPayload(alice.enr.sequence_number))
+        message = PongMessage(PongPayload(alice.enr.sequence_number, 1234))
         data_payload = message.to_wire_bytes()
         await alice_network.client.send_talk_response(
             bob.node_id,
