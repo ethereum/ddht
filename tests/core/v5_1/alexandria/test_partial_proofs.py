@@ -4,6 +4,7 @@ import pytest
 from ssz import get_hash_tree_root
 from ssz.hash import hash_eth2
 
+from ddht.tools.factories.content import ContentFactory
 from ddht.v5_1.alexandria.constants import GB
 from ddht.v5_1.alexandria.partials.proof import (
     Proof,
@@ -45,7 +46,6 @@ def test_ssz_full_proofs(data):
 short_content_sedes = ByteList(max_length=32 * 16)
 
 CONTENT_12345 = b"\x01" * 32 + b"\x02" * 32 + b"\x03" * 32 + b"\x04" * 32 + b"\x05" * 32
-CONTENT_512 = bytes((i % 256 for i in range(512)))
 r"""
                 Tree for CONTENT_12345
 
@@ -73,6 +73,8 @@ r"""
 
   |<-----DATA---->| |<-----------PADDING-------------->|
 """
+
+CONTENT_512 = bytes((i % 256 for i in range(512)))
 
 
 @pytest.mark.parametrize(
@@ -786,3 +788,83 @@ def test_ssz_partial_proof_merge_fuzzy(data):
 
     assert combined_data[data_slice_b] == partial_b_data[data_slice_b]
     assert combined_data[data_slice_b] == content[data_slice_b]
+
+
+def test_ssz_proof_get_missing_segments_outer():
+    content = ContentFactory(192)
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+
+    assert tuple(full_proof.get_missing_segments()) == ()
+
+    partial = full_proof.to_partial(64, 64)
+
+    missing_segments = tuple(partial.get_missing_segments())
+    assert len(missing_segments) == 2
+
+    segment_a, segment_b = missing_segments
+    assert segment_a.start_at == 0
+    assert segment_a.length == 64
+
+    assert segment_b.start_at == 128
+    assert segment_b.length == 64
+
+
+def test_ssz_proof_get_missing_segments_only_head():
+    content = ContentFactory(512)
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+
+    assert tuple(full_proof.get_missing_segments()) == ()
+
+    partial = full_proof.to_partial(160, 352)
+
+    missing_segments = tuple(partial.get_missing_segments())
+    assert len(missing_segments) == 1
+
+    segment = missing_segments[0]
+    assert segment.start_at == 0
+    # The length is 128 instead of 160 because the segment just before the
+    # partial boundary gets included as part of the proof since the proof
+    # starts in the middle of two sibling leaf nodes.
+    assert segment.length == 128
+
+
+def test_ssz_proof_get_missing_segments_only_middle():
+    content = ContentFactory(512)
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+
+    assert tuple(full_proof.get_missing_segments()) == ()
+
+    head_proof = full_proof.to_partial(0, 160)
+    tail_proof = full_proof.to_partial(352, 160)
+    partial = head_proof.merge(tail_proof)
+
+    missing_segments = tuple(partial.get_missing_segments())
+    assert len(missing_segments) == 1
+
+    segment = missing_segments[0]
+    # The segmeent starts at 192 because the starting proof ends between two
+    # sibling nodes, causing an extra leaf node to be included.
+    assert segment.start_at == 192
+    # The length is 128 instead of 192 because the tail segment
+    # starts in the middle of two sibling leaves which causes one extra leaf
+    # to be included.
+    assert segment.length == 128
+
+
+def test_ssz_proof_get_missing_segments_last_chunk_not_full():
+    content = ContentFactory(180)  # 12 bytes short
+    full_proof = compute_proof(content, sedes=short_content_sedes)
+
+    assert tuple(full_proof.get_missing_segments()) == ()
+
+    partial = full_proof.to_partial(64, 64)
+
+    missing_segments = tuple(partial.get_missing_segments())
+    assert len(missing_segments) == 2
+
+    segment_a, segment_b = missing_segments
+    assert segment_a.start_at == 0
+    assert segment_a.length == 64
+
+    assert segment_b.start_at == 128
+    assert segment_b.length == 52

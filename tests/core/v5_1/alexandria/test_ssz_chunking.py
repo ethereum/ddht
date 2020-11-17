@@ -6,10 +6,12 @@ from ssz.constants import CHUNK_SIZE
 from ddht.v5_1.alexandria.constants import GB
 from ddht.v5_1.alexandria.partials._utils import get_chunk_count_for_data_length
 from ddht.v5_1.alexandria.partials.chunking import (
+    MissingSegment,
     chunk_index_to_path,
     compute_chunks,
     group_by_subtree,
     path_to_left_chunk_index,
+    slice_segments_to_max_chunk_count,
 )
 
 
@@ -127,4 +129,89 @@ def test_path_to_left_chunk_index(path, expected):
 )
 def test_groub_by_subtree(first_chunk_index, num_chunks, expected):
     actual = group_by_subtree(first_chunk_index, num_chunks)
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "segments,max_chunk_count,expected",
+    (
+        (
+            (MissingSegment(0, 512),),
+            4,
+            (
+                MissingSegment(0, 128),
+                MissingSegment(128, 128),
+                MissingSegment(256, 128),
+                MissingSegment(384, 128),
+            ),
+        ),
+        (
+            # short 12 bytes at the end.
+            (MissingSegment(0, 500),),
+            4,
+            (
+                MissingSegment(0, 128),
+                MissingSegment(128, 128),
+                MissingSegment(256, 128),
+                MissingSegment(384, 116),
+            ),
+        ),
+        (
+            # multiple segments
+            (
+                MissingSegment(0, 100),
+                MissingSegment(160, 128),
+                MissingSegment(384, 116),
+            ),
+            2,
+            (
+                MissingSegment(0, 64),
+                MissingSegment(64, 36),
+                MissingSegment(160, 64),
+                MissingSegment(224, 64),
+                MissingSegment(384, 64),
+                MissingSegment(448, 52),
+            ),
+        ),
+    ),
+)
+def test_slice_segments_to_max_chunk_count(segments, max_chunk_count, expected):
+    sliced_segments = slice_segments_to_max_chunk_count(segments, max_chunk_count)
+    assert sliced_segments == expected
+
+
+@pytest.mark.parametrize(
+    "segment,others,expected",
+    (
+        # non-intersecting
+        (MissingSegment(0, 10), (MissingSegment(10, 10),), ()),
+        (MissingSegment(10, 10), (MissingSegment(0, 10), MissingSegment(20, 10)), ()),
+        # overlapping from left
+        (
+            MissingSegment(10, 10),
+            (MissingSegment(0, 6), MissingSegment(6, 6), MissingSegment(20, 10)),
+            (MissingSegment(10, 2),),
+        ),
+        # overlapping from right
+        (
+            MissingSegment(10, 10),
+            (MissingSegment(0, 6), MissingSegment(18, 6), MissingSegment(24, 6)),
+            (MissingSegment(18, 2),),
+        ),
+        # in the middle
+        (
+            MissingSegment(10, 10),
+            (MissingSegment(0, 6), MissingSegment(12, 6), MissingSegment(24, 6)),
+            (MissingSegment(12, 6),),
+        ),
+        # overlapping both sides
+        (
+            MissingSegment(10, 10),
+            (MissingSegment(4, 4), MissingSegment(8, 4), MissingSegment(16, 4)),
+            (MissingSegment(10, 2), MissingSegment(16, 4)),
+        ),
+    ),
+)
+def test_missing_segment_intersection(segment, others, expected):
+    actual = segment.intersection(others)
     assert actual == expected

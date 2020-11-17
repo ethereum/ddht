@@ -38,6 +38,7 @@ from ddht.v5_1.alexandria.partials._utils import (
     get_longest_common_path,
 )
 from ddht.v5_1.alexandria.partials.chunking import (
+    MissingSegment,
     chunk_index_to_path,
     compute_chunks,
     group_by_subtree,
@@ -270,11 +271,15 @@ class Proof:
 
     def __init__(self, elements: Collection[ProofElement], sedes: ListSedes,) -> None:
         self.elements = tuple(sorted(elements))
-        self._paths = tuple(el.path for el in self.elements)
         self.sedes = sedes
+        # This ordered list of paths which are used for binary searches into
+        # the proof elements.
+        self._paths = tuple(el.path for el in self.elements)
 
     def __eq__(self, other: Any) -> bool:
         if type(self) is not type(other):
+            return False
+        elif self.sedes != other.sedes:
             return False
         else:
             return self.elements == other.elements  # type: ignore
@@ -286,6 +291,16 @@ class Proof:
     def get_hash_tree_root(self) -> Hash32:
         return merklize_elements(self.elements)
 
+    @property
+    def path_bit_length(self) -> int:
+        """
+        The maximum valid length for any path in this proof.
+        """
+        return self.sedes.chunk_count.bit_length()  # type: ignore
+
+    #
+    # Navigation of the ProofElement tree
+    #
     @functools.lru_cache
     def get_element(self, path: TreePath) -> ProofElement:
         """
@@ -420,13 +435,9 @@ class Proof:
             else:
                 break
 
-    @property
-    def path_bit_length(self) -> int:
-        """
-        The maximum valid length for any path in this proof.
-        """
-        return self.sedes.chunk_count.bit_length()  # type: ignore
-
+    #
+    # Serialization and Deserialization
+    #
     def serialize(self) -> bytes:
         """
         Proof serialization is the concatenation of:
@@ -538,6 +549,9 @@ class Proof:
         validate_proof(proof)
         return proof
 
+    #
+    # Partial Proof Generation
+    #
     def to_partial(self, start_at: int, partial_data_length: int) -> "Proof":
         """
         Return another proof with the minimal number of tree elements necessary
@@ -626,60 +640,6 @@ class Proof:
         )
 
         return Proof(partial_elements, self.sedes)
-
-    def get_proven_data(self) -> DataPartial:
-        """
-        Returns a view over the proven data which can be accessed similar to a
-        bytestring by either indexing or slicing.
-        """
-        segments = self.get_proven_data_segments()
-        return DataPartial(self.get_content_length(), segments)
-
-    @to_tuple
-    def get_proven_data_segments(self) -> Iterable[DataSegment]:
-        length = self.get_content_length()
-
-        last_data_chunk_data_size = length % CHUNK_SIZE
-
-        next_chunk_index = 0
-        segment_start_index = 0
-        data_segment = b""
-
-        # Walk over the data chunks merging contigious chunks into a single
-        # segment.
-        last_data_chunk_path = self.get_last_data_chunk_path()
-        data_elements = self.get_elements(
-            right=last_data_chunk_path, right_inclusive=True,
-        )
-        for el in data_elements:
-            if el.depth != self.path_bit_length:
-                continue
-
-            if el.path == last_data_chunk_path:
-                if last_data_chunk_data_size:
-                    chunk_data = el.value[:last_data_chunk_data_size]
-                else:
-                    chunk_data = el.value
-            else:
-                chunk_data = el.value
-
-            chunk_index = path_to_left_chunk_index(el.path, self.path_bit_length)
-
-            if chunk_index == next_chunk_index:
-                data_segment += chunk_data
-            else:
-                if data_segment:
-                    yield DataSegment(segment_start_index, data_segment)
-                data_segment = chunk_data
-                segment_start_index = chunk_index * CHUNK_SIZE
-
-            next_chunk_index = chunk_index + 1
-
-        if length:
-            if data_segment:
-                yield DataSegment(segment_start_index, data_segment)
-        if not length:
-            yield DataSegment(0, b"")
 
     @to_tuple
     def get_minimal_proof_elements(
@@ -781,6 +741,116 @@ class Proof:
         if proof.get_hash_tree_root() != self.get_hash_tree_root():
             raise Exception("Invariant: merged proofs resulted in new root")
         return proof
+
+    #
+    # Proven Data API
+    #
+    def get_proven_data(self) -> DataPartial:
+        """
+        Returns a view over the proven data which can be accessed similar to a
+        bytestring by either indexing or slicing.
+        """
+        segments = self.get_proven_data_segments()
+        return DataPartial(self.get_content_length(), segments)
+
+    @to_tuple
+    def get_proven_data_segments(self) -> Iterable[DataSegment]:
+        length = self.get_content_length()
+
+        last_data_chunk_data_size = length % CHUNK_SIZE
+
+        next_chunk_index = 0
+        segment_start_index = 0
+        data_segment = b""
+
+        # Walk over the data chunks merging contigious chunks into a single
+        # segment.
+        last_data_chunk_path = self.get_last_data_chunk_path()
+        data_elements = self.get_elements(
+            right=last_data_chunk_path, right_inclusive=True,
+        )
+        for el in data_elements:
+            if el.depth != self.path_bit_length:
+                continue
+
+            if el.path == last_data_chunk_path:
+                if last_data_chunk_data_size:
+                    chunk_data = el.value[:last_data_chunk_data_size]
+                else:
+                    chunk_data = el.value
+            else:
+                chunk_data = el.value
+
+            chunk_index = path_to_left_chunk_index(el.path, self.path_bit_length)
+
+            if chunk_index == next_chunk_index:
+                data_segment += chunk_data
+            else:
+                if data_segment:
+                    yield DataSegment(segment_start_index, data_segment)
+                data_segment = chunk_data
+                segment_start_index = chunk_index * CHUNK_SIZE
+
+            next_chunk_index = chunk_index + 1
+
+        if length:
+            if data_segment:
+                yield DataSegment(segment_start_index, data_segment)
+        if not length:
+            yield DataSegment(0, b"")
+
+    #
+    # Missing Data API
+    #
+    @property
+    def is_complete(self) -> bool:
+        content_length = self.get_content_length()
+        content_chunk_count = get_chunk_count_for_data_length(content_length)
+
+        return len(self.get_data_elements()) == content_chunk_count
+
+    @functools.lru_cache
+    def has_chunk(self, chunk_index: int) -> bool:
+        path = chunk_index_to_path(chunk_index, self.path_bit_length)
+        try:
+            self.get_element(path)
+        except IndexError:
+            return False
+        else:
+            return True
+
+    @to_tuple
+    def get_missing_segments(self) -> Iterable[MissingSegment]:
+        next_chunk_index = 0
+
+        for element in self.get_data_elements():
+            if element.depth != self.path_bit_length:
+                continue
+
+            chunk_index = path_to_left_chunk_index(element.path, self.path_bit_length)
+
+            # If the chunk index matches the expected next chunk index then we
+            # are in a data segment and should continue.  Otherwise we have
+            # skipped over some data and need to yield a segment.
+            if chunk_index > next_chunk_index:
+                yield MissingSegment(
+                    next_chunk_index * 32, (chunk_index - next_chunk_index) * 32,
+                )
+
+            next_chunk_index = chunk_index + 1
+
+        last_data_chunk_index = self.get_last_data_chunk_index()
+        last_data_chunk_size = self.get_content_length() % CHUNK_SIZE or CHUNK_SIZE
+
+        # To detect the case where we are missing the last segment, we look to see if
+        if next_chunk_index <= last_data_chunk_index:
+            last_segment_start = next_chunk_index * 32
+            last_segment_length = (
+                last_data_chunk_index * 32 + last_data_chunk_size - last_segment_start
+            )
+            yield MissingSegment(
+                last_segment_start, last_segment_length,
+            )
 
 
 def merklize_elements(elements: Sequence[ProofElement]) -> Hash32:
