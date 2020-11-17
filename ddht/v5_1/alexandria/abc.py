@@ -32,7 +32,7 @@ from ddht.v5_1.alexandria.messages import (
 )
 from ddht.v5_1.alexandria.partials.proof import Proof
 from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
-from ddht.v5_1.alexandria.typing import ContentKey
+from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 
 
 class ContentStorageAPI(ABC):
@@ -82,6 +82,52 @@ class BroadcastLogAPI(ABC):
 class ContentProviderAPI(ServiceAPI):
     @abstractmethod
     async def ready(self) -> None:
+        ...
+
+
+class AdvertisementDatabaseAPI(ABC):
+    @abstractmethod
+    def exists(self, advertisement: Advertisement) -> bool:
+        ...
+
+    @abstractmethod
+    def add(self, advertisement: Advertisement) -> None:
+        ...
+
+    @abstractmethod
+    def remove(self, advertisement: Advertisement) -> bool:
+        ...
+
+    @abstractmethod
+    def query(
+        self,
+        node_id: Optional[NodeID] = None,
+        content_id: Optional[ContentID] = None,
+        content_key: Optional[bytes] = None,
+        hash_tree_root: Optional[Hash32] = None,
+    ) -> Iterable[Advertisement]:
+        ...
+
+    @abstractmethod
+    def closest(self, node_id: NodeID) -> Iterable[Advertisement]:
+        ...
+
+    @abstractmethod
+    def furthest(self, node_id: NodeID) -> Iterable[Advertisement]:
+        ...
+
+    @abstractmethod
+    def get_hash_tree_roots_for_content_id(
+        self, content_id: ContentID
+    ) -> Iterable[Hash32]:
+        ...
+
+    @abstractmethod
+    def count(self) -> int:
+        ...
+
+    @abstractmethod
+    def expired(self) -> Iterable[Advertisement]:
         ...
 
 
@@ -238,6 +284,8 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
 class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     client: AlexandriaClientAPI
     routing_table: RoutingTableAPI
+
+    advertisement_db: AdvertisementDatabaseAPI
 
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
