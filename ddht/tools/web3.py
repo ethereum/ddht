@@ -5,6 +5,7 @@ from typing import (
     List,
     Mapping,
     NamedTuple,
+    Optional,
     Sequence,
     Tuple,
     TypedDict,
@@ -27,6 +28,7 @@ from web3.method import Method
 from web3.module import ModuleV2
 from web3.types import RPCEndpoint
 
+from ddht.endpoint import Endpoint
 from ddht.rpc_handlers import BucketInfo as BucketInfoDict
 from ddht.rpc_handlers import NodeInfoResponse, TableInfoResponse
 from ddht.typing import AnyIPAddress
@@ -140,6 +142,7 @@ class RPC:
     getENR = RPCEndpoint("discv5_getENR")
     setENR = RPCEndpoint("discv5_setENR")
     deleteENR = RPCEndpoint("discv5_deleteENR")
+    lookupENR = RPCEndpoint("discv5_lookupENR")
 
     ping = RPCEndpoint("discv5_ping")
     sendPing = RPCEndpoint("discv5_sendPing")
@@ -206,6 +209,21 @@ def node_identifier_munger(module: Any, identifier: NodeIDIdentifier,) -> List[s
     return [normalize_node_id_identifier(identifier)]
 
 
+def node_identifier_and_endpoint_munger(
+    module: Any, identifier: NodeIDIdentifier, endpoint: Optional[Endpoint] = None
+) -> Tuple[str, Optional[Endpoint]]:
+    """
+    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
+
+    Normalizes the inputs for the following JSON-RPC endpoints:
+    - `discv5_lookupENR`
+    """
+    return (
+        normalize_node_id_identifier(identifier),
+        endpoint,
+    )
+
+
 def send_pong_munger(
     module: Any, identifier: NodeIDIdentifier, request_id: HexStr
 ) -> Tuple[str, HexStr]:
@@ -269,6 +287,11 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.deleteENR,
         result_formatters=lambda method: EmptyPayload.from_rpc_response,
         mungers=[node_identifier_munger],
+    )
+    lookup_enr: Method[Callable[[NodeIDIdentifier], GetENRPayload]] = Method(
+        RPC.lookupENR,
+        result_formatters=lambda method: GetENRPayload.from_rpc_response,
+        mungers=[node_identifier_and_endpoint_munger],
     )
     ping: Method[Callable[[NodeIDIdentifier], PongPayload]] = Method(
         RPC.ping,
