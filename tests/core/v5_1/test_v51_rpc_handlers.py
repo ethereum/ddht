@@ -107,6 +107,11 @@ def bob_node_id_param_w3(request, alice, bob, bob_network):
         raise Exception(f"Unhandled param: {request.param}")
 
 
+@pytest.fixture
+def new_enr():
+    return ENRFactory()
+
+
 @pytest.mark.trio
 async def test_v51_rpc_ping(make_request, bob_node_id_param, alice, bob):
     pong = await make_request("discv5_ping", [bob_node_id_param])
@@ -115,16 +120,29 @@ async def test_v51_rpc_ping(make_request, bob_node_id_param, alice, bob):
     assert pong["packet_port"] == alice.endpoint.port
 
 
+@pytest.mark.parametrize(
+    "endpoint", ("discv5_deleteENR", "discv5_getENR", "discv5_ping", "discv5_sendPing",)
+)
 @pytest.mark.trio
-async def test_v51_rpc_ping_invalid_node_id(make_request, invalid_node_id):
+async def test_v51_rpc_invalid_node_id(make_request, invalid_node_id, endpoint):
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_ping", [invalid_node_id])
+        await make_request(endpoint, [invalid_node_id])
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    (
+        "discv5_deleteENR",
+        "discv5_getENR",
+        "discv5_ping",
+        "discv5_setENR",
+        "discv5_sendPing",
+    ),
+)
 @pytest.mark.trio
-async def test_v51_rpc_ping_missing_node_id(make_request):
+async def test_v51_rpc_missing_node_id(make_request, endpoint):
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_ping", [])
+        await make_request(endpoint, [])
 
 
 @pytest.mark.trio
@@ -136,24 +154,102 @@ async def test_v51_rpc_ping_web3(make_request, bob_node_id_param_w3, alice, bob,
 
 
 @pytest.mark.trio
+async def test_v51_rpc_get_enr(make_request, bob, bob_node_id_param):
+    bob_response = await make_request("discv5_getENR", [bob_node_id_param])
+    assert bob_response["enr_repr"] == repr(bob.enr)
+
+
+@pytest.mark.trio
+async def test_v51_rpc_get_enr_with_unseen_node_id(make_request, new_enr):
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_getENR", [repr(new_enr)])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_get_enr_web3(make_request, bob, bob_node_id_param_w3, w3):
+    response = await trio.to_thread.run_sync(w3.discv5.get_enr, bob_node_id_param_w3)
+    assert response.enr == bob.enr
+
+
+@pytest.mark.trio
+async def test_v51_rpc_get_enr_web3_unseen_node_id(make_request, new_enr, w3):
+    with pytest.raises(Exception, match="Unexpected Error"):
+        await trio.to_thread.run_sync(w3.discv5.get_enr, repr(new_enr))
+
+
+@pytest.mark.trio
+async def test_v51_rpc_set_enr(make_request, new_enr):
+    set_enr_response = await make_request("discv5_setENR", [repr(new_enr)])
+    assert set_enr_response is None
+
+    get_enr_response = await make_request("discv5_getENR", [new_enr.node_id.hex()])
+    assert get_enr_response["enr_repr"] == repr(new_enr)
+
+
+@pytest.mark.trio
+async def test_v51_rpc_set_enr_invalid_enr(make_request, bob):
+    invalid_enr = repr(bob.enr)[4:]
+
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_setENR", [invalid_enr])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_set_enr_web3(make_request, w3, new_enr):
+    response = await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
+    assert response is None
+
+    response_two = await trio.to_thread.run_sync(w3.discv5.get_enr, repr(new_enr))
+    assert response_two.enr == new_enr
+
+
+@pytest.mark.trio
+async def test_v51_rpc_set_enr_web3_duplicate(make_request, w3, new_enr):
+    response = await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
+    assert response is None
+
+    new_enr._sequence_number = new_enr._sequence_number - 1
+    with pytest.raises(Exception, match="Invalid ENR"):
+        await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
+
+
+@pytest.mark.trio
+async def test_v51_rpc_delete_enr(make_request, bob, bob_node_id_param):
+    bob_response = await make_request("discv5_getENR", [bob_node_id_param])
+    assert bob_response["enr_repr"] == repr(bob.enr)
+
+    response_one = await make_request("discv5_deleteENR", [bob_node_id_param])
+    assert response_one is None
+
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_getENR", [bob_node_id_param])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_delete_enr_unknown_node_id(make_request, new_enr):
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_deleteENR", [repr(new_enr)])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_delete_enr_web3(make_request, w3, bob, bob_node_id_param_w3):
+    response = await trio.to_thread.run_sync(w3.discv5.get_enr, bob_node_id_param_w3)
+    assert response.enr == bob.enr
+
+    response = await trio.to_thread.run_sync(w3.discv5.delete_enr, repr(bob.enr))
+    assert response is None
+
+    with pytest.raises(Exception):
+        await trio.to_thread.run_sync(w3.discv5.get_enr, bob_node_id_param_w3)
+
+
+@pytest.mark.trio
 async def test_v51_rpc_send_ping(make_request, bob_node_id_param, bob_network):
     async with bob_network.client.dispatcher.subscribe(PingMessage) as subscription:
         response = await make_request("discv5_sendPing", [bob_node_id_param])
         with trio.fail_after(2):
             request = await subscription.receive()
         assert encode_hex(request.message.request_id) == response["request_id"]
-
-
-@pytest.mark.trio
-async def test_v51_rpc_send_ping_invalid_node_id(make_request, invalid_node_id):
-    with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_sendPing", [invalid_node_id])
-
-
-@pytest.mark.trio
-async def test_v51_rpc_send_ping_missing_node_id(make_request):
-    with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_sendPing", [])
 
 
 @pytest.mark.trio

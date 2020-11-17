@@ -1,5 +1,15 @@
 import ipaddress
-from typing import Any, Callable, List, Mapping, NamedTuple, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    List,
+    Mapping,
+    NamedTuple,
+    Sequence,
+    Tuple,
+    TypedDict,
+    Union,
+)
 
 from eth_utils import add_0x_prefix, encode_hex, remove_0x_prefix
 
@@ -19,7 +29,7 @@ from web3.types import RPCEndpoint
 from ddht.rpc_handlers import BucketInfo as BucketInfoDict
 from ddht.rpc_handlers import NodeInfoResponse, TableInfoResponse
 from ddht.typing import AnyIPAddress
-from ddht.v5_1.rpc_handlers import PongResponse, SendPingResponse, SendPongResponse
+from ddht.v5_1.rpc_handlers import GetENRResponse, PongResponse, SendPingResponse
 
 
 class NodeInfo(NamedTuple):
@@ -96,15 +106,30 @@ class SendPingPayload(NamedTuple):
         return cls(request_id=response["request_id"],)
 
 
-class SendPongPayload(NamedTuple):
+class GetENRPayload(NamedTuple):
+    enr: ENRAPI
+
     @classmethod
-    def from_rpc_response(cls, response: SendPongResponse) -> None:
+    def from_rpc_response(cls, response: GetENRResponse) -> "GetENRPayload":
+        return cls(enr=ENR.from_repr(response["enr_repr"]))
+
+
+class EmptyResponse(TypedDict):
+    pass
+
+
+class EmptyPayload(NamedTuple):
+    @classmethod
+    def from_rpc_response(cls, response: EmptyResponse) -> None:
         return None
 
 
 class RPC:
     nodeInfo = RPCEndpoint("discv5_nodeInfo")
     routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
+    getENR = RPCEndpoint("discv5_getENR")
+    setENR = RPCEndpoint("discv5_setENR")
+    deleteENR = RPCEndpoint("discv5_deleteENR")
 
     ping = RPCEndpoint("discv5_ping")
     sendPing = RPCEndpoint("discv5_sendPing")
@@ -146,11 +171,16 @@ def normalize_node_id_identifier(identifier: NodeIDIdentifier) -> str:
         raise ValueError(f"Unrecognized node identifier: {identifier}")
 
 
-def ping_munger(module: Any, identifier: NodeIDIdentifier,) -> List[str]:
+def node_identifier_munger(module: Any, identifier: NodeIDIdentifier,) -> List[str]:
     """
     See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
 
-    Normalizes the inputs for the `discv5_ping` and `discv5_sendPing` JSON-RPC endpoints
+    Normalizes the inputs for the following JSON-RPC endpoints:
+    - `discv5_ping`
+    - `discv5_getENR`
+    - `discv5_setENR`
+    - `discv5_deleteENR`
+    - `discv5_sendPing`
     """
     return [normalize_node_id_identifier(identifier)]
 
@@ -203,20 +233,34 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.routingTableInfo,
         result_formatters=lambda method: TableInfo.from_rpc_response,
     )
-
+    get_enr: Method[Callable[[NodeIDIdentifier], GetENRPayload]] = Method(
+        RPC.getENR,
+        result_formatters=lambda method: GetENRPayload.from_rpc_response,
+        mungers=[node_identifier_munger],
+    )
+    set_enr: Method[Callable[[NodeIDIdentifier], EmptyPayload]] = Method(
+        RPC.setENR,
+        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        mungers=[node_identifier_munger],
+    )
+    delete_enr: Method[Callable[[NodeIDIdentifier], EmptyPayload]] = Method(
+        RPC.deleteENR,
+        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        mungers=[node_identifier_munger],
+    )
     ping: Method[Callable[[NodeIDIdentifier], PongPayload]] = Method(
         RPC.ping,
         result_formatters=lambda method: PongPayload.from_rpc_response,
-        mungers=[ping_munger],
+        mungers=[node_identifier_munger],
     )
     send_ping: Method[Callable[[NodeIDIdentifier], SendPingPayload]] = Method(
         RPC.sendPing,
         result_formatters=lambda method: SendPingPayload.from_rpc_response,
-        mungers=[ping_munger],
+        mungers=[node_identifier_munger],
     )
-    send_pong: Method[Callable[[NodeIDIdentifier], SendPongPayload]] = Method(
+    send_pong: Method[Callable[[NodeIDIdentifier], EmptyPayload]] = Method(
         RPC.sendPong,
-        result_formatters=lambda method: SendPongPayload.from_rpc_response,
+        result_formatters=lambda method: EmptyPayload.from_rpc_response,
         mungers=[send_pong_munger],
     )
     find_nodes: Method[
