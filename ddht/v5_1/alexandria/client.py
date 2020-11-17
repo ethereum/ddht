@@ -123,6 +123,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         endpoint: Endpoint,
         request: AlexandriaMessage[Any],
         response_class: Type[TAlexandriaMessage],
+        request_id: Optional[bytes] = None,
     ) -> TAlexandriaMessage:
         #
         # Request ID Shenanigans
@@ -146,7 +147,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         # then feed this into our local tracker, which allows us to query it
         # upon receiving an incoming TALKRESPONSE to see if the response is to
         # a message from this protocol.
-        request_id = self.network.client.request_tracker.get_free_request_id(node_id)
+        if request_id is None:
+            request_id = self.network.client.request_tracker.get_free_request_id(
+                node_id
+            )
         request_data = request.to_wire_bytes()
         with self.request_tracker.reserve_request_id(node_id, request_id):
             response_data = await self.network.talk(
