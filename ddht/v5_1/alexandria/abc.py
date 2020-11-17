@@ -3,7 +3,7 @@ from typing import Any, AsyncContextManager, Collection, Optional, Sequence, Tup
 
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
-from eth_typing import Hash32, NodeID
+from eth_typing import NodeID
 import trio
 
 from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
@@ -18,6 +18,7 @@ from ddht.v5_1.alexandria.messages import (
     TAlexandriaMessage,
 )
 from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.alexandria.typing import ContentID
 
 
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
@@ -87,9 +88,9 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: Hash32,
+        content_id: ContentID,
         start_chunk_index: int,
-        num_chunks: int,
+        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         ...
@@ -130,9 +131,9 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: Hash32,
+        content_id: ContentID,
         start_chunk_index: int,
-        num_chunks: int,
+        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> ContentMessage:
         ...

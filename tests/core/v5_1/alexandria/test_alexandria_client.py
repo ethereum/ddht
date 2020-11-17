@@ -241,7 +241,7 @@ async def test_alexandria_client_send_get_content(
 ):
     content_id = b"unicornsrainbowsuniconrsrainbows"
     start_chunk_index = 5
-    num_chunks = 16
+    max_chunks = 16
 
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
         await alice_alexandria_client.send_get_content(
@@ -249,7 +249,7 @@ async def test_alexandria_client_send_get_content(
             bob.endpoint,
             content_id=content_id,
             start_chunk_index=start_chunk_index,
-            num_chunks=num_chunks,
+            max_chunks=max_chunks,
         )
         with trio.fail_after(1):
             talk_response = await subscription.receive()
@@ -257,7 +257,7 @@ async def test_alexandria_client_send_get_content(
         assert isinstance(message, GetContentMessage)
         assert message.payload.content_id == content_id
         assert message.payload.start_chunk_index == start_chunk_index
-        assert message.payload.num_chunks == num_chunks
+        assert message.payload.max_chunks == max_chunks
 
 
 @pytest.mark.trio
@@ -308,7 +308,7 @@ async def test_alexandria_client_get_content(
                     bob.endpoint,
                     content_id=content_id,
                     start_chunk_index=0,
-                    num_chunks=1,
+                    max_chunks=1,
                 )
 
                 assert isinstance(content_message, ContentMessage)
