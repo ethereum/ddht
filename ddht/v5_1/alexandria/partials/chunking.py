@@ -12,7 +12,7 @@ from ddht.v5_1.alexandria.partials.typing import TreePath
 
 
 @to_tuple
-def compute_chunks(data: bytes) -> Iterable[Hash32]:
+def compute_chunks(content: bytes) -> Iterable[Hash32]:
     """
     An optimized version of SSZ chunking specifically for byte
     strings.
@@ -20,23 +20,23 @@ def compute_chunks(data: bytes) -> Iterable[Hash32]:
     Takes the data and splits it into chunks of length 32.  The last chunk is
     padded out to 32 bytes with null bytes `0x00` if it is not full.
     """
-    if not data:
+    if not content:
         yield ZERO_BYTES32
         return
-    elif len(data) > GB:
+    elif len(content) > GB:
         raise Exception("too big")
-    data_length = len(data)
-    if data_length % CHUNK_SIZE == 0:
-        padded_data = data
+    content_length = len(content)
+    if content_length % CHUNK_SIZE == 0:
+        padded_content = content
     else:
-        padding_byte_count = CHUNK_SIZE - data_length % CHUNK_SIZE
-        padded_data = data + b"\x00" * padding_byte_count
+        padding_byte_count = CHUNK_SIZE - content_length % CHUNK_SIZE
+        padded_content = content + b"\x00" * padding_byte_count
 
-    padded_length = len(padded_data)
+    padded_length = len(padded_content)
     for left_boundary, right_boundary in sliding_window(
         2, range(0, padded_length + 1, CHUNK_SIZE)
     ):
-        yield Hash32(padded_data[left_boundary:right_boundary])
+        yield Hash32(padded_content[left_boundary:right_boundary])
 
 
 @to_tuple

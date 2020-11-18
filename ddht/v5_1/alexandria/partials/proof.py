@@ -939,17 +939,17 @@ def compute_proof_elements(
     yield from get_padding_elements(start_index, num_padding_chunks, path_bit_length)
 
 
-def compute_proof(data: bytes, sedes: ListSedes) -> Proof:
+def compute_proof(content: bytes, sedes: ListSedes) -> Proof:
     """
     Compute the full proof, including the mixed-in length value.
     """
-    chunks = compute_chunks(data)
+    chunks = compute_chunks(content)
 
     chunk_count = sedes.chunk_count
 
     proof_elements = compute_proof_elements(chunks, chunk_count)
     length_element = ProofElement(
-        path=(True,), value=Hash32(len(data).to_bytes(CHUNK_SIZE, "little")),
+        path=(True,), value=Hash32(len(content).to_bytes(CHUNK_SIZE, "little")),
     )
     all_elements = proof_elements + (length_element,)
 
