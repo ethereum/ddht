@@ -14,7 +14,12 @@ from ddht.kademlia import compute_log_distance
 from ddht.rpc import RPCServer
 from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.tools.web3 import DiscoveryV5Module
-from ddht.v5_1.messages import PingMessage, PongMessage
+from ddht.v5_1.messages import (
+    FindNodeMessage,
+    FoundNodesMessage,
+    PingMessage,
+    PongMessage,
+)
 from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
 
@@ -64,7 +69,7 @@ def bob_node_id_param(request, alice, bob, bob_network):
         "enr-without-endpoint",
     )
 )
-def invalid_node_id(request, alice, bob, bob_network):
+def invalid_node_id(request, bob, bob_network):
     if request.param == "unknown-endpoint":
         return NodeIDFactory().hex()
     elif request.param == "too-short":
@@ -363,7 +368,7 @@ async def test_v51_rpc_send_pong_web3(
 
 
 @pytest.mark.trio
-async def test_v51_rpc_findNodes(make_request, bob_node_id_param, alice, bob):
+async def test_v51_rpc_findNodes(make_request, bob_node_id_param, bob):
     distances = set()
 
     for _ in range(10):
@@ -388,41 +393,102 @@ async def test_v51_rpc_findNodes(make_request, bob_node_id_param, alice, bob):
         ENR.from_repr(enr_repr)
 
 
+@pytest.mark.parametrize("endpoint", ("discv5_findNodes", "discv5_sendFindNodes",))
 @pytest.mark.trio
 async def test_v51_rpc_findNodes_invalid_params(
-    make_request, invalid_node_id, alice, bob
+    make_request, invalid_node_id, bob, endpoint
 ):
     # bad node_id
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [invalid_node_id, 0])
+        await make_request(endpoint, [invalid_node_id, 0])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [invalid_node_id, [0]])
+        await make_request(endpoint, [invalid_node_id, [0]])
 
     # invalid distances
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), -1])
+        await make_request(endpoint, [bob.node_id.hex(), -1])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), 257])
+        await make_request(endpoint, [bob.node_id.hex(), 257])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), 1.2])
+        await make_request(endpoint, [bob.node_id.hex(), 1.2])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), []])
+        await make_request(endpoint, [bob.node_id.hex(), []])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), "1"])
+        await make_request(endpoint, [bob.node_id.hex(), "1"])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), [1, "2"]])
+        await make_request(endpoint, [bob.node_id.hex(), [1, "2"]])
 
     # wrong params count
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [])
+        await make_request(endpoint, [])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex()])
+        await make_request(endpoint, [bob.node_id.hex()])
     with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_findNodes", [bob.node_id.hex(), 0, "extra"])
+        await make_request(endpoint, [bob.node_id.hex(), 0, "extra"])
 
 
 @pytest.mark.trio
-async def test_v51_rpc_findNodes_w3(make_request, bob_node_id_param, alice, bob, w3):
+async def test_v51_rpc_sendFoundNodes_invalid_params(
+    make_request, invalid_node_id, bob
+):
+    enrs = set()
+    for _ in range(10):
+        enr = ENRFactory()
+        bob.enr_db.set_enr(enr)
+        enrs.add(repr(enr))
+    single_enr = next(iter(enrs))
+
+    # bad node_id
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendFoundNodes", [invalid_node_id, tuple(enrs), 0])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendFoundNodes", [invalid_node_id, tuple(enrs), [0]])
+
+    # invalid enr
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [invalid_node_id, (single_enr[4:],), 0]
+        )
+
+    # invalid distances
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), -1]
+        )
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), 257]
+        )
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), 1.2]
+        )
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), []]
+        )
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), "xyz"]
+        )
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), [1, "2"]]
+        )
+
+    # wrong params count
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendFoundNodes", [])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request("discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs)])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(
+            "discv5_sendFoundNodes", [bob.node_id.hex(), tuple(enrs), 0, "extra"]
+        )
+
+
+@pytest.mark.trio
+async def test_v51_rpc_findNodes_w3(make_request, bob_node_id_param, bob, w3):
     distances = set()
 
     for _ in range(10):
@@ -444,3 +510,146 @@ async def test_v51_rpc_findNodes_w3(make_request, bob_node_id_param, alice, bob,
     # verify that all of the returned ENR records can be parsed as valid ENRs
     for enr_repr in enrs_at_some_distance:
         ENR.from_repr(enr_repr)
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendFindNodes(make_request, bob_node_id_param, bob, bob_network):
+    distances = set()
+
+    for _ in range(10):
+        enr = ENRFactory()
+        distances.add(compute_log_distance(bob.node_id, enr.node_id))
+        bob.enr_db.set_enr(enr)
+
+    async with bob_network.client.dispatcher.subscribe(FindNodeMessage) as subscription:
+        single_response = await make_request(
+            "discv5_sendFindNodes", [bob_node_id_param, 0]
+        )
+        with trio.fail_after(2):
+            first_receive = await subscription.receive()
+
+        assert encode_hex(first_receive.message.request_id) == single_response
+        assert first_receive.message.distances == (0,)
+
+        # request with multiple distances
+        multiple_response = await make_request(
+            "discv5_sendFindNodes", [bob_node_id_param, tuple(distances)],
+        )
+
+        with trio.fail_after(2):
+            second_receive = await subscription.receive()
+        assert encode_hex(second_receive.message.request_id) == multiple_response
+        assert second_receive.message.distances == tuple(distances)
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendFindNodes_web3(
+    make_request, bob_node_id_param_w3, bob, bob_network, w3
+):
+    distances = set()
+
+    for _ in range(10):
+        enr = ENRFactory()
+        distances.add(compute_log_distance(bob.node_id, enr.node_id))
+        bob.enr_db.set_enr(enr)
+
+    async with bob_network.client.dispatcher.subscribe(FindNodeMessage) as subscription:
+        first_response = await trio.to_thread.run_sync(
+            w3.discv5.send_find_nodes, bob_node_id_param_w3, 0
+        )
+        with trio.fail_after(2):
+            first_receive = await subscription.receive()
+
+        assert encode_hex(first_receive.message.request_id) == first_response.value
+        assert first_receive.message.distances == (0,)
+
+        # request with multiple distances
+        second_response = await trio.to_thread.run_sync(
+            w3.discv5.send_find_nodes, bob_node_id_param_w3, tuple(distances)
+        )
+
+        with trio.fail_after(2):
+            second_receive = await subscription.receive()
+        assert encode_hex(second_receive.message.request_id) == second_response.value
+        assert second_receive.message.distances == tuple(distances)
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendFoundNodes(
+    make_request, bob_node_id_param, bob, bob_network
+):
+    distances = set()
+    enrs = set()
+
+    for _ in range(10):
+        enr = ENRFactory()
+        distances.add(compute_log_distance(bob.node_id, enr.node_id))
+        bob.enr_db.set_enr(enr)
+        enrs.add(repr(enr))
+
+    request_id = encode_hex(secrets.token_bytes(4))
+    single_enr = next(iter(enrs))
+
+    async with bob_network.client.dispatcher.subscribe(
+        FoundNodesMessage
+    ) as subscription:
+        first_response = await make_request(
+            "discv5_sendFoundNodes", [bob_node_id_param, (single_enr,), request_id]
+        )
+        with trio.fail_after(2):
+            first_receive = await subscription.receive()
+
+        assert first_receive.message.total == first_response
+        assert encode_hex(first_receive.message.request_id) == request_id
+
+        # request with multiple enrs
+        second_response = await make_request(
+            "discv5_sendFoundNodes", [bob_node_id_param, tuple(enrs), request_id],
+        )
+
+        with trio.fail_after(2):
+            second_receive = await subscription.receive()
+
+        assert second_receive.message.total == second_response
+        assert encode_hex(second_receive.message.request_id) == request_id
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendFoundNodes_web3(
+    make_request, bob_node_id_param_w3, bob, bob_network, w3
+):
+    distances = set()
+    enrs = set()
+
+    for _ in range(10):
+        enr = ENRFactory()
+        distances.add(compute_log_distance(bob.node_id, enr.node_id))
+        bob.enr_db.set_enr(enr)
+        enrs.add(repr(enr))
+
+    request_id = encode_hex(secrets.token_bytes(4))
+    single_enr = next(iter(enrs))
+
+    async with bob_network.client.dispatcher.subscribe(
+        FoundNodesMessage
+    ) as subscription:
+
+        first_response = await trio.to_thread.run_sync(
+            w3.discv5.send_found_nodes, bob_node_id_param_w3, (single_enr,), request_id
+        )
+        with trio.fail_after(2):
+            first_receive = await subscription.receive()
+
+        assert first_receive.message.total == first_response.value
+        assert encode_hex(first_receive.message.request_id) == request_id
+
+        # request with multiple enrs
+        second_response = await trio.to_thread.run_sync(
+            w3.discv5.send_found_nodes, bob_node_id_param_w3, tuple(enrs), request_id
+        )
+
+        with trio.fail_after(2):
+            second_receive = await subscription.receive()
+
+        assert second_receive.message.total == second_response.value
+        assert encode_hex(second_receive.message.request_id) == request_id
