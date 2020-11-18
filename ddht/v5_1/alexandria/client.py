@@ -50,7 +50,7 @@ from ddht.v5_1.alexandria.payloads import (
     PingPayload,
     PongPayload,
 )
-from ddht.v5_1.alexandria.typing import ContentID
+from ddht.v5_1.alexandria.typing import ContentKey
 from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
@@ -330,13 +330,13 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: ContentID,
+        content_key: ContentKey,
         start_chunk_index: int,
         max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         message = GetContentMessage(
-            GetContentPayload(content_id, start_chunk_index, max_chunks)
+            GetContentPayload(content_key, start_chunk_index, max_chunks)
         )
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
@@ -418,13 +418,13 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: ContentID,
+        content_key: ContentKey,
         start_chunk_index: int,
         max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> ContentMessage:
         request = GetContentMessage(
-            GetContentPayload(content_id, start_chunk_index, max_chunks)
+            GetContentPayload(content_key, start_chunk_index, max_chunks)
         )
         response = await self._request(
             node_id, endpoint, request, ContentMessage, request_id

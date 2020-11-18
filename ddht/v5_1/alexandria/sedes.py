@@ -1,4 +1,4 @@
-from ssz.sedes import Container, List, boolean, bytes32, uint8, uint16, uint32
+from ssz.sedes import Container, List, boolean, uint8, uint16, uint32
 
 from ddht.v5_1.alexandria.constants import GB
 
@@ -21,7 +21,7 @@ PingSedes = Container(field_sedes=(uint32,))
 PongSedes = Container(field_sedes=(uint32,))
 FindNodesSedes = Container(field_sedes=(List(uint16, max_length=256),))
 FoundNodesSedes = Container(field_sedes=(uint8, List(byte_list, max_length=32)))
-GetContentSedes = Container(field_sedes=(bytes32, uint32, uint16))
+GetContentSedes = Container(field_sedes=(byte_list, uint32, uint16))
 ContentSedes = Container(field_sedes=(boolean, byte_list,))
 
 # sedes used for encoding alexandria content

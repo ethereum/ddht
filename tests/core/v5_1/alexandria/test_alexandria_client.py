@@ -239,7 +239,7 @@ async def test_client_request_response_find_nodes_found_nodes(
 async def test_alexandria_client_send_get_content(
     bob, bob_network, alice_alexandria_client
 ):
-    content_id = b"unicornsrainbowsuniconrsrainbows"
+    content_key = b"test-content-key"
     start_chunk_index = 5
     max_chunks = 16
 
@@ -247,7 +247,7 @@ async def test_alexandria_client_send_get_content(
         await alice_alexandria_client.send_get_content(
             bob.node_id,
             bob.endpoint,
-            content_id=content_id,
+            content_key=content_key,
             start_chunk_index=start_chunk_index,
             max_chunks=max_chunks,
         )
@@ -255,7 +255,7 @@ async def test_alexandria_client_send_get_content(
             talk_response = await subscription.receive()
         message = decode_message(talk_response.message.payload)
         assert isinstance(message, GetContentMessage)
-        assert message.payload.content_id == content_id
+        assert message.payload.content_key == content_key
         assert message.payload.start_chunk_index == start_chunk_index
         assert message.payload.max_chunks == max_chunks
 
@@ -285,7 +285,7 @@ async def test_alexandria_client_send_content(
 async def test_alexandria_client_get_content(
     alice, bob, bob_network, alice_alexandria_client, bob_alexandria_client,
 ):
-    content_id = b"unicornsrainbowsuniconrsrainbows"
+    content_key = b"test-content-key"
 
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
 
@@ -306,7 +306,7 @@ async def test_alexandria_client_get_content(
                 content_message = await alice_alexandria_client.get_content(
                     bob.node_id,
                     bob.endpoint,
-                    content_id=content_id,
+                    content_key=content_key,
                     start_chunk_index=0,
                     max_chunks=1,
                 )

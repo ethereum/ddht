@@ -2,10 +2,10 @@ import hashlib
 
 from eth_typing import NodeID
 
-from .typing import ContentID
+from .typing import ContentID, ContentKey
 
 
-def content_key_to_content_id(key: bytes) -> ContentID:
+def content_key_to_content_id(key: ContentKey) -> ContentID:
     return ContentID(hashlib.sha256(key).digest())
 
 
