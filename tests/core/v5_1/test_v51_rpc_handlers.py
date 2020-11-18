@@ -282,15 +282,17 @@ async def test_v51_rpc_lookup_enr_web3_with_sequence_number(
 
 
 @pytest.mark.trio
-async def test_v51_rpc_lookup_enr_with_unseen_node_id(make_request, new_enr):
-    with pytest.raises(Exception, match="'error':"):
-        await make_request("discv5_lookupENR", [repr(new_enr)])
+async def test_v51_rpc_lookup_enr_with_unseen_node_id(make_request, bob):
+    await make_request("discv5_deleteENR", [repr(bob.enr)])
+    with pytest.raises(Exception):
+        await make_request("discv5_lookupENR", [repr(bob.enr)])
 
 
 @pytest.mark.trio
-async def test_v51_rpc_lookup_enr_web3_unseen_node_id(make_request, new_enr, w3):
+async def test_v51_rpc_lookup_enr_web3_unseen_node_id(make_request, bob, w3):
+    await trio.to_thread.run_sync(w3.discv5.delete_enr, repr(bob.enr))
     with pytest.raises(Exception, match="Unexpected Error"):
-        await trio.to_thread.run_sync(w3.discv5.lookup_enr, repr(new_enr))
+        await trio.to_thread.run_sync(w3.discv5.lookup_enr, repr(bob.enr))
 
 
 @pytest.mark.trio

@@ -196,25 +196,34 @@ class DeleteENRHandler(RPCHandler[NodeID, None]):
         return None
 
 
-class LookupENRHandler(RPCHandler[Tuple[NodeID, Optional[int]], GetENRResponse]):
+class LookupENRHandler(
+    RPCHandler[Tuple[NodeID, Optional[Endpoint], int], GetENRResponse]
+):
     def __init__(self, network: NetworkAPI) -> None:
         self._network = network
 
-    def extract_params(self, request: RPCRequest) -> Tuple[NodeID, Optional[Endpoint], Optional[int]]:
+    def extract_params(
+        self, request: RPCRequest
+    ) -> Tuple[NodeID, Optional[Endpoint], int]:
         raw_params = extract_params(request)
-        if len(raw_params) != 2:
+        if len(raw_params) == 1:
+            raw_destination = raw_params[0]
+            raw_sequence = 0
+        elif len(raw_params) == 2:
+            raw_destination, raw_sequence = raw_params
+        else:
             raise RPCError("Invalid params for discv5_lookupENR request.")
-        raw_destination, sequence_number = raw_params
         node_id, endpoint = validate_and_extract_destination(raw_destination)
-        print(sequence_number)
+        sequence_number = raw_sequence if raw_sequence else 0
         return node_id, endpoint, sequence_number
 
-    async def do_call(self, params: Tuple[NodeID, Optional[int]]) -> GetENRResponse:
+    async def do_call(
+        self, params: Tuple[NodeID, Optional[Endpoint], int]
+    ) -> GetENRResponse:
         node_id, endpoint, sequence_number = params
-        print("XXXXXXXXXXXXXX")
-        print(node_id, endpoint, sequence_number)
-        response = await self._network.lookup_enr(node_id, enr_seq=sequence_number, endpoint=endpoint)
-
+        response = await self._network.lookup_enr(
+            node_id, enr_seq=sequence_number, endpoint=endpoint
+        )
         return GetENRResponse(enr_repr=repr(response))
 
 
