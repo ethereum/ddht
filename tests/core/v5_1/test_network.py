@@ -486,6 +486,6 @@ async def test_network_get_nodes_near(
     node_ids_from_bob = {enr.node_id for enr in enrs_for_bob}
 
     assert node_ids_from_alice.issubset(node_ids_near_target)
-    assert node_ids_from_bob.issubset(node_ids_near_target)
+    assert len(node_ids_from_bob.intersection(node_ids_near_target)) > 4
 
     assert bob.node_id in node_ids_near_target
