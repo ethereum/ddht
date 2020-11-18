@@ -18,7 +18,7 @@ from ddht.v5_1.alexandria.messages import (
     TAlexandriaMessage,
 )
 from ddht.v5_1.alexandria.payloads import PongPayload
-from ddht.v5_1.alexandria.typing import ContentID
+from ddht.v5_1.alexandria.typing import ContentKey
 
 
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
@@ -88,7 +88,7 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: ContentID,
+        content_key: ContentKey,
         start_chunk_index: int,
         max_chunks: int,
         request_id: Optional[bytes] = None,
@@ -131,7 +131,7 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        content_id: ContentID,
+        content_key: ContentKey,
         start_chunk_index: int,
         max_chunks: int,
         request_id: Optional[bytes] = None,

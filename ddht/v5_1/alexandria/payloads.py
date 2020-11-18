@@ -3,7 +3,7 @@ from typing import NamedTuple, Sequence, Tuple
 from eth_enr import ENR, ENRAPI
 import rlp
 
-from ddht.v5_1.alexandria.typing import ContentID
+from ddht.v5_1.alexandria.typing import ContentKey
 
 
 class PingPayload(NamedTuple):
@@ -35,7 +35,7 @@ class FoundNodesPayload(NamedTuple):
 
 
 class GetContentPayload(NamedTuple):
-    content_id: ContentID
+    content_key: ContentKey
     start_chunk_index: int
     max_chunks: int
 
