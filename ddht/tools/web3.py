@@ -20,6 +20,7 @@ except ImportError:
 
 
 from eth_enr import ENR, ENRAPI
+from eth_enr.typing import ENR_KV
 from eth_typing import HexStr, NodeID
 from eth_utils import decode_hex
 from web3.method import Method
@@ -114,6 +115,14 @@ class GetENRPayload(NamedTuple):
         return cls(enr=ENR.from_repr(response["enr_repr"]))
 
 
+class UpdateENRPayload(NamedTuple):
+    enr: ENRAPI
+
+    @classmethod
+    def from_rpc_response(cls, response: NodeInfoResponse) -> "UpdateENRPayload":
+        return cls(enr=ENR.from_repr(response["enr"]))
+
+
 class EmptyResponse(TypedDict):
     pass
 
@@ -126,6 +135,7 @@ class EmptyPayload(NamedTuple):
 
 class RPC:
     nodeInfo = RPCEndpoint("discv5_nodeInfo")
+    updateNodeInfo = RPCEndpoint("discv5_updateNodeInfo")
     routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
     getENR = RPCEndpoint("discv5_getENR")
     setENR = RPCEndpoint("discv5_setENR")
@@ -171,10 +181,21 @@ def normalize_node_id_identifier(identifier: NodeIDIdentifier) -> str:
         raise ValueError(f"Unrecognized node identifier: {identifier}")
 
 
+#
+# Mungers
+# See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
+#
+
+
+def kv_pair_munger(module: Any, *kv_pairs: ENR_KV) -> Tuple[ENR_KV, ...]:
+    """
+    Normalizes the inputs for `discv5_updateNodeInfo` JSON-RPC endpoints:
+    """
+    return kv_pairs
+
+
 def node_identifier_munger(module: Any, identifier: NodeIDIdentifier,) -> List[str]:
     """
-    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
-
     Normalizes the inputs for the following JSON-RPC endpoints:
     - `discv5_ping`
     - `discv5_getENR`
@@ -189,8 +210,6 @@ def send_pong_munger(
     module: Any, identifier: NodeIDIdentifier, request_id: HexStr
 ) -> Tuple[str, HexStr]:
     """
-    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
-
     Normalizes the inputs for the `discv5_sendPong` JSON-RPC endpoints
     """
     return (
@@ -205,8 +224,6 @@ def find_nodes_munger(
     distance_or_distances: Union[int, Sequence[int]],
 ) -> Tuple[str, Union[int, Sequence[int]]]:
     """
-    See: https://github.com/ethereum/web3.py/blob/002151020cecd826a694ded2fdc10cc70e73e636/web3/method.py#L77  # noqa: E501
-
     Normalizes the inputs for the `discv5_findNodes` JSON-RPC endpoint
     """
     return (
@@ -228,6 +245,11 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
 
     get_node_info: Method[Callable[[], NodeInfo]] = Method(
         RPC.nodeInfo, result_formatters=lambda method: NodeInfo.from_rpc_response,
+    )
+    update_node_info: Method[Callable[[], NodeInfo]] = Method(
+        RPC.updateNodeInfo,
+        result_formatters=lambda method: UpdateENRPayload.from_rpc_response,
+        mungers=[kv_pair_munger],
     )
     get_routing_table_info: Method[Callable[[], TableInfo]] = Method(
         RPC.routingTableInfo,

@@ -1,0 +1,1 @@
+Add support for discv5_updateNodeInfo json rpc endpoint.
