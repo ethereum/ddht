@@ -236,6 +236,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     enr_seq=self.enr_manager.enr.sequence_number,
                     request_id=request.request_id,
                 )
+                enr = await self.network.lookup_enr(
+                    request.sender_node_id,
+                    enr_seq=request.message.payload.enr_seq,
+                    endpoint=request.sender_endpoint,
+                )
+                self.routing_table.update(enr.node_id)
+                self._routing_table_ready.set()
 
     async def _serve_find_nodes(self) -> None:
         async with self.client.subscribe(FindNodesMessage) as subscription:
