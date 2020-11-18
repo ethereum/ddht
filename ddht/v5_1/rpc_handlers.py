@@ -1,11 +1,18 @@
 from socket import inet_ntoa
-from typing import Any, Iterable, List, Optional, Tuple, TypedDict
+from typing import Any, Iterable, List, Optional, Sequence, Tuple, TypedDict
 
 from eth_enr import ENR
 from eth_enr.abc import ENRAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import HexStr, NodeID
-from eth_utils import ValidationError, decode_hex, encode_hex, is_list_like, to_dict
+from eth_utils import (
+    ValidationError,
+    decode_hex,
+    encode_hex,
+    is_list_like,
+    to_bytes,
+    to_dict,
+)
 
 from ddht.abc import RPCHandlerAPI
 from ddht.endpoint import Endpoint
@@ -119,6 +126,8 @@ class SendPongHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint], HexStr], None
 
 FindNodesRPCParams = Tuple[NodeID, Optional[Endpoint], Tuple[int, ...]]
 
+SendFoundNodesRPCParams = Tuple[NodeID, Optional[Endpoint], Sequence[ENRAPI], bytes]
+
 
 class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
     def __init__(self, network: NetworkAPI) -> None:
@@ -126,11 +135,8 @@ class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
 
     def extract_params(self, request: RPCRequest) -> FindNodesRPCParams:
         raw_params = extract_params(request)
-
         validate_params_length(raw_params, 2)
-
         raw_destination, raw_distances = raw_params
-
         node_id, endpoint = validate_and_extract_destination(raw_destination)
         distances = validate_and_normalize_distances(raw_distances)
 
@@ -140,6 +146,53 @@ class FindNodesHandler(RPCHandler[FindNodesRPCParams, Tuple[str, ...]]):
         node_id, endpoint, distances = params
         enrs = await self._network.find_nodes(node_id, *distances, endpoint=endpoint)
         return tuple(repr(enr) for enr in enrs)
+
+
+class SendFindNodesHandler(RPCHandler[FindNodesRPCParams, HexStr]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> FindNodesRPCParams:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 2)
+        raw_destination, raw_distances = raw_params
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        distances = validate_and_normalize_distances(raw_distances)
+        return node_id, endpoint, distances
+
+    async def do_call(self, params: FindNodesRPCParams) -> HexStr:
+        node_id, endpoint, distances = params
+        if endpoint is None:
+            enr = await self._network.lookup_enr(node_id)
+            endpoint = Endpoint.from_enr(enr)
+        request_id = await self._network.client.send_find_nodes(
+            node_id, endpoint, distances=distances
+        )
+        return encode_hex(request_id)
+
+
+class SendFoundNodesHandler(RPCHandler[SendFoundNodesRPCParams, int]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> SendFoundNodesRPCParams:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 3)
+        raw_destination, raw_enrs, raw_request_id = raw_params
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        enrs = [ENR.from_repr(enr) for enr in raw_enrs]
+        request_id = to_bytes(hexstr=raw_request_id)
+        return node_id, endpoint, enrs, request_id
+
+    async def do_call(self, params: SendFoundNodesRPCParams) -> int:
+        node_id, endpoint, enrs, request_id = params
+        if endpoint is None:
+            enr = await self._network.lookup_enr(node_id)
+            endpoint = Endpoint.from_enr(enr)
+        num_batches = await self._network.client.send_found_nodes(
+            node_id, endpoint, enrs=enrs, request_id=request_id
+        )
+        return num_batches
 
 
 class GetENRHandler(RPCHandler[NodeID, GetENRResponse]):
@@ -231,6 +284,8 @@ class LookupENRHandler(
 def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerAPI]]:
     yield ("discv5_ping", PingHandler(network))
     yield ("discv5_findNodes", FindNodesHandler(network))
+    yield ("discv5_sendFindNodes", SendFindNodesHandler(network))
+    yield ("discv5_sendFoundNodes", SendFoundNodesHandler(network))
     yield ("discv5_sendPing", SendPingHandler(network))
     yield ("discv5_sendPong", SendPongHandler(network))
     yield ("discv5_getENR", GetENRHandler(network))

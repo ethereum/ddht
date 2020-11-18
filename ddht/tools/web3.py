@@ -134,6 +134,22 @@ class EmptyPayload(NamedTuple):
         return None
 
 
+class HexStrPayload(NamedTuple):
+    value: HexStr
+
+    @classmethod
+    def from_rpc_response(cls, response: HexStr) -> "HexStrPayload":
+        return cls(value=response)
+
+
+class IntegerPayload(NamedTuple):
+    value: int
+
+    @classmethod
+    def from_rpc_response(cls, response: int) -> "IntegerPayload":
+        return cls(value=response)
+
+
 class RPC:
     nodeInfo = RPCEndpoint("discv5_nodeInfo")
     updateNodeInfo = RPCEndpoint("discv5_updateNodeInfo")
@@ -147,6 +163,8 @@ class RPC:
     sendPing = RPCEndpoint("discv5_sendPing")
     sendPong = RPCEndpoint("discv5_sendPong")
     findNodes = RPCEndpoint("discv5_findNodes")
+    sendFindNodes = RPCEndpoint("discv5_sendFindNodes")
+    sendFoundNodes = RPCEndpoint("discv5_sendFoundNodes")
 
 
 NodeIDIdentifier = Union[ENRAPI, str, bytes, NodeID, HexStr]
@@ -239,11 +257,24 @@ def find_nodes_munger(
     distance_or_distances: Union[int, Sequence[int]],
 ) -> Tuple[str, Union[int, Sequence[int]]]:
     """
-    Normalizes the inputs for the `discv5_findNodes` JSON-RPC endpoint
+    Normalizes the inputs for the `discv5_findNodes` and `discv5_sendFindNodes` JSON-RPC endpoints
     """
     return (
         normalize_node_id_identifier(identifier),
         distance_or_distances,
+    )
+
+
+def send_found_nodes_munger(
+    module: Any, identifier: NodeIDIdentifier, enrs: Sequence[str], request_id: HexStr,
+) -> Tuple[str, Sequence[str], HexStr]:
+    """
+    Normalizes the inputs for the `discv5_sendFoundNodes` JSON-RPC endpoint
+    """
+    return (
+        normalize_node_id_identifier(identifier),
+        enrs,
+        request_id,
     )
 
 
@@ -311,4 +342,14 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.findNodes,
         result_formatters=lambda method: find_nodes_response_formatter,
         mungers=[find_nodes_munger],
+    )
+    send_find_nodes = Method(
+        RPC.sendFindNodes,
+        result_formatters=lambda method: HexStrPayload.from_rpc_response,
+        mungers=[find_nodes_munger],
+    )
+    send_found_nodes = Method(
+        RPC.sendFoundNodes,
+        result_formatters=lambda method: IntegerPayload.from_rpc_response,
+        mungers=[send_found_nodes_munger],
     )
