@@ -5,6 +5,7 @@ from typing import (
     List,
     Mapping,
     NamedTuple,
+    Optional,
     Sequence,
     Tuple,
     TypedDict,
@@ -140,6 +141,7 @@ class RPC:
     getENR = RPCEndpoint("discv5_getENR")
     setENR = RPCEndpoint("discv5_setENR")
     deleteENR = RPCEndpoint("discv5_deleteENR")
+    lookupENR = RPCEndpoint("discv5_lookupENR")
 
     ping = RPCEndpoint("discv5_ping")
     sendPing = RPCEndpoint("discv5_sendPing")
@@ -206,6 +208,19 @@ def node_identifier_munger(module: Any, identifier: NodeIDIdentifier,) -> List[s
     return [normalize_node_id_identifier(identifier)]
 
 
+def node_identifier_and_sequence_munger(
+    module: Any, identifier: NodeIDIdentifier, sequence_number: Optional[int] = 0
+) -> Tuple[str, Optional[int]]:
+    """
+    Normalizes the inputs for the following JSON-RPC endpoints:
+    - `discv5_lookupENR`
+    """
+    return (
+        normalize_node_id_identifier(identifier),
+        sequence_number,
+    )
+
+
 def send_pong_munger(
     module: Any, identifier: NodeIDIdentifier, request_id: HexStr
 ) -> Tuple[str, HexStr]:
@@ -269,6 +284,11 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.deleteENR,
         result_formatters=lambda method: EmptyPayload.from_rpc_response,
         mungers=[node_identifier_munger],
+    )
+    lookup_enr: Method[Callable[[NodeIDIdentifier], GetENRPayload]] = Method(
+        RPC.lookupENR,
+        result_formatters=lambda method: GetENRPayload.from_rpc_response,
+        mungers=[node_identifier_and_sequence_munger],
     )
     ping: Method[Callable[[NodeIDIdentifier], PongPayload]] = Method(
         RPC.ping,

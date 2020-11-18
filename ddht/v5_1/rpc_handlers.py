@@ -196,6 +196,37 @@ class DeleteENRHandler(RPCHandler[NodeID, None]):
         return None
 
 
+class LookupENRHandler(
+    RPCHandler[Tuple[NodeID, Optional[Endpoint], int], GetENRResponse]
+):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(
+        self, request: RPCRequest
+    ) -> Tuple[NodeID, Optional[Endpoint], int]:
+        raw_params = extract_params(request)
+        if len(raw_params) == 1:
+            raw_destination = raw_params[0]
+            raw_sequence = 0
+        elif len(raw_params) == 2:
+            raw_destination, raw_sequence = raw_params
+        else:
+            raise RPCError("Invalid params for discv5_lookupENR request.")
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        sequence_number = raw_sequence if raw_sequence else 0
+        return node_id, endpoint, sequence_number
+
+    async def do_call(
+        self, params: Tuple[NodeID, Optional[Endpoint], int]
+    ) -> GetENRResponse:
+        node_id, endpoint, sequence_number = params
+        response = await self._network.lookup_enr(
+            node_id, enr_seq=sequence_number, endpoint=endpoint
+        )
+        return GetENRResponse(enr_repr=repr(response))
+
+
 @to_dict
 def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerAPI]]:
     yield ("discv5_ping", PingHandler(network))
@@ -204,4 +235,5 @@ def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerA
     yield ("discv5_sendPong", SendPongHandler(network))
     yield ("discv5_getENR", GetENRHandler(network))
     yield ("discv5_deleteENR", DeleteENRHandler(network))
+    yield ("discv5_lookupENR", LookupENRHandler(network))
     yield ("discv5_setENR", SetENRHandler(network))
