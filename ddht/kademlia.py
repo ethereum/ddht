@@ -1,5 +1,4 @@
 import collections
-import functools
 import ipaddress
 import itertools
 import logging
@@ -304,10 +303,7 @@ class KademliaRoutingTable(RoutingTableAPI):
     def iter_nodes_around(self, reference_node_id: NodeID) -> Iterator[NodeID]:
         """Iterate over all nodes in the routing table ordered by distance to a given reference."""
         all_node_ids = itertools.chain(*self.buckets)
-        distance_to_reference = functools.partial(compute_distance, reference_node_id)
-        sorted_node_ids = sorted(all_node_ids, key=distance_to_reference)
-        for node_id in sorted_node_ids:
-            yield node_id
+        yield from sorted_closest(reference_node_id, tuple(all_node_ids))
 
     def iter_all_random(self) -> Iterator[NodeID]:
         """
@@ -321,6 +317,28 @@ class KademliaRoutingTable(RoutingTableAPI):
         random.shuffle(node_ids)
         for node_id in node_ids:
             yield node_id
+
+
+def sorted_closest(
+    reference_node_id: NodeID, others: Collection[NodeID]
+) -> Tuple[NodeID, ...]:
+    return tuple(
+        sorted(
+            others, key=lambda node_id: compute_distance(reference_node_id, node_id),
+        )
+    )
+
+
+def sorted_furthest(
+    reference_node_id: NodeID, others: Collection[NodeID]
+) -> Tuple[NodeID, ...]:
+    return tuple(
+        sorted(
+            others,
+            key=lambda node_id: compute_distance(reference_node_id, node_id),
+            reverse=True,
+        )
+    )
 
 
 def iter_closest_nodes(

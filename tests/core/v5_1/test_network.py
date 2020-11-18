@@ -230,7 +230,7 @@ async def test_network_lookup_many_enr_response(bob, alice_network, alice, bob_c
 
 @pytest.mark.trio
 async def test_network_lookup_fallback_to_recursive_find_nodes(
-    tester, bob, alice_network, alice, bob_network
+    tester, bob, alice_network, alice, bob_network, autojump_clock
 ):
     carol = tester.node()
 
@@ -250,7 +250,7 @@ async def test_network_lookup_fallback_to_recursive_find_nodes(
 
 
 @pytest.mark.trio
-async def test_network_recursive_find_nodes(tester, alice, bob):
+async def test_network_recursive_find_nodes(tester, alice, bob, autojump_clock):
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(bob.network())
         bootnodes = collections.deque((bob.enr,), maxlen=4)
@@ -448,7 +448,7 @@ async def test_network_bond_handles_timeout_retrieving_ENR(
 
 
 @pytest.mark.trio
-async def test_network_get_nodes_near(
+async def test_network_explore_target(
     tester, alice, bob, alice_network, bob_network, autojump_clock
 ):
     await alice_network.bond(bob.node_id)
@@ -456,18 +456,19 @@ async def test_network_get_nodes_near(
     await bob_network.bond(alice.node_id)
 
     nodes = tuple(tester.node() for _ in range(40))
-    enrs = tuple(node.enr for node in nodes)
+    target, *enrs = tuple(node.enr for node in nodes)
 
     enrs_by_distance = tuple(
-        sorted(enrs, key=lambda enr: compute_distance(enr.node_id, bob.node_id))
+        sorted(enrs, key=lambda enr: compute_distance(enr.node_id, target.node_id))
     )
 
-    target = enrs_by_distance[0]
-    enrs_for_bob = enrs_by_distance[1:10]
-    enrs_for_alice = enrs_by_distance[10:20]
+    enrs_for_bob = enrs_by_distance[::1]
+    enrs_for_alice = enrs_by_distance[1::1]
 
     bob.enr_db.set_enr(target)
     bob_network.routing_table.update(target.node_id)
+    alice.enr_db.set_enr(target)
+    alice_network.routing_table.update(target.node_id)
 
     for enr in enrs_for_bob:
         bob.enr_db.set_enr(enr)
@@ -476,16 +477,16 @@ async def test_network_get_nodes_near(
         alice.enr_db.set_enr(enr)
         alice_network.routing_table.update(enr.node_id)
 
-    node_ids_near_target = await alice_network.get_nodes_near(
-        target.node_id, max_nodes=30
-    )
+    enrs_near_target = await alice_network.explore_target(target.node_id, max_nodes=30)
+    node_ids_near_target = tuple(enr.node_id for enr in enrs_near_target)
 
+    # The target should always be part of the returned data since it was in
+    # both bob and alice's routing table
     assert node_ids_near_target[0] == target.node_id
 
     node_ids_from_alice = {enr.node_id for enr in enrs_for_alice}
     node_ids_from_bob = {enr.node_id for enr in enrs_for_bob}
 
-    assert node_ids_from_alice.issubset(node_ids_near_target)
-    assert len(node_ids_from_bob.intersection(node_ids_near_target)) > 4
-
-    assert bob.node_id in node_ids_near_target
+    # We should also have entries from both bob and alice's routing tables
+    assert node_ids_from_alice.intersection(node_ids_near_target)
+    assert node_ids_from_bob.intersection(node_ids_near_target)

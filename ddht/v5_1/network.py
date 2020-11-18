@@ -21,6 +21,8 @@ from ddht.kademlia import (
     compute_distance,
     compute_log_distance,
     iter_closest_nodes,
+    sorted_closest,
+    sorted_furthest,
 )
 from ddht.v5_1.abc import (
     ClientAPI,
@@ -40,19 +42,6 @@ from ddht.v5_1.messages import (
     TalkRequestMessage,
 )
 
-NEIGHBORHOOD_DISTANCES = (
-    # First bucket is combined (128 + 64 + 32) since these will rarely be
-    # occupied.
-    tuple(range(1, 224)),
-    # Next few buckets drop in size by about half each time.
-    tuple(range(224, 240)),
-    tuple(range(240, 248)),
-    (248, 249, 250, 251),
-    (252, 253, 254),
-    # This last one is 3/4 of the network
-    (255, 256),
-)
-
 
 async def common_recursive_find_nodes(
     network: NetworkProtocol, target: NodeID
@@ -67,13 +56,15 @@ async def common_recursive_find_nodes(
     async def do_lookup(node_id: NodeID) -> None:
         queried_node_ids.add(node_id)
 
+        distances: Tuple[int, ...]
         if node_id == target:
-            distance = 0
+            distances = (0,)
         else:
-            distance = compute_log_distance(node_id, target)
+            relative_distance = compute_log_distance(node_id, target)
+            distances = tuple(range(1, min(257, relative_distance + 1)))
 
         try:
-            enrs = await network.find_nodes(node_id, distance)
+            enrs = await network.find_nodes(node_id, *distances)
         except trio.TooSlowError:
             unresponsive_node_ids.add(node_id)
             return
@@ -130,9 +121,13 @@ async def common_recursive_find_nodes(
     )
 
 
-async def common_get_nodes_near(
-    network: NetworkProtocol, target: NodeID, *, max_nodes: int = 32,
-) -> Tuple[NodeID, ...]:
+async def common_explore_target(
+    network: NetworkProtocol,
+    target: NodeID,
+    *,
+    max_nodes: int = 32,
+    concurrency: int = 3,
+) -> Tuple[ENRAPI, ...]:
     """
     Lookup nodes in the target area of the routing table.
 
@@ -140,57 +135,147 @@ async def common_get_nodes_near(
     node, this function aims to find as many nodes that are as close to the
     `target` as possible.
     """
-    enrs_from_recursive_find = await network.recursive_find_nodes(target)
+    node_ids_to_query: List[NodeID]
+    node_ids_to_query = list(network.routing_table.iter_nodes_around(target))
 
-    for enr in enrs_from_recursive_find:
-        network.enr_db.set_enr(enr)
+    # Track all of the node ids we have seen.
+    seen_node_ids: Set[NodeID] = {network.local_node_id}
+    seen_node_ids.update(node_ids_to_query)
 
-    node_ids_from_routing_table = tuple(network.routing_table.iter_nodes_around(target))
-    node_ids_from_recursive_find = tuple(
-        enr.node_id
-        for enr in enrs_from_recursive_find
-        if enr.node_id != network.local_node_id
-    )
+    # Track what node ids we have already queried
+    queried_node_ids: Set[NodeID] = {network.local_node_id}
 
-    node_ids_by_distance = tuple(
+    # Tracke node ids that are being queried by a worker
+    in_flight_node_ids: Set[NodeID] = set()
+
+    got_new_node_ids = trio.Condition()
+
+    received_enrs: List[ENRAPI] = [
+        network.enr_db.get_enr(node_id) for node_id in node_ids_to_query
+    ]
+
+    async def _worker() -> None:
+        nonlocal node_ids_to_query
+
+        while True:
+            # Pull a node_id off of the queue.
+            try:
+                node_id = node_ids_to_query.pop()
+            except IndexError:
+                # If there are no other in-flight requests then exit the
+                # worker.
+                if not in_flight_node_ids:
+                    break
+
+                # If there are in-flight requests, wait for new nodes to be added to the queue.
+                async with got_new_node_ids:
+                    await got_new_node_ids.wait()
+                continue
+            else:
+                # Register that the `node_id` is in-flight.
+                in_flight_node_ids.add(node_id)
+
+            distances: Tuple[int, ...]
+
+            if node_id == target:
+                distances = tuple(range(1, 241))
+            else:
+                # Select the buckets in the "neighborhood" of the target.
+                relative_distance = compute_log_distance(target, node_id)
+                distances = tuple(range(1, min(257, relative_distance + 2)))
+
+            # Record that this `node_id` has been queried.
+            queried_node_ids.add(node_id)
+
+            try:
+                found_enrs = await network.find_nodes(node_id, *distances,)
+            except trio.TooSlowError:
+                continue
+            else:
+                for enr in found_enrs:
+                    if enr.node_id == network.local_node_id:
+                        continue
+
+                    try:
+                        network.enr_db.set_enr(enr)
+                    except OldSequenceNumber:
+                        received_enrs.append(network.enr_db.get_enr(enr.node_id))
+                    else:
+                        received_enrs.append(enr)
+
+                # Filter to only the newly encountered node_ids and put them
+                # into the queue of node_ids to be queried.
+                async with got_new_node_ids:
+                    new_node_ids = list(
+                        enr.node_id
+                        for enr in found_enrs
+                        if enr.node_id not in seen_node_ids
+                    )
+                    if new_node_ids:
+                        seen_node_ids.update(new_node_ids)
+                        node_ids_to_query = list(
+                            sorted_furthest(
+                                target, set(node_ids_to_query + new_node_ids)
+                            )
+                        )
+                        # Wake up any workers that are waiting for new node_ids
+                        # to be available.
+                        got_new_node_ids.notify_all()
+            finally:
+                in_flight_node_ids.remove(node_id)
+
+        # before the worker exits always wake up any waiting processes.
+        async with got_new_node_ids:
+            got_new_node_ids.notify_all()
+
+    async with trio.open_nursery() as nursery:
+        for _ in range(concurrency):
+            nursery.start_soon(_worker)
+
+        #
+        # Monitor for the early exit condition.  If we have enough nodes to
+        # fulfill the requested number of nodes, we can exit early we go
+        # through multiple rounds without finding any closer nodes.
+        #
+        last_count = len(seen_node_ids)
+        last_average_distance = sum(
+            compute_distance(target, node_id)
+            for node_id in sorted_closest(target, seen_node_ids)[:max_nodes]
+        ) // len(seen_node_ids)
+
+        rounds_without_progress = 0
+
+        while node_ids_to_query or in_flight_node_ids:
+            async with got_new_node_ids:
+                await got_new_node_ids.wait()
+
+            if len(seen_node_ids) < max_nodes:
+                continue
+            elif last_count == len(seen_node_ids):
+                continue
+
+            average_distance = sum(
+                compute_distance(target, node_id)
+                for node_id in sorted_closest(target, seen_node_ids)[:max_nodes]
+            ) // len(seen_node_ids)
+
+            if average_distance >= last_average_distance:
+                rounds_without_progress += 1
+                if rounds_without_progress >= concurrency:
+                    raise Exception("early exit")
+                    break
+            else:
+                rounds_without_progress = 0
+
+            last_average_distance = average_distance
+
+    # now sort and return the ENR records in order of closesness to the target.
+    return tuple(
         sorted(
-            node_ids_from_routing_table + node_ids_from_recursive_find,
-            key=lambda node_id: compute_distance(target, node_id),
+            reduce_enrs(received_enrs),
+            key=lambda enr: compute_distance(enr.node_id, target),
         )
-    )
-
-    node_ids_from_neighborhood = []
-
-    async def _do_find_nodes(node_id: NodeID, distances: Tuple[int, ...]) -> None:
-        try:
-            found_enrs = await network.find_nodes(node_id, *distances,)
-        except trio.TooSlowError:
-            return
-        else:
-            for enr in found_enrs:
-                if enr.node_id == network.local_node_id:
-                    continue
-                network.enr_db.set_enr(enr)
-                node_ids_from_neighborhood.append(enr.node_id)
-
-    for distances in NEIGHBORHOOD_DISTANCES:
-        async with trio.open_nursery() as nursery:
-            for node_id in node_ids_by_distance:
-                nursery.start_soon(_do_find_nodes, node_id, distances)
-
-        if len(node_ids_from_neighborhood) > max_nodes:
-            break
-
-    all_node_ids = (
-        node_ids_from_recursive_find
-        + node_ids_from_routing_table
-        + tuple(node_ids_from_neighborhood)
-    )
-
-    all_node_ids_by_distance = tuple(
-        sorted(all_node_ids, key=lambda node_id: compute_distance(target, node_id),)
-    )
-    return all_node_ids_by_distance[:max_nodes]
+    )[:max_nodes]
 
 
 class Network(Service, NetworkAPI):
@@ -404,10 +489,10 @@ class Network(Service, NetworkAPI):
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         return await common_recursive_find_nodes(self, target)
 
-    async def get_nodes_near(
+    async def explore_target(
         self, target: NodeID, max_nodes: int = 32
-    ) -> Tuple[NodeID, ...]:
-        return await common_get_nodes_near(self, target, max_nodes=max_nodes)
+    ) -> Tuple[ENRAPI, ...]:
+        return await common_explore_target(self, target, max_nodes=max_nodes)
 
     #
     # Long Running Processes

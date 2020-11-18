@@ -228,7 +228,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def get_nodes_near(
+    async def explore_target(
         self, target: NodeID, max_nodes: int = 32
-    ) -> Tuple[NodeID, ...]:
+    ) -> Tuple[ENRAPI, ...]:
         ...
