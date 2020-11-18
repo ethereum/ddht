@@ -383,7 +383,10 @@ class Network(Service, NetworkAPI):
                 return enr
 
         enr = await self._fetch_enr(node_id, endpoint=endpoint)
-        self.enr_db.set_enr(enr)
+        try:
+            self.enr_db.set_enr(enr)
+        except OldSequenceNumber:
+            pass
 
         return enr
 
