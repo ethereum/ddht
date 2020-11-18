@@ -5,7 +5,11 @@ import pytest
 import trio
 
 from ddht.kademlia import KademliaRoutingTable
+from ddht.v5_1.alexandria.advertisements import partition_advertisements
+from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.messages import (
+    AckMessage,
+    AdvertiseMessage,
     ContentMessage,
     FindNodesMessage,
     GetContentMessage,
@@ -13,6 +17,7 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     decode_message,
 )
+from ddht.v5_1.alexandria.payloads import Advertisement
 from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
@@ -314,3 +319,135 @@ async def test_alexandria_client_get_content(
                 assert isinstance(content_message, ContentMessage)
                 assert content_message.payload.is_proof is False
                 assert content_message.payload.payload == b"test"
+
+
+@pytest.mark.trio
+async def test_alexandria_client_send_advertisements(
+    alice, bob, bob_network, alice_alexandria_client
+):
+    advertisements = (
+        Advertisement.create(
+            content_key=b"\x01testkey",
+            hash_tree_root=b"\x12" * 32,
+            private_key=alice.private_key,
+        ),
+    )
+    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+        await alice_alexandria_client.send_advertisements(
+            bob.node_id, bob.endpoint, advertisements=advertisements,
+        )
+        with trio.fail_after(1):
+            talk_response = await subscription.receive()
+        message = decode_message(talk_response.message.payload)
+        assert isinstance(message, AdvertiseMessage)
+        assert message.payload == advertisements
+
+
+@pytest.mark.trio
+async def test_alexandria_client_send_ack(bob, bob_network, alice_alexandria_client):
+    async with bob_network.dispatcher.subscribe(TalkResponseMessage) as subscription:
+        await alice_alexandria_client.send_ack(
+            bob.node_id, bob.endpoint, advertisement_radius=12345, request_id=b"\x01",
+        )
+        with trio.fail_after(1):
+            talk_response = await subscription.receive()
+        message = decode_message(talk_response.message.payload)
+        assert isinstance(message, AckMessage)
+        assert message.payload.advertisement_radius == 12345
+
+
+@pytest.mark.trio
+async def test_alexandria_client_advertise_single_message(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_client
+):
+    advertisements = (
+        Advertisement.create(
+            content_key=b"\x01testkey",
+            hash_tree_root=b"\x12" * 32,
+            private_key=alice.private_key,
+        ),
+    )
+
+    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_ack(
+                request.sender_node_id,
+                request.sender_endpoint,
+                advertisement_radius=12345,
+                request_id=request.request_id,
+            )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                ack_messages = await alice_alexandria_client.advertise(
+                    bob.node_id, bob.endpoint, advertisements=advertisements,
+                )
+                assert len(ack_messages) == 1
+                ack_message = ack_messages[0]
+
+                assert isinstance(ack_message, AckMessage)
+                assert ack_message.payload.advertisement_radius == 12345
+
+
+@pytest.mark.trio
+async def test_alexandria_client_advertise_muliple_messages(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_client
+):
+    advertisements = tuple(
+        Advertisement.create(
+            content_key=b"\x01testkey",
+            hash_tree_root=b"\x12" * 32,
+            private_key=alice.private_key,
+        )
+        for _ in range(10)
+    )
+    expected_message_count = len(
+        partition_advertisements(advertisements, max_payload_size=MAX_PAYLOAD_SIZE,)
+    )
+
+    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+
+        async def _respond():
+            for _ in range(expected_message_count):
+                request = await subscription.receive()
+                await bob_alexandria_client.send_ack(
+                    request.sender_node_id,
+                    request.sender_endpoint,
+                    advertisement_radius=12345,
+                    request_id=request.request_id,
+                )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                ack_messages = await alice_alexandria_client.advertise(
+                    bob.node_id, bob.endpoint, advertisements=advertisements,
+                )
+                assert len(ack_messages) == expected_message_count
+                ack_message = ack_messages[0]
+
+                assert isinstance(ack_message, AckMessage)
+                assert ack_message.payload.advertisement_radius == 12345
+
+
+@pytest.mark.trio
+async def test_alexandria_client_advertise_timeout(
+    alice, bob, alice_alexandria_client, autojump_clock,
+):
+    advertisements = (
+        Advertisement.create(
+            content_key=b"\x01testkey",
+            hash_tree_root=b"\x12" * 32,
+            private_key=alice.private_key,
+        ),
+    )
+
+    with pytest.raises(trio.TooSlowError):
+        await alice_alexandria_client.advertise(
+            bob.node_id, bob.endpoint, advertisements=advertisements,
+        )

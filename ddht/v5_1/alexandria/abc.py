@@ -19,14 +19,16 @@ from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
 from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
+from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.messages import (
+    AckMessage,
     AlexandriaMessage,
     ContentMessage,
     FoundNodesMessage,
     PongMessage,
     TAlexandriaMessage,
 )
-from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
@@ -142,6 +144,28 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> None:
         ...
 
+    @abstractmethod
+    async def send_advertisements(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisements: Sequence[Advertisement],
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_ack(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisement_radius: int,
+        request_id: bytes,
+    ) -> None:
+        ...
+
     #
     # High Level Request/Response
     #
@@ -171,6 +195,16 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> ContentMessage:
+        ...
+
+    @abstractmethod
+    async def advertise(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisements: Collection[Advertisement],
+    ) -> Tuple[AckMessage, ...]:
         ...
 
 
@@ -221,6 +255,16 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
     ) -> Tuple[ENRAPI, ...]:
+        ...
+
+    @abstractmethod
+    async def advertise(
+        self,
+        node_id: NodeID,
+        *,
+        advertisements: Collection[Advertisement],
+        endpoint: Optional[Endpoint] = None,
+    ) -> Tuple[AckPayload, ...]:
         ...
 
     @abstractmethod

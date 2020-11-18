@@ -4,7 +4,9 @@ import trio
 
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.kademlia import KademliaRoutingTable, compute_log_distance
-from ddht.v5_1.alexandria.messages import FindNodesMessage
+from ddht.v5_1.alexandria.advertisements import Advertisement
+from ddht.v5_1.alexandria.messages import AdvertiseMessage, FindNodesMessage
+from ddht.v5_1.alexandria.payloads import AckPayload
 
 
 @pytest.mark.trio
@@ -102,3 +104,41 @@ async def test_alexandria_network_responds_to_find_nodes(
 
     assert len(enrs) >= 1
     assert any(enr.node_id == enr.node_id for enr in enrs)
+
+
+@pytest.mark.trio
+async def test_alexandria_network_advertise(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisements = tuple(
+        Advertisement.create(
+            content_key=b"\x01testkey",
+            hash_tree_root=b"\x12" * 32,
+            private_key=alice.private_key,
+        )
+        for _ in range(10)
+    )
+
+    async with bob_alexandria_client.subscribe(AdvertiseMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_ack(
+                request.sender_node_id,
+                request.sender_endpoint,
+                advertisement_radius=12345,
+                request_id=request.request_id,
+            )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                ack_payloads = await alice_alexandria_network.advertise(
+                    bob.node_id, advertisements=advertisements,
+                )
+                assert len(ack_payloads) == 1
+                ack_payload = ack_payloads[0]
+
+                assert isinstance(ack_payload, AckPayload)
+                assert ack_payload.advertisement_radius == 12345

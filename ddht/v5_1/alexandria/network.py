@@ -16,9 +16,10 @@ from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
-from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.network import common_recursive_find_nodes
 
@@ -151,6 +152,20 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         return await common_recursive_find_nodes(self, target)
+
+    async def advertise(
+        self,
+        node_id: NodeID,
+        *,
+        advertisements: Collection[Advertisement],
+        endpoint: Optional[Endpoint] = None,
+    ) -> Tuple[AckPayload, ...]:
+        if endpoint is None:
+            endpoint = await self.network.endpoint_for_node_id(node_id)
+        responses = await self.client.advertise(
+            node_id, advertisements=advertisements, endpoint=endpoint,
+        )
+        return tuple(response.payload for response in responses)
 
     #
     # Long Running Processes

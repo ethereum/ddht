@@ -41,6 +41,7 @@ AdvertisementSedes = Container(
     field_sedes=(byte_list, bytes32, uint40, uint8, uint256, uint256)
 )
 AdvertiseSedes = List(AdvertisementSedes, max_length=32)
+AckSedes = Container(field_sedes=(uint256,))
 
 # sedes used for encoding alexandria content
 content_sedes = ByteList(max_length=GB)

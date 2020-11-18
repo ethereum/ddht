@@ -1,11 +1,15 @@
-from typing import Any, Dict, Generic, Type, TypeVar
+from typing import Any, Dict, Generic, Tuple, Type, TypeVar
 
+from eth_typing import Hash32
 import ssz
 from ssz import BaseSedes
 
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
 from ddht.v5_1.alexandria.payloads import (
+    AckPayload,
+    Advertisement,
+    AdvertisePayload,
     ContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
@@ -14,6 +18,8 @@ from ddht.v5_1.alexandria.payloads import (
     PongPayload,
 )
 from ddht.v5_1.alexandria.sedes import (
+    AckSedes,
+    AdvertiseSedes,
     ContentSedes,
     FindNodesSedes,
     FoundNodesSedes,
@@ -151,6 +157,39 @@ class ContentMessage(AlexandriaMessage[ContentPayload]):
     payload_type = ContentPayload
 
     payload: ContentPayload
+
+
+@register
+class AdvertiseMessage(AlexandriaMessage[AdvertisePayload]):
+    message_id = 7
+    sedes = AdvertiseSedes
+    payload_type = tuple
+
+    payload: AdvertisePayload
+
+    def get_payload_for_encoding(
+        self,
+    ) -> Tuple[Tuple[bytes, Hash32, int, int, int, int], ...]:
+        return tuple(advertisement.to_sedes_payload() for advertisement in self.payload)
+
+    @classmethod
+    def from_payload_args(
+        cls: Type[TAlexandriaMessage], payload_args: Any
+    ) -> TAlexandriaMessage:
+        payload = tuple(
+            Advertisement.from_sedes_payload(sedes_payload)
+            for sedes_payload in payload_args
+        )
+        return cls(payload)
+
+
+@register
+class AckMessage(AlexandriaMessage[AckPayload]):
+    message_id = 8
+    sedes = AckSedes
+    payload_type = AckPayload
+
+    payload: AckPayload
 
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:

@@ -30,8 +30,11 @@ from ddht.request_tracker import RequestTracker
 from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI
+from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
 from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID, MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.messages import (
+    AckMessage,
+    AdvertiseMessage,
     AlexandriaMessage,
     ContentMessage,
     FindNodesMessage,
@@ -43,6 +46,7 @@ from ddht.v5_1.alexandria.messages import (
     decode_message,
 )
 from ddht.v5_1.alexandria.payloads import (
+    AckPayload,
     ContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
@@ -356,6 +360,32 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
             node_id, endpoint, message, request_id=request_id
         )
 
+    async def send_advertisements(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisements: Sequence[Advertisement],
+        request_id: Optional[bytes] = None,
+    ) -> bytes:
+        message = AdvertiseMessage(tuple(advertisements))
+        return await self._send_request(
+            node_id, endpoint, message, request_id=request_id
+        )
+
+    async def send_ack(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisement_radius: int,
+        request_id: bytes,
+    ) -> None:
+        message = AckMessage(AckPayload(advertisement_radius))
+        return await self._send_response(
+            node_id, endpoint, message, request_id=request_id
+        )
+
     #
     # High Level Request/Response
     #
@@ -430,6 +460,25 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
             node_id, endpoint, request, ContentMessage, request_id
         )
         return response
+
+    async def advertise(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisements: Collection[Advertisement],
+    ) -> Tuple[AckMessage, ...]:
+        advertisement_batches = partition_advertisements(
+            advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
+        )
+        messages = tuple(AdvertiseMessage(batch) for batch in advertisement_batches)
+        assert len(messages)
+        return tuple(
+            [
+                await self._request(node_id, endpoint, message, AckMessage)
+                for message in messages
+            ]
+        )
 
     #
     # Long Running Processes to manage subscriptions
