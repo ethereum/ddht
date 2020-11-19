@@ -45,6 +45,25 @@ async def pool(tester, initiator, events, channels):
 
 
 @pytest.mark.trio
+async def test_pool_lru_caches_sessions(tester, events, pool):
+    recipients = []
+    for _ in range(0, 150):
+        recipients.append(tester.node())
+
+    async with events.session_created.subscribe_and_wait():
+        for recipient in recipients:
+            pool.initiate_session(recipient.endpoint, recipient.node_id)
+
+    session_count_by_endpoint = [
+        len(pool._sessions_by_endpoint[key])
+        for key in pool._sessions_by_endpoint.keys()
+    ]
+
+    assert len(pool._sessions) == 128
+    assert sum(session_count_by_endpoint) == 128
+
+
+@pytest.mark.trio
 async def test_pool_remove_session(recipient, events, pool):
     async with events.session_created.subscribe_and_wait():
         session = pool.initiate_session(recipient.endpoint, recipient.node_id)

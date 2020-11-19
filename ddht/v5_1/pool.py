@@ -6,6 +6,7 @@ import uuid
 from eth_enr import ENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
+from lru import LRU
 import trio
 
 from ddht.base_message import AnyInboundMessage
@@ -45,18 +46,23 @@ class Pool(PoolAPI):
             events = Events()
         self._events = events
 
-        self._sessions = {}
+        self._sessions = LRU(128, callback=self._evict_session)
         self._sessions_by_endpoint = collections.defaultdict(set)
 
         self._outbound_packet_send_channel = outbound_envelope_send_channel
         self._inbound_message_send_channel = inbound_message_send_channel
 
+    def _evict_session(self, key: uuid.UUID, value: SessionAPI) -> None:
+        # callback to remove LRU evicted session from _sessions_by_endpoint
+        self._sessions_by_endpoint[value.remote_endpoint].remove(value)
+
     def remove_session(self, session_id: uuid.UUID) -> SessionAPI:
         try:
-            session = self._sessions.pop(session_id)
+            session = self._sessions[session_id]
         except KeyError:
             raise SessionNotFound(f"No session found with id: {session_id}")
 
+        del self._sessions[session_id]
         self._sessions_by_endpoint[session.remote_endpoint].remove(session)
         return session
 
