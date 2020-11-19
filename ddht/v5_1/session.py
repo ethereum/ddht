@@ -559,7 +559,11 @@ class SessionRecipient(BaseSession):
                     return True
             elif envelope.packet.is_message:
                 self.logger.debug("%s: Buffering Message: %s", self, envelope)
-                self._inbound_envelope_buffer_send_channel.send_nowait(envelope)
+                try:
+                    self._inbound_envelope_buffer_send_channel.send_nowait(envelope)
+                except trio.WouldBlock:
+                    pass
+
                 # We cannot actually know whether this packet will be properly
                 # handled.  However, of the available choices, returning
                 # `False` here is optimal.
