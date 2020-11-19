@@ -310,12 +310,16 @@ class SessionInitiator(BaseSession):
                 return False
         elif self.is_during_handshake:
             if envelope.packet.is_who_are_you:
-                (
-                    self._keys,
-                    ephemeral_public_key,
-                ) = await self._receive_handshake_response(
-                    cast(Packet[WhoAreYouPacket], envelope.packet)
-                )
+                try:
+                    (
+                        self._keys,
+                        ephemeral_public_key,
+                    ) = await self._receive_handshake_response(
+                        cast(Packet[WhoAreYouPacket], envelope.packet)
+                    )
+                except HandshakeFailure as err:
+                    self.logger.debug("%s: HandshakeFailure: %s", self, err)
+                    return False
                 self._status = SessionStatus.AFTER
                 await self._events.session_handshake_complete.trigger(self)
 
