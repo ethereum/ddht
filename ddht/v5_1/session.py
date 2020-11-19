@@ -317,9 +317,9 @@ class SessionInitiator(BaseSession):
                     cast(Packet[WhoAreYouPacket], envelope.packet)
                 )
                 self._status = SessionStatus.AFTER
+                self._last_message_received_at = trio.current_time()
                 await self._events.session_handshake_complete.trigger(self)
 
-                self._last_message_received_at = trio.current_time()
                 await self._send_handshake_completion(
                     self._keys,
                     ephemeral_public_key,
