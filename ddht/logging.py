@@ -83,7 +83,6 @@ def setup_stderr_logging(level: int) -> logging.StreamHandler:
     handler_stream.setFormatter(LOG_FORMATTER)
 
     logger = logging.getLogger()
-    logger.setLevel(level)
     logger.addHandler(handler_stream)
 
     return handler_stream
