@@ -51,23 +51,6 @@ class BaseSession(SessionAPI):
     _last_message_received_at: float
     _handshake_scheme_registry: HandshakeSchemeRegistryAPI = v51_handshake_scheme_registry
 
-    __slots__ = (
-        "_enr_db",
-        "_events",
-        "_inbound_message_send_channel",
-        "_local_node_id",
-        "_local_private_key",
-        "_message_type_registry",
-        "_nonce_counter",
-        "_outbound_envelope_send_channel",
-        "_outbound_message_buffer_receive_channel",
-        "_outbound_message_buffer_send_channel",
-        "_status",
-        "created_at",
-        "id",
-        "remote_endpoint",
-    )
-
     def __init__(
         self,
         local_private_key: bytes,
@@ -232,8 +215,6 @@ class EmptyMessage(BaseMessage):
 #
 class SessionInitiator(BaseSession):
     is_initiator = True
-
-    __slots__ = ("_remote_node_id",)
 
     def __init__(
         self,
@@ -470,11 +451,6 @@ class SessionInitiator(BaseSession):
 
 class SessionRecipient(BaseSession):
     is_initiator = False
-
-    __slots__ = (
-        "_inbound_envelope_buffer_send_channel",
-        "_inbound_envelope_buffer_receive_channel",
-    )
 
     def __init__(
         self,

@@ -38,6 +38,7 @@ async def pool(tester, initiator, events, channels):
         enr_db=initiator.enr_db,
         outbound_envelope_send_channel=channels.outbound_envelope_send_channel,
         inbound_message_send_channel=channels.inbound_message_send_channel,
+        session_cache_size=128,
         events=initiator.events,
     )
     tester.register_pool(pool, channels)

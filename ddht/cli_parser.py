@@ -99,6 +99,9 @@ network_parser.add_argument(
 network_parser.add_argument(
     "--listen-address", type=ipaddress.ip_address, help="IP address to listen on"
 )
+network_parser.add_argument(
+    "--session-cache-size", default=1024, type=int, help="Max number of active sessions"
+)
 
 bootnodes_parser_group = network_parser.add_mutually_exclusive_group()
 bootnodes_parser_group.add_argument(
