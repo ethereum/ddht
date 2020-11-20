@@ -114,7 +114,7 @@ def bob_node_id_param_w3(request, alice, bob, bob_network):
 
 @pytest.fixture
 def new_enr():
-    return ENRFactory()
+    return ENRFactory(sequence_number=secrets.randbelow(100) + 1)
 
 
 @pytest.mark.trio
@@ -217,7 +217,9 @@ async def test_v51_rpc_set_enr_web3(make_request, w3, new_enr):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_set_enr_web3_duplicate(make_request, w3, new_enr):
+async def test_v51_rpc_set_enr_web3_with_invalid_sequence_number(
+    make_request, w3, new_enr
+):
     response = await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
     assert response is None
 
