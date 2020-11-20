@@ -9,7 +9,7 @@ from ddht.v5_1.exceptions import SessionNotFound
 from ddht.v5_1.pool import Pool
 from ddht.v5_1.session import SessionInitiator, SessionRecipient
 
-TEST_CACHE_SESSION_SIZE = 128
+TEST_CACHE_SESSION_SIZE = 16
 
 
 @pytest.fixture
@@ -49,9 +49,7 @@ async def pool(tester, initiator, events, channels):
 
 @pytest.mark.trio
 async def test_pool_lru_caches_sessions(tester, events, pool):
-    recipients = []
-    for _ in range(0, 150):
-        recipients.append(tester.node())
+    recipients = recipients = tuple(tester.node() for _ in range(25))
 
     async with events.session_created.subscribe_and_wait():
         for recipient in recipients:

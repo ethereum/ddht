@@ -326,7 +326,7 @@ async def test_session_invalid_rlp(driver):
 
 
 @pytest.mark.trio
-async def test_session_is_valid_indefinitely_after_handhake(driver, autojump_clock):
+async def test_session_is_valid_indefinitely_after_handshake(driver, autojump_clock):
     initiator = driver.initiator.session
     recipient = driver.recipient.session
 
