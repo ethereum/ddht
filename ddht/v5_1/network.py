@@ -130,69 +130,6 @@ async def common_recursive_find_nodes(
     )
 
 
-async def common_get_nodes_near(
-    network: NetworkProtocol, target: NodeID, *, max_nodes: int = 32,
-) -> Tuple[NodeID, ...]:
-    """
-    Lookup nodes in the target area of the routing table.
-
-    Unlike `recursive_find_nodes` which is good at finding the very closest
-    node, this function aims to find as many nodes that are as close to the
-    `target` as possible.
-    """
-    enrs_from_recursive_find = await network.recursive_find_nodes(target)
-
-    for enr in enrs_from_recursive_find:
-        network.enr_db.set_enr(enr)
-
-    node_ids_from_routing_table = tuple(network.routing_table.iter_nodes_around(target))
-    node_ids_from_recursive_find = tuple(
-        enr.node_id
-        for enr in enrs_from_recursive_find
-        if enr.node_id != network.local_node_id
-    )
-
-    node_ids_by_distance = tuple(
-        sorted(
-            node_ids_from_routing_table + node_ids_from_recursive_find,
-            key=lambda node_id: compute_distance(target, node_id),
-        )
-    )
-
-    node_ids_from_neighborhood = []
-
-    async def _do_find_nodes(node_id: NodeID, distances: Tuple[int, ...]) -> None:
-        try:
-            found_enrs = await network.find_nodes(node_id, *distances,)
-        except trio.TooSlowError:
-            return
-        else:
-            for enr in found_enrs:
-                if enr.node_id == network.local_node_id:
-                    continue
-                network.enr_db.set_enr(enr)
-                node_ids_from_neighborhood.append(enr.node_id)
-
-    for distances in NEIGHBORHOOD_DISTANCES:
-        async with trio.open_nursery() as nursery:
-            for node_id in node_ids_by_distance:
-                nursery.start_soon(_do_find_nodes, node_id, distances)
-
-        if len(node_ids_from_neighborhood) > max_nodes:
-            break
-
-    all_node_ids = (
-        node_ids_from_recursive_find
-        + node_ids_from_routing_table
-        + tuple(node_ids_from_neighborhood)
-    )
-
-    all_node_ids_by_distance = tuple(
-        sorted(all_node_ids, key=lambda node_id: compute_distance(target, node_id),)
-    )
-    return all_node_ids_by_distance[:max_nodes]
-
-
 class Network(Service, NetworkAPI):
     logger = logging.getLogger("ddht.Network")
 
@@ -403,11 +340,6 @@ class Network(Service, NetworkAPI):
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         return await common_recursive_find_nodes(self, target)
-
-    async def get_nodes_near(
-        self, target: NodeID, max_nodes: int = 32
-    ) -> Tuple[NodeID, ...]:
-        return await common_get_nodes_near(self, target, max_nodes=max_nodes)
 
     #
     # Long Running Processes

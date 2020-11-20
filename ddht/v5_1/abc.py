@@ -445,9 +445,6 @@ class NetworkProtocol(Protocol):
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         ...
 
-    async def get_nodes_near(self, target: NodeID) -> Tuple[NodeID, ...]:
-        ...
-
 
 class NetworkAPI(ServiceAPI):
     client: ClientAPI
@@ -542,10 +539,6 @@ class NetworkAPI(ServiceAPI):
 
     @abstractmethod
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
-        ...
-
-    @abstractmethod
-    async def get_nodes_near(self, target: NodeID) -> Tuple[NodeID, ...]:
         ...
 
     @abstractmethod
