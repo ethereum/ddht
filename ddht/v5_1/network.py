@@ -11,11 +11,15 @@ from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
 
-from ddht._utils import every, reduce_enrs, weighted_choice
+from ddht._utils import adaptive_timeout, every, reduce_enrs, weighted_choice
 from ddht.base_message import InboundMessage
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
+from ddht.exceptions import (
+    DuplicateProtocol,
+    EmptyFindNodesResponse,
+    MissingEndpointFields,
+)
 from ddht.kademlia import (
     KademliaRoutingTable,
     at_log_distance,
@@ -42,93 +46,185 @@ from ddht.v5_1.messages import (
     TalkRequestMessage,
 )
 
-NEIGHBORHOOD_DISTANCES = (
-    # First bucket is combined (128 + 64 + 32) since these will rarely be
-    # occupied.
-    tuple(range(1, 224)),
-    # Next few buckets drop in size by about half each time.
-    tuple(range(224, 240)),
-    tuple(range(240, 248)),
-    (248, 249, 250, 251),
-    (252, 253, 254),
-    # This last one is 3/4 of the network
-    (255, 256),
-)
-
 
 async def common_recursive_find_nodes(
-    network: NetworkProtocol, target: NodeID
+    network: NetworkProtocol,
+    target: NodeID,
+    *,
+    concurrency: int = 3,
+    unresponsive_cache: Dict[NodeID, float] = LRU(1024),
 ) -> Tuple[ENRAPI, ...]:
-    network.logger.debug("Recursive find nodes: %s", target.hex())
+    """
+    An optimized version of the recursive lookup algorithm for a kademlia
+    network.
 
-    queried_node_ids = set()
-    unresponsive_node_ids = set()
-    received_enrs: List[ENRAPI] = []
+    Continually lookup nodes in the target part of the network, keeping track
+    of all of the nodes we have seen.
+
+    Exit once we have queried all of the `k` closest nodes to the target.
+
+    The concurrency structure here is optimized to minimize the effect of
+    unresponsive nodes on the total time it takes to perform the recursive
+    lookup.  Some requests will hang for up to 10 seconds.  The
+    `adaptive_timeout` combined with the multiple concurrent workers helps
+    mitigate the overall slowdown caused by a few unresponsive nodes since the
+    other queries can be issues concurrently.
+    """
+    network.logger.debug("Recursive find nodes: %s", target.hex())
+    start_at = trio.current_time()
+
+    # The set of NodeID values we have already queried.
+    queried_node_ids: Set[NodeID] = set()
+
+    # The set of NodeID that timed out
+    #
+    # The `local_node_id` is
+    # included in this as a convenience mechanism so that we don't have to
+    # continually fiter it out of the various filters
+    unresponsive_node_ids: Set[NodeID] = {network.local_node_id}
+
+    # We maintain a cache of nodes that were recently deemed unresponsive
+    # within the last 10 minutes.
+    unresponsive_node_ids.update(
+        node_id
+        for node_id, last_unresponsive_at in unresponsive_cache.items()
+        if trio.current_time() - last_unresponsive_at < 300
+    )
+
+    # Accumulator of the node_ids we have seen
     received_node_ids: Set[NodeID] = set()
 
-    async def do_lookup(node_id: NodeID) -> None:
-        queried_node_ids.add(node_id)
+    # Tracker for node_ids that are actively being requested.
+    in_flight: Set[NodeID] = set()
 
+    condition = trio.Condition()
+
+    def get_unqueried_node_ids() -> Tuple[NodeID, ...]:
+        """
+        Get the three nodes that are closest to the target such that the node
+        is in the closest `k` nodes which haven't been deemed unresponsive.
+        """
+        # Construct an iterable of *all* the nodes we know about ordered by
+        # closeness to the target.
+        candidates = iter_closest_nodes(
+            target, network.routing_table, received_node_ids
+        )
+        # Remove any unresponsive nodes from that iterable
+        responsive_candidates = itertools.filterfalse(
+            lambda node_id: node_id in unresponsive_node_ids, candidates
+        )
+        # Grab the closest K
+        closest_k_candidates = take(
+            network.routing_table.bucket_size, responsive_candidates,
+        )
+        # Filter out any from the closest K that we've already queried or that are in-flight
+        closest_k_unqueried = itertools.filterfalse(
+            lambda node_id: node_id in queried_node_ids or node_id in in_flight,
+            closest_k_candidates,
+        )
+
+        return tuple(take(3, closest_k_unqueried))
+
+    async def do_lookup(node_id: NodeID) -> None:
+        """
+        Perform an individual lookup on the target part of the network from the
+        given `node_id`
+        """
         if node_id == target:
             distance = 0
         else:
             distance = compute_log_distance(node_id, target)
 
         try:
-            enrs = await network.find_nodes(node_id, distance)
-        except trio.TooSlowError:
+            found_enrs = await network.find_nodes(node_id, distance)
+        except (trio.TooSlowError, MissingEndpointFields):
             unresponsive_node_ids.add(node_id)
+            unresponsive_cache[node_id] = trio.current_time()
             return
+        except trio.Cancelled:
+            # We don't add these to the unresponsive cache since they didn't
+            # necessarily exceed the fulle 10s request/response timeout.
+            unresponsive_node_ids.add(node_id)
+            raise
 
-        for enr in enrs:
-            received_node_ids.add(enr.node_id)
+        for enr in found_enrs:
             try:
                 network.enr_db.set_enr(enr)
             except OldSequenceNumber:
-                received_enrs.append(network.enr_db.get_enr(enr.node_id))
+                pass
+
+        new_node_ids = tuple(
+            enr.node_id for enr in found_enrs if enr.node_id not in received_node_ids
+        )
+        received_node_ids.update(new_node_ids)
+
+    async def worker(worker_id: NodeID) -> None:
+        """
+        Pulls unqueried nodes from the closest k nodes and performs a
+        concurrent lookup on them.
+        """
+        for round in itertools.count():
+            async with condition:
+                node_ids = get_unqueried_node_ids()
+
+                if not node_ids:
+                    await condition.wait()
+                    continue
+
+                # Mark the node_ids as having been queried.
+                queried_node_ids.update(node_ids)
+                # Mark the node_ids as being in-flight.
+                in_flight.update(node_ids)
+
+            if len(node_ids) == 1:
+                await do_lookup(node_ids[0])
             else:
-                received_enrs.append(enr)
+                tasks = tuple((do_lookup, (node_id,)) for node_id in node_ids)
+                await adaptive_timeout(*tasks, threshold=1, variance=2.0)
 
-    for lookup_round_counter in itertools.count():
-        candidates = iter_closest_nodes(
-            target, network.routing_table, received_node_ids
-        )
-        responsive_candidates = itertools.dropwhile(
-            lambda node: node in unresponsive_node_ids, candidates
-        )
-        closest_k_candidates = take(
-            network.routing_table.bucket_size, responsive_candidates
-        )
-        closest_k_unqueried_candidates = (
-            candidate
-            for candidate in closest_k_candidates
-            if candidate not in queried_node_ids and candidate != network.local_node_id
-        )
-        nodes_to_query = tuple(take(3, closest_k_unqueried_candidates))
+            async with condition:
+                # Remove the `node_ids` from the in_flight set.
+                in_flight.difference_update(node_ids)
 
-        if nodes_to_query:
-            network.logger.debug(
-                "Starting lookup round %d for %s",
-                lookup_round_counter + 1,
-                target.hex(),
-            )
-            async with trio.open_nursery() as nursery:
-                for peer in nodes_to_query:
-                    nursery.start_soon(do_lookup, peer)
-        else:
-            network.logger.debug(
-                "Lookup for %s finished in %d rounds",
-                target.hex(),
-                lookup_round_counter,
-            )
-            break
+                condition.notify_all()
+
+    async with trio.open_nursery() as nursery:
+        for worker_id in range(concurrency):
+            nursery.start_soon(worker, worker_id)
+
+        while True:
+            # this `fail_after` is a failsafe to prevent deadlock situations
+            # which are possible with `Condition` objects.
+            with trio.fail_after(60):
+                async with condition:
+                    node_ids = get_unqueried_node_ids()
+
+                    if not node_ids and not in_flight:
+                        break
+                    else:
+                        await condition.wait()
+
+        nursery.cancel_scope.cancel()
+
+    elapsed = trio.current_time() - start_at
+
+    network.logger.debug(
+        "Lookup for %s finished in %f seconds: seen=%d  queried=%d  unresponsive=%d",
+        target.hex(),
+        elapsed,
+        len(received_node_ids),
+        len(queried_node_ids),
+        len(unresponsive_node_ids),
+    )
 
     # now sort and return the ENR records in order of closesness to the target.
+    result_enrs = tuple(
+        network.enr_db.get_enr(node_id)
+        for node_id in received_node_ids
+        if node_id != network.local_node_id
+    )
     return tuple(
-        sorted(
-            reduce_enrs(received_enrs),
-            key=lambda enr: compute_distance(enr.node_id, target),
-        )
+        sorted(result_enrs, key=lambda enr: compute_distance(enr.node_id, target),)
     )
 
 
@@ -201,6 +297,12 @@ class Network(Service, NetworkAPI):
             pong = await self.ping(node_id, endpoint=endpoint)
         except trio.TooSlowError:
             self.logger.debug("Bonding with %s timed out during ping", node_id.hex())
+            return False
+        except MissingEndpointFields:
+            self.logger.debug(
+                "Bonding with %s failed due to missing endpoint information",
+                node_id.hex(),
+            )
             return False
 
         try:
