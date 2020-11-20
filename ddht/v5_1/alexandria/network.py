@@ -20,7 +20,7 @@ from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.payloads import PongPayload
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
-from ddht.v5_1.network import common_get_nodes_near, common_recursive_find_nodes
+from ddht.v5_1.network import common_recursive_find_nodes
 
 NEIGHBORHOOD_DISTANCES = (
     # First bucket is combined (128 + 64 + 32) since these will rarely be
@@ -151,11 +151,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         return await common_recursive_find_nodes(self, target)
-
-    async def get_nodes_near(
-        self, target: NodeID, max_nodes: int = 32
-    ) -> Tuple[NodeID, ...]:
-        return await common_get_nodes_near(self, target, max_nodes=max_nodes)
 
     #
     # Long Running Processes

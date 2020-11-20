@@ -226,9 +226,3 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     @abstractmethod
     async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
         ...
-
-    @abstractmethod
-    async def get_nodes_near(
-        self, target: NodeID, max_nodes: int = 32
-    ) -> Tuple[NodeID, ...]:
-        ...
