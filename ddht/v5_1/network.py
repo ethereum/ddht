@@ -13,6 +13,7 @@ from lru import LRU
 import trio
 
 from ddht._utils import every, reduce_enrs
+from ddht.base_message import InboundMessage
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
@@ -449,25 +450,35 @@ class Network(Service, NetworkAPI):
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
 
     async def _pong_when_pinged(self) -> None:
-        async with self.dispatcher.subscribe(PingMessage) as subscription:
-            async for request in subscription:
-                await self.dispatcher.send_message(
-                    request.to_response(
-                        PongMessage(
-                            request.request_id,
-                            self.enr_manager.enr.sequence_number,
-                            request.sender_endpoint.ip_address,
-                            request.sender_endpoint.port,
-                        )
-                    )
-                )
+        async def _maybe_add_to_routing_table(
+            request: InboundMessage[PingMessage],
+        ) -> None:
+            try:
                 enr = await self.lookup_enr(
                     request.sender_node_id,
                     enr_seq=request.message.enr_seq,
                     endpoint=request.sender_endpoint,
                 )
-                self.routing_table.update(enr.node_id)
-                self._routing_table_ready.set()
+            except EmptyFindNodesResponse:
+                return
+
+            self.routing_table.update(enr.node_id)
+            self._routing_table_ready.set()
+
+        async with trio.open_nursery() as nursery:
+            async with self.dispatcher.subscribe(PingMessage) as subscription:
+                async for request in subscription:
+                    await self.dispatcher.send_message(
+                        request.to_response(
+                            PongMessage(
+                                request.request_id,
+                                self.enr_manager.enr.sequence_number,
+                                request.sender_endpoint.ip_address,
+                                request.sender_endpoint.port,
+                            )
+                        )
+                    )
+                    nursery.start_soon(_maybe_add_to_routing_table, request)
 
     async def _serve_find_nodes(self) -> None:
         async with self.dispatcher.subscribe(FindNodeMessage) as subscription:
