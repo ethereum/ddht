@@ -1,12 +1,9 @@
-import random
 from typing import Tuple
 
 from eth_typing import NodeID
 from eth_utils import big_endian_to_int, int_to_big_endian
 from eth_utils.toolz import reduce
 import factory
-
-from ddht.kademlia import compute_log_distance
 
 
 def bytes_to_bits(input_bytes: bytes) -> Tuple[bool, ...]:
@@ -36,32 +33,6 @@ class NodeIDFactory(factory.Factory):  # type: ignore
 
     @classmethod
     def at_log_distance(cls, reference: NodeID, log_distance: int) -> NodeID:
-        num_bits = len(reference) * 8
+        from ddht.kademlia import at_log_distance as _at_log_distance
 
-        if log_distance > num_bits:
-            raise ValueError(
-                "Log distance must not be greater than number of bits in the node id"
-            )
-        elif log_distance < 0:
-            raise ValueError("Log distance cannot be negative")
-
-        num_common_bits = num_bits - log_distance
-        flipped_bit_index = num_common_bits
-        num_random_bits = num_bits - num_common_bits - 1
-
-        reference_bits = bytes_to_bits(reference)
-
-        shared_bits = reference_bits[:num_common_bits]
-        flipped_bit = not reference_bits[flipped_bit_index]
-        random_bits = [
-            bool(random.randint(0, 1))
-            for _ in range(
-                flipped_bit_index + 1, flipped_bit_index + 1 + num_random_bits
-            )
-        ]
-
-        result_bits = tuple(list(shared_bits) + [flipped_bit] + random_bits)
-        result = NodeID(bits_to_bytes(result_bits))
-
-        assert compute_log_distance(result, reference) == log_distance
-        return result
+        return _at_log_distance(reference, log_distance)

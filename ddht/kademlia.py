@@ -5,6 +5,7 @@ import itertools
 import logging
 import math
 import random
+import secrets
 import struct
 from typing import (
     Any,
@@ -106,6 +107,21 @@ def compute_log_distance(left_node_id: NodeID, right_node_id: NodeID) -> int:
         raise ValueError("Cannot compute log distance between identical nodes")
     distance = compute_distance(left_node_id, right_node_id)
     return distance.bit_length()
+
+
+def at_log_distance(target: NodeID, distance: int) -> NodeID:
+    node_as_int = int.from_bytes(target, "big")
+    bits_in_common = 256 - (distance - 1)
+
+    # This is the common prefix
+    high_mask = (2 ** bits_in_common - 1) << distance
+    # We flip the bit at the appropriate distance
+    differential_bit = ~node_as_int & (2 ** (distance - 1))
+    # We randomize all of the low bits.
+    low_mask = secrets.randbelow(2 ** (distance - 1))
+
+    node_at_distance = (node_as_int & high_mask) | differential_bit | low_mask
+    return NodeID(node_at_distance.to_bytes(32, "big"))
 
 
 class KademliaRoutingTable(RoutingTableAPI):

@@ -1,6 +1,5 @@
 import itertools
 import logging
-import secrets
 from typing import Collection, Dict, List, Optional, Set, Tuple
 
 from async_service import Service
@@ -12,17 +11,19 @@ from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
 
-from ddht._utils import every, reduce_enrs
+from ddht._utils import every, reduce_enrs, weighted_choice
 from ddht.base_message import InboundMessage
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
 from ddht.kademlia import (
     KademliaRoutingTable,
+    at_log_distance,
     compute_distance,
     compute_log_distance,
     iter_closest_nodes,
 )
+from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import (
     ClientAPI,
     DispatcherAPI,
@@ -429,32 +430,63 @@ class Network(Service, NetworkAPI):
                 pass
 
         # Now repeatedly try to bond with each bootnode until one succeeds.
-        async with trio.open_nursery() as nursery:
-            while self.manager.is_running:
-                for enr in self._bootnodes:
-                    if enr.node_id == self.local_node_id:
-                        continue
-                    endpoint = Endpoint.from_enr(enr)
-                    nursery.start_soon(self._bond, enr.node_id, endpoint)
+        while self.manager.is_running:
+            with trio.move_on_after(20):
+                async with trio.open_nursery() as nursery:
+                    for enr in self._bootnodes:
+                        if enr.node_id == self.local_node_id:
+                            continue
+                        endpoint = Endpoint.from_enr(enr)
+                        nursery.start_soon(self._bond, enr.node_id, endpoint)
 
-                with trio.move_on_after(10):
                     await self._routing_table_ready.wait()
                     break
 
-        # TODO: Need better logic here for more quickly populating the
-        # routing table.  Should start off aggressively filling in the
-        # table, only backing off once the table contains some minimum
-        # number of records **or** searching for new records fails to find
-        # new nodes.  Maybe use a TokenBucket
-        async for _ in every(30):
+        # Now we enter into an infinite loop that continually probes the
+        # network to beep the routing table fresh.  We both perform completely
+        # random lookups, as well as targeted lookups on the outermost routing
+        # table buckets which are not full.
+        #
+        # The `TokenBucket` allows us to burst at the beginning, making quick
+        # successive probes, then slowing down once the
+        #
+        # TokenBucket starts with 10 tokens, refilling at 1 token every 30
+        # seconds.
+        token_bucket = TokenBucket(1 / 30, 10)
+
+        async def _probe_network(target_node_id: NodeID) -> None:
             async with trio.open_nursery() as nursery:
-                target_node_id = NodeID(secrets.token_bytes(32))
                 found_enrs = await self.recursive_find_nodes(target_node_id)
+
                 for enr in found_enrs:
                     if enr.node_id == self.local_node_id:
                         continue
-                    endpoint = Endpoint.from_enr(enr)
+
+                    try:
+                        self.enr_db.set_enr(enr)
+                    except OldSequenceNumber:
+                        pass
+
+                    endpoint = await self.endpoint_for_node_id(enr.node_id)
+
                     nursery.start_soon(self._bond, enr.node_id, endpoint)
+
+        while self.manager.is_running:
+            await token_bucket.take()
+            async with trio.open_nursery() as nursery:
+                # Get the logarithmic distance to the "largest" buckets
+                # that are not full.
+                non_full_bucket_distances = tuple(
+                    idx + 1
+                    for idx, bucket in enumerate(self.routing_table.buckets)
+                    if len(bucket) < self.routing_table.bucket_size  # noqa: E501
+                )[-16:]
+
+                # Probe one of the not-full-buckets with a weighted preference
+                # towards the largest buckets.
+                distance_to_probe = weighted_choice(non_full_bucket_distances)
+                target_node_id = at_log_distance(self.local_node_id, distance_to_probe)
+                nursery.start_soon(_probe_network, target_node_id)
 
     async def _pong_when_pinged(self) -> None:
         async def _maybe_add_to_routing_table(
