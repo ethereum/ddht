@@ -8,6 +8,7 @@ import trio
 
 from ddht.base_message import BaseMessage
 from ddht.tools.factories.v5_1 import PacketFactory
+from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 from ddht.v5_1.messages import PingMessage
 
 
@@ -325,106 +326,39 @@ async def test_session_invalid_rlp(driver):
 
 
 @pytest.mark.trio
-async def test_session_last_message_received_at(driver, autojump_clock):
+async def test_session_is_valid_indefinitely_after_handhake(driver, autojump_clock):
     initiator = driver.initiator.session
     recipient = driver.recipient.session
 
-    with pytest.raises(AttributeError):
-        initiator.last_message_received_at
-    with pytest.raises(AttributeError):
-        recipient.last_message_received_at
+    # test sessions timeout if handshake not completed
+    assert initiator.is_before_handshake
+    assert recipient.is_before_handshake
+    assert not initiator.is_timed_out
+    assert not recipient.is_timed_out
 
-    anchor = trio.current_time()
+    await trio.sleep(SESSION_IDLE_TIMEOUT + 1)
+
+    assert initiator.is_before_handshake
+    assert recipient.is_before_handshake
+    assert initiator.is_timed_out
+    assert recipient.is_timed_out
 
     await driver.handshake()
 
-    async with driver.transmit():
-        assert initiator.last_message_received_at >= anchor
-        assert recipient.last_message_received_at >= anchor
+    # test sessions won't timeout if handshake completed
+    assert initiator.is_after_handshake
+    assert recipient.is_after_handshake
+    assert not initiator.is_timed_out
+    assert not recipient.is_timed_out
 
-        # let the clock advance a little
-        await trio.sleep(1)
-        anchor = trio.current_time()
+    # let the clock advance a little
+    await trio.sleep(1)
 
-        await driver.initiator.send_ping()
-        # need a moment to allow message to process
-        await trio.sleep(0.01)
+    assert not initiator.is_timed_out
+    assert not recipient.is_timed_out
 
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at >= anchor
+    # let the clock advance past the timeout
+    await trio.sleep(SESSION_IDLE_TIMEOUT + 1)
 
-        # let the clock advance a little
-        await trio.sleep(1)
-        anchor = trio.current_time()
-
-        await driver.recipient.send_ping()
-        # need a moment to allow message to process
-        await trio.sleep(0.01)
-
-        assert initiator.last_message_received_at >= anchor
-        assert recipient.last_message_received_at < anchor
-
-        # let the clock advance a little
-        await trio.sleep(1)
-        anchor = trio.current_time()
-
-        # ensure that bad packets do not update the timestamp
-        initiator_node_id = driver.initiator.node.node_id
-        recipient_node_id = driver.recipient.node.node_id
-
-        await driver.send_packet(
-            PacketFactory.who_are_you(dest_node_id=recipient_node_id,)
-        )
-        await trio.sleep(0.01)  # let the packet process
-
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at < anchor
-
-        await driver.send_packet(
-            PacketFactory.who_are_you(dest_node_id=initiator_node_id,)
-        )
-        await trio.sleep(0.01)  # let the packet process
-
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at < anchor
-
-        await driver.send_packet(
-            PacketFactory.handshake(
-                source_node_id=initiator_node_id, dest_node_id=recipient_node_id,
-            )
-        )
-        await trio.sleep(0.01)  # let the packet process
-
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at < anchor
-
-        await driver.send_packet(
-            PacketFactory.handshake(
-                source_node_id=recipient_node_id, dest_node_id=initiator_node_id,
-            )
-        )
-        await trio.sleep(0.01)  # let the packet process
-
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at < anchor
-
-        # ensure that undecryptable packets do not update the timestamp
-        await driver.send_packet(
-            PacketFactory.message(
-                source_node_id=initiator_node_id, dest_node_id=recipient_node_id,
-            )
-        )
-        await trio.sleep(0.01)  # let the packet process
-
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at < anchor
-
-        await driver.send_packet(
-            PacketFactory.message(
-                source_node_id=recipient_node_id, dest_node_id=initiator_node_id,
-            )
-        )
-        await trio.sleep(0.01)  # let the packet process
-
-        assert initiator.last_message_received_at < anchor
-        assert recipient.last_message_received_at < anchor
+    assert not initiator.is_timed_out
+    assert not recipient.is_timed_out

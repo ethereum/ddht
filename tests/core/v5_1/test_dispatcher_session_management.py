@@ -25,9 +25,10 @@ async def test_dispatcher_detects_handshake_timeout_as_initiator(
                     await alice_client.send_ping(
                         endpoint=bob.endpoint, node_id=bob.node_id
                     )
+
+                    bob_client.get_manager().cancel()
                     _, envelope = await subscription.receive()
                     assert envelope.packet.is_who_are_you
-                    bob_client.get_manager().cancel()
         # Here we know that the session with bob was created and that bob has terminated
         #
         # Now we wait for the timeout to be triggered

@@ -48,7 +48,6 @@ class BaseSession(SessionAPI):
 
     logger = logging.getLogger("ddht.session.Session")
 
-    _last_message_received_at: float
     _handshake_scheme_registry: HandshakeSchemeRegistryAPI = v51_handshake_scheme_registry
 
     def __init__(
@@ -128,14 +127,13 @@ class BaseSession(SessionAPI):
 
     @property
     def is_timed_out(self) -> bool:
-        return self.timeout_at >= trio.current_time()
+        if self.is_after_handshake:
+            return False
+        return self.timeout_at <= trio.current_time()
 
     @property
     def timeout_at(self) -> float:
-        if self.is_after_handshake:
-            return self._last_message_received_at + SESSION_IDLE_TIMEOUT
-        else:
-            return self.created_at + SESSION_IDLE_TIMEOUT
+        return self.created_at + SESSION_IDLE_TIMEOUT
 
     @property
     def local_enr(self) -> ENRAPI:
@@ -148,12 +146,6 @@ class BaseSession(SessionAPI):
     @property
     def handshake_scheme(self) -> Type[HandshakeSchemeAPI[Any]]:
         return self._handshake_scheme_registry[self.identity_scheme]
-
-    @property
-    def last_message_received_at(self) -> float:
-        if not self.is_after_handshake:
-            raise AttributeError("Last message received at not accessible")
-        return self._last_message_received_at
 
     @property
     def keys(self) -> SessionKeys:
@@ -294,8 +286,6 @@ class SessionInitiator(BaseSession):
                     await self._events.packet_discarded.trigger((self, envelope))
                     return False
                 else:
-                    self._last_message_received_at = trio.current_time()
-
                     await self._inbound_message_send_channel.send(
                         AnyInboundMessage(
                             message=message,
@@ -525,7 +515,6 @@ class SessionRecipient(BaseSession):
                     await self._events.packet_discarded.trigger((self, envelope))
                     return False
                 else:
-                    self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
                         AnyInboundMessage(
                             message=message,
@@ -557,7 +546,6 @@ class SessionRecipient(BaseSession):
                     return False
                 else:
                     self._status = SessionStatus.AFTER
-                    self._last_message_received_at = trio.current_time()
                     await self._events.session_handshake_complete.trigger(self)
                     await self._process_message_buffers()
                     return True
