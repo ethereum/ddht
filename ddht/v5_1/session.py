@@ -260,7 +260,7 @@ class SessionInitiator(BaseSession):
             try:
                 self._outbound_message_buffer_send_channel.send_nowait(message)
             except trio.WouldBlock:
-                self.logger.warning(
+                self.logger.debug(
                     "%s: Discarding message due to full outbound message buffer: %s",
                     self,
                     message,
@@ -566,8 +566,12 @@ class SessionRecipient(BaseSession):
                 try:
                     self._inbound_envelope_buffer_send_channel.send_nowait(envelope)
                 except trio.WouldBlock:
-                    pass
-
+                    self.logger.debug(
+                        "%s: Discarding inbound envelope due to full buffer: %s",
+                        self,
+                        envelope,
+                    )
+                    await self._events.packet_discarded.trigger((self, envelope))
                 # We cannot actually know whether this packet will be properly
                 # handled.  However, of the available choices, returning
                 # `False` here is optimal.
