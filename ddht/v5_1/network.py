@@ -459,7 +459,7 @@ class Network(Service, NetworkAPI):
                     enr_seq=request.message.enr_seq,
                     endpoint=request.sender_endpoint,
                 )
-            except EmptyFindNodesResponse:
+            except (trio.TooSlowError, EmptyFindNodesResponse):
                 return
 
             self.routing_table.update(enr.node_id)
