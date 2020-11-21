@@ -165,6 +165,8 @@ class RPC:
     findNodes = RPCEndpoint("discv5_findNodes")
     sendFindNodes = RPCEndpoint("discv5_sendFindNodes")
     sendFoundNodes = RPCEndpoint("discv5_sendFoundNodes")
+    sendTalkRequest = RPCEndpoint("discv5_sendTalkRequest")
+    sendTalkResponse = RPCEndpoint("discv5_sendTalkResponse")
 
 
 NodeIDIdentifier = Union[ENRAPI, str, bytes, NodeID, HexStr]
@@ -278,6 +280,20 @@ def send_found_nodes_munger(
     )
 
 
+def send_talk_request_munger(
+    module: Any, identifier: NodeIDIdentifier, protocol: HexStr, payload: HexStr,
+) -> Tuple[str, Sequence[str], HexStr]:
+    """
+    Normalizes the inputs for the `discv5_sendTalkRequest` JSON-RPC endpoint
+    """
+    # protocol / payload?
+    return (
+        normalize_node_id_identifier(identifier),
+        protocol, # these aren't accurate id names
+        payload,
+    )
+
+
 def find_nodes_response_formatter(enr_reprs: Sequence[str]) -> Tuple[ENRAPI, ...]:
     return tuple(ENR.from_repr(enr_repr) for enr_repr in enr_reprs)
 
@@ -352,4 +368,14 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.sendFoundNodes,
         result_formatters=lambda method: IntegerPayload.from_rpc_response,
         mungers=[send_found_nodes_munger],
+    )
+    send_talk_request = Method(
+        RPC.sendTalkRequest,
+        result_formatters=lambda method: HexStrPayload.from_rpc_response,
+        mungers=[send_talk_request_munger],
+    )
+    send_talk_response = Method(
+        RPC.sendTalkResponse,
+        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        mungers=[send_talk_request_munger],
     )

@@ -195,6 +195,55 @@ class SendFoundNodesHandler(RPCHandler[SendFoundNodesRPCParams, int]):
         return num_batches
 
 
+class SendTalkRequestHandler(RPCHandler[FindNodesRPCParams, HexStr]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> FindNodesRPCParams:
+        # should we accept request_id as a param here? 
+        # it's typically default=None - but what right now we can't pass
+        # one in if we wanted to
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 3)
+        raw_destination, raw_protocol, raw_payload = raw_params
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        # normalize protocol / payload?
+        return node_id, endpoint, to_bytes(hexstr=raw_protocol), to_bytes(hexstr=raw_payload)
+
+    async def do_call(self, params: FindNodesRPCParams) -> HexStr:
+        node_id, endpoint, protocol, payload = params
+        if endpoint is None:
+            enr = await self._network.lookup_enr(node_id)
+            endpoint = Endpoint.from_enr(enr)
+        message_request_id = await self._network.client.send_talk_request(
+            node_id, endpoint, protocol=protocol, payload=payload,
+        )
+        return encode_hex(message_request_id)
+
+
+class SendTalkResponseHandler(RPCHandler[FindNodesRPCParams, HexStr]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> FindNodesRPCParams:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 3)
+        raw_destination, raw_payload, raw_request_id = raw_params
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        # normalize protocol / payload?
+        return node_id, endpoint, to_bytes(hexstr=raw_payload), to_bytes(hexstr=raw_request_id)
+
+    async def do_call(self, params: FindNodesRPCParams) -> None:
+        node_id, endpoint, payload, request_id = params
+        if endpoint is None:
+            enr = await self._network.lookup_enr(node_id)
+            endpoint = Endpoint.from_enr(enr)
+        response = await self._network.client.send_talk_response(
+            node_id, endpoint, payload=payload, request_id=request_id,
+        )
+        return response
+
+
 class GetENRHandler(RPCHandler[NodeID, GetENRResponse]):
     def __init__(self, network: NetworkAPI) -> None:
         self._network = network
@@ -288,6 +337,8 @@ def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerA
     yield ("discv5_sendFoundNodes", SendFoundNodesHandler(network))
     yield ("discv5_sendPing", SendPingHandler(network))
     yield ("discv5_sendPong", SendPongHandler(network))
+    yield ("discv5_sendTalkRequest", SendTalkRequestHandler(network))
+    yield ("discv5_sendTalkResponse", SendTalkResponseHandler(network))
     yield ("discv5_getENR", GetENRHandler(network))
     yield ("discv5_deleteENR", DeleteENRHandler(network))
     yield ("discv5_lookupENR", LookupENRHandler(network))
