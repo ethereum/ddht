@@ -360,15 +360,22 @@ class Network(Service, NetworkAPI):
         await self.manager.wait_finished()
 
     async def _periodically_report_routing_table(self) -> None:
-        async for _ in every(30, initial_delay=30):
+        async for _ in every(30, initial_delay=10):
             non_empty_buckets = tuple(
-                (idx, bucket)
-                for idx, bucket in enumerate(reversed(self.routing_table.buckets))
-                if bucket
+                reversed(
+                    tuple(
+                        (idx, bucket)
+                        for idx, bucket in enumerate(self.routing_table.buckets, 1)
+                        if bucket
+                    )
+                )
             )
             total_size = sum(len(bucket) for idx, bucket in non_empty_buckets)
             bucket_info = "|".join(
-                tuple(f"{idx}:{len(bucket)}" for idx, bucket in non_empty_buckets)
+                tuple(
+                    f"{idx}:{'F' if len(bucket) == self.routing_table.bucket_size else len(bucket)}"
+                    for idx, bucket in non_empty_buckets
+                )
             )
             self.logger.debug(
                 "routing-table-info: size=%d  buckets=%s", total_size, bucket_info,
