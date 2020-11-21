@@ -1,3 +1,5 @@
+import collections
+from contextlib import AsyncExitStack
 import ipaddress
 import secrets
 from socket import inet_ntoa
@@ -150,6 +152,7 @@ async def test_v51_rpc_ping(make_request, bob_node_id_param, alice, bob):
 @pytest.mark.parametrize(
     "endpoint",
     (
+        "discv5_bond",
         "discv5_deleteENR",
         "discv5_getENR",
         "discv5_lookupENR",
@@ -166,10 +169,12 @@ async def test_v51_rpc_invalid_node_id(make_request, invalid_node_id, endpoint):
 @pytest.mark.parametrize(
     "endpoint",
     (
+        "discv5_bond",
         "discv5_deleteENR",
         "discv5_getENR",
         "discv5_lookupENR",
         "discv5_ping",
+        "discv5_recursiveFindNodes",
         "discv5_setENR",
         "discv5_sendPing",
     ),
@@ -181,7 +186,7 @@ async def test_v51_rpc_missing_node_id(make_request, endpoint):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_ping_web3(make_request, bob_node_id_param_w3, alice, bob, w3):
+async def test_v51_rpc_ping_web3(bob_node_id_param_w3, alice, bob, w3):
     pong = await trio.to_thread.run_sync(w3.discv5.ping, bob_node_id_param_w3)
     assert pong.enr_seq == bob.enr.sequence_number
     assert pong.packet_ip == ipaddress.ip_address(alice.endpoint.ip_address)
@@ -201,13 +206,13 @@ async def test_v51_rpc_get_enr_with_unseen_node_id(make_request, new_enr):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_get_enr_web3(make_request, bob, bob_node_id_param_w3, w3):
+async def test_v51_rpc_get_enr_web3(bob, bob_node_id_param_w3, w3):
     response = await trio.to_thread.run_sync(w3.discv5.get_enr, bob_node_id_param_w3)
     assert response.enr == bob.enr
 
 
 @pytest.mark.trio
-async def test_v51_rpc_get_enr_web3_unseen_node_id(make_request, new_enr, w3):
+async def test_v51_rpc_get_enr_web3_unseen_node_id(new_enr, w3):
     with pytest.raises(Exception, match="Unexpected Error"):
         await trio.to_thread.run_sync(w3.discv5.get_enr, repr(new_enr))
 
@@ -230,7 +235,7 @@ async def test_v51_rpc_set_enr_invalid_enr(make_request, bob):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_set_enr_web3(make_request, w3, new_enr):
+async def test_v51_rpc_set_enr_web3(w3, new_enr):
     response = await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
     assert response is None
 
@@ -239,9 +244,7 @@ async def test_v51_rpc_set_enr_web3(make_request, w3, new_enr):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_set_enr_web3_with_invalid_sequence_number(
-    make_request, w3, new_enr_manager,
-):
+async def test_v51_rpc_set_enr_web3_with_invalid_sequence_number(w3, new_enr_manager):
     # grab the "old" version
     old_enr = new_enr_manager.enr
     await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr_manager.enr))
@@ -280,7 +283,7 @@ async def test_v51_rpc_delete_enr_unknown_node_id(make_request, new_enr):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_delete_enr_web3(make_request, w3, bob, bob_node_id_param_w3):
+async def test_v51_rpc_delete_enr_web3(w3, bob, bob_node_id_param_w3):
     response = await trio.to_thread.run_sync(w3.discv5.get_enr, bob_node_id_param_w3)
     assert response.enr == bob.enr
 
@@ -306,14 +309,14 @@ async def test_v51_rpc_lookup_enr_with_sequence_number(
 
 
 @pytest.mark.trio
-async def test_v51_rpc_lookup_enr_web3(make_request, bob, bob_node_id_param_w3, w3):
+async def test_v51_rpc_lookup_enr_web3(bob, bob_node_id_param_w3, w3):
     response = await trio.to_thread.run_sync(w3.discv5.lookup_enr, bob_node_id_param_w3)
     assert response.enr == bob.enr
 
 
 @pytest.mark.trio
 async def test_v51_rpc_lookup_enr_web3_with_sequence_number(
-    make_request, bob, bob_node_id_param_w3, w3
+    bob, bob_node_id_param_w3, w3
 ):
     response = await trio.to_thread.run_sync(
         w3.discv5.lookup_enr, bob_node_id_param_w3, 101
@@ -329,7 +332,7 @@ async def test_v51_rpc_lookup_enr_with_unseen_node_id(make_request, bob):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_lookup_enr_web3_unseen_node_id(make_request, bob, w3):
+async def test_v51_rpc_lookup_enr_web3_unseen_node_id(bob, w3):
     await trio.to_thread.run_sync(w3.discv5.delete_enr, repr(bob.enr))
     with pytest.raises(Exception, match="Unexpected Error"):
         await trio.to_thread.run_sync(w3.discv5.lookup_enr, repr(bob.enr))
@@ -345,9 +348,7 @@ async def test_v51_rpc_send_ping(make_request, bob_node_id_param, bob_network):
 
 
 @pytest.mark.trio
-async def test_v51_rpc_send_ping_web3(
-    make_request, w3, bob_network, bob_node_id_param_w3
-):
+async def test_v51_rpc_send_ping_web3(w3, bob_network, bob_node_id_param_w3):
     async with bob_network.client.dispatcher.subscribe(PingMessage) as subscription:
         response = await trio.to_thread.run_sync(
             w3.discv5.send_ping, bob_node_id_param_w3
@@ -387,7 +388,7 @@ async def test_v51_rpc_send_pong_missing_node_id(make_request):
 
 @pytest.mark.trio
 async def test_v51_rpc_send_pong_web3(
-    make_request, w3, bob_network, bob_node_id_param_w3,
+    w3, bob_network, bob_node_id_param_w3,
 ):
     request_id = encode_hex(secrets.token_bytes(4))
 
@@ -523,7 +524,7 @@ async def test_v51_rpc_sendFoundNodes_invalid_params(
 
 
 @pytest.mark.trio
-async def test_v51_rpc_findNodes_w3(make_request, bob_node_id_param, bob, w3):
+async def test_v51_rpc_findNodes_w3(bob_node_id_param, bob, w3):
     distances = set()
 
     for _ in range(10):
@@ -578,9 +579,7 @@ async def test_v51_rpc_sendFindNodes(make_request, bob_node_id_param, bob, bob_n
 
 
 @pytest.mark.trio
-async def test_v51_rpc_sendFindNodes_web3(
-    make_request, bob_node_id_param_w3, bob, bob_network, w3
-):
+async def test_v51_rpc_sendFindNodes_web3(bob_node_id_param_w3, bob, bob_network, w3):
     distances = set()
 
     for _ in range(10):
@@ -650,9 +649,7 @@ async def test_v51_rpc_sendFoundNodes(
 
 
 @pytest.mark.trio
-async def test_v51_rpc_sendFoundNodes_web3(
-    make_request, bob_node_id_param_w3, bob, bob_network, w3
-):
+async def test_v51_rpc_sendFoundNodes_web3(bob_node_id_param_w3, bob, bob_network, w3):
     distances = set()
     enrs = set()
 
@@ -878,3 +875,97 @@ async def test_v51_rpc_talk_invalid_params(
         await make_request(endpoint, [bob.node_id.hex(), "0x12"])
     with pytest.raises(Exception, match="'error':"):
         await make_request(endpoint, [bob.node_id.hex(), "0x12", "0x12", "0x12"])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_recursiveFindNodes(tester, bob, make_request):
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(bob.network())
+        bootnodes = collections.deque((bob.enr,), maxlen=4)
+        nodes = [bob]
+        target_node_id = None
+        for _ in range(20):
+            node = tester.node()
+            nodes.append(node)
+            await stack.enter_async_context(node.network(bootnodes=bootnodes))
+            bootnodes.append(node.enr)
+            if (
+                not target_node_id
+                and compute_log_distance(node.node_id, bob.node_id) < 256
+            ):
+                target_node_id = node.node_id
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(5):
+            for _ in range(10):
+                await trio.lowlevel.checkpoint()
+
+        await make_request("discv5_bond", [bob.node_id.hex()])
+
+        with trio.fail_after(10):
+            found_enrs = await make_request(
+                "discv5_recursiveFindNodes", [target_node_id.hex()]
+            )
+
+        found_enrs = tuple(ENR.from_repr(enr_repr).node_id for enr_repr in found_enrs)
+        assert len(found_enrs) > 0
+
+
+@pytest.mark.trio
+async def test_v51_rpc_recursiveFindNodes_web3(tester, bob, w3):
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(bob.network())
+        bootnodes = collections.deque((bob.enr,), maxlen=4)
+        nodes = [bob]
+        target_node_id = None
+        for _ in range(20):
+            node = tester.node()
+            nodes.append(node)
+            await stack.enter_async_context(node.network(bootnodes=bootnodes))
+            bootnodes.append(node.enr)
+            if (
+                not target_node_id
+                and compute_log_distance(node.node_id, bob.node_id) < 256
+            ):
+                target_node_id = node.node_id
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(5):
+            for _ in range(10):
+                await trio.lowlevel.checkpoint()
+
+        await trio.to_thread.run_sync(
+            w3.discv5.bond, bob.node_id.hex(),
+        )
+
+        with trio.fail_after(10):
+            found_enrs = await trio.to_thread.run_sync(
+                w3.discv5.recursive_find_nodes, target_node_id
+            )
+
+        # Ensure that one of the three closest node ids was in the returned node ids
+        assert len(found_enrs) > 0
+        assert isinstance(found_enrs[0], ENR)
+
+
+@pytest.mark.trio
+async def test_v51_rpc_recursive_find_nodes_with_invalid_node_id(
+    request, make_request, invalid_node_id
+):
+    if "unknown-endpoint" not in repr(request):
+        with pytest.raises(Exception, match="'error':"):
+            await make_request("discv5_recursiveFindNodes", [invalid_node_id])
+
+
+@pytest.mark.trio
+async def test_v51_rpc_bond(make_request, bob_node_id_param):
+    bob_response = await make_request("discv5_bond", [bob_node_id_param])
+
+    assert bob_response is True
+
+
+@pytest.mark.trio
+async def test_v51_rpc_bond_web3(bob_node_id_param_w3, w3):
+    response = await trio.to_thread.run_sync(w3.discv5.bond, bob_node_id_param_w3,)
+
+    assert response.value is True
