@@ -1,5 +1,5 @@
 import ipaddress
-from typing import Any, Collection, List, Optional, Tuple
+from typing import Any, Collection, Iterable, List, Optional, Tuple
 
 from eth_enr import ENR
 from eth_typing import HexStr, NodeID
@@ -10,6 +10,8 @@ from eth_utils import (
     is_integer,
     is_list_like,
     remove_0x_prefix,
+    to_bytes,
+    to_tuple,
 )
 
 from ddht.endpoint import Endpoint
@@ -96,6 +98,15 @@ def validate_and_normalize_distances(value: Any) -> Tuple[int, ...]:
             f"Distances must be either a single integer distance or a non-empty list of "
             f"distances: {value}"
         )
+
+
+@to_tuple
+def validate_and_convert_hexstr(*args: Any) -> Iterable[bytes]:
+    for value in args:
+        try:
+            yield to_bytes(hexstr=value)
+        except TypeError:
+            raise RPCError(f"Invalid hexstr parameter: {value}")
 
 
 def validate_and_extract_destination(value: Any) -> Tuple[NodeID, Optional[Endpoint]]:

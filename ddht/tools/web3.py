@@ -12,7 +12,7 @@ from typing import (
     Union,
 )
 
-from eth_utils import add_0x_prefix, encode_hex, remove_0x_prefix
+from eth_utils import add_0x_prefix, decode_hex, encode_hex, remove_0x_prefix
 
 try:
     import web3  # noqa: F401
@@ -23,7 +23,7 @@ except ImportError:
 from eth_enr import ENR, ENRAPI
 from eth_enr.typing import ENR_KV
 from eth_typing import HexStr, NodeID
-from eth_utils import decode_hex
+from mypy_extensions import VarArg
 from web3.method import Method
 from web3.module import ModuleV2
 from web3.types import RPCEndpoint
@@ -167,6 +167,7 @@ class RPC:
     sendFoundNodes = RPCEndpoint("discv5_sendFoundNodes")
     sendTalkRequest = RPCEndpoint("discv5_sendTalkRequest")
     sendTalkResponse = RPCEndpoint("discv5_sendTalkResponse")
+    talk = RPCEndpoint("discv5_talk")
 
 
 NodeIDIdentifier = Union[ENRAPI, str, bytes, NodeID, HexStr]
@@ -280,17 +281,19 @@ def send_found_nodes_munger(
     )
 
 
-def send_talk_request_munger(
-    module: Any, identifier: NodeIDIdentifier, protocol: HexStr, payload: HexStr,
-) -> Tuple[str, Sequence[str], HexStr]:
+def talk_request_munger(
+    module: Any, identifier: NodeIDIdentifier, hexstr_one: HexStr, hexstr_two: HexStr,
+) -> Tuple[str, HexStr, HexStr]:
     """
-    Normalizes the inputs for the `discv5_sendTalkRequest` JSON-RPC endpoint
+    Normalizes the inputs for the following JSON-RPC endpoints:
+    - `discv5_sendTalkRequest` (protocol, payload)
+    - `discv5_sendTalkResponse` (protocol, request_id)
+    - `discv5_talk` (protocol, payload)
     """
-    # protocol / payload?
     return (
         normalize_node_id_identifier(identifier),
-        protocol, # these aren't accurate id names
-        payload,
+        hexstr_one,
+        hexstr_two,
     )
 
 
@@ -308,7 +311,7 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
     get_node_info: Method[Callable[[], NodeInfo]] = Method(
         RPC.nodeInfo, result_formatters=lambda method: NodeInfo.from_rpc_response,
     )
-    update_node_info: Method[Callable[[], NodeInfo]] = Method(
+    update_node_info: Method[Callable[[VarArg(ENR_KV)], UpdateENRPayload]] = Method(
         RPC.updateNodeInfo,
         result_formatters=lambda method: UpdateENRPayload.from_rpc_response,
         mungers=[kv_pair_munger],
@@ -322,7 +325,7 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         result_formatters=lambda method: GetENRPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
-    set_enr: Method[Callable[[NodeIDIdentifier], EmptyPayload]] = Method(
+    set_enr: Method[Callable[[str], EmptyPayload]] = Method(
         RPC.setENR,
         result_formatters=lambda method: EmptyPayload.from_rpc_response,
         mungers=[node_identifier_munger],
@@ -347,7 +350,7 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         result_formatters=lambda method: SendPingPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
-    send_pong: Method[Callable[[NodeIDIdentifier], EmptyPayload]] = Method(
+    send_pong: Method[Callable[[NodeIDIdentifier, HexStr], EmptyPayload]] = Method(
         RPC.sendPong,
         result_formatters=lambda method: EmptyPayload.from_rpc_response,
         mungers=[send_pong_munger],
@@ -359,23 +362,36 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         result_formatters=lambda method: find_nodes_response_formatter,
         mungers=[find_nodes_munger],
     )
-    send_find_nodes = Method(
+    send_find_nodes: Method[
+        Callable[[NodeIDIdentifier, Union[int, Sequence[int]]], HexStrPayload]
+    ] = Method(
         RPC.sendFindNodes,
         result_formatters=lambda method: HexStrPayload.from_rpc_response,
         mungers=[find_nodes_munger],
     )
-    send_found_nodes = Method(
+    send_found_nodes: Method[
+        Callable[[NodeIDIdentifier, Tuple[ENRAPI], HexStr], IntegerPayload]
+    ] = Method(
         RPC.sendFoundNodes,
         result_formatters=lambda method: IntegerPayload.from_rpc_response,
         mungers=[send_found_nodes_munger],
     )
-    send_talk_request = Method(
+    send_talk_request: Method[
+        Callable[[NodeIDIdentifier, HexStr, HexStr], HexStrPayload]
+    ] = Method(
         RPC.sendTalkRequest,
         result_formatters=lambda method: HexStrPayload.from_rpc_response,
-        mungers=[send_talk_request_munger],
+        mungers=[talk_request_munger],
     )
-    send_talk_response = Method(
+    send_talk_response: Method[
+        Callable[[NodeIDIdentifier, HexStr, HexStr], EmptyPayload]
+    ] = Method(
         RPC.sendTalkResponse,
         result_formatters=lambda method: EmptyPayload.from_rpc_response,
-        mungers=[send_talk_request_munger],
+        mungers=[talk_request_munger],
+    )
+    talk: Method[Callable[[NodeIDIdentifier, HexStr, HexStr], HexStrPayload]] = Method(
+        RPC.talk,
+        result_formatters=lambda method: HexStrPayload.from_rpc_response,
+        mungers=[talk_request_munger],
     )
