@@ -262,7 +262,7 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
             bootnodes.append(node.enr)
 
         # give the the network some time to interconnect.
-        with trio.fail_after(5):
+        with trio.fail_after(20):
             for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
@@ -271,7 +271,7 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
         )
 
         # give alice a little time to connect to the network as well
-        with trio.fail_after(5):
+        with trio.fail_after(20):
             for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
@@ -284,7 +284,7 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
         )
         best_node_ids_by_distance = set(node_ids_by_distance[:3])
 
-        with trio.fail_after(10):
+        with trio.fail_after(60):
             found_enrs = await alice_network.recursive_find_nodes(target_node_id)
         found_node_ids = tuple(enr.node_id for enr in found_enrs)
 

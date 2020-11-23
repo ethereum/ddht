@@ -1,9 +1,13 @@
 import asyncio
+from contextlib import contextmanager
 import itertools
+import logging
+import math
 import operator
 import pathlib
 import secrets
 import socket
+import time
 from typing import (
     Any,
     AsyncGenerator,
@@ -12,7 +16,9 @@ from typing import (
     Callable,
     Collection,
     Iterable,
+    Iterator,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
     Union,
@@ -145,3 +151,52 @@ def reduce_enrs(enrs: Collection[ENRAPI]) -> Iterable[ENRAPI]:
             yield enr_group[0]
         else:
             yield max(enr_group, key=operator.attrgetter("sequence_number"))
+
+
+@contextmanager
+def timer(name: str) -> Iterator[None]:
+    start_at = time.monotonic()
+    try:
+        yield
+    finally:
+        end_at = time.monotonic()
+        elapsed = end_at - start_at
+        logging.getLogger("ddht.Timer").info("TIMER[%s]: %f", name, elapsed)
+
+
+TValue = TypeVar("TValue")
+
+
+def weighted_choice(values: Sequence[TValue]) -> TValue:
+    """
+    A simple weighted choice which favors the items later in the list.
+
+    Weighting is linear with the first item having a weight of 1, the second
+    having a weight of 2 and so on.
+
+    values = (a, b, c, d)
+    bound = 10  # 1 + 2 + 3 + 4
+
+    VALUES: [a][ b  ][   c   ][    d      ]
+    BOUND :  1  2  3  4  5  6  7  8  9  10
+
+    We pick at random from BOUND, and calculate in reverse which index in
+    VALUES the chose position corresponds to.
+    """
+    num_values = len(values)
+    # The `bound` is the cumulative sum of `sum(1, 2, 3, ..., n)` where `n` is
+    # the number of items we are choosing from.
+    bound = (num_values * (num_values + 1)) // 2
+
+    # Now we pick a value that is within the bound above, and then solve
+    # backwards for which value corresponds to the chosen position within the
+    # bounds.
+    scaled_index = secrets.randbelow(bound)
+    # This is a simplified quadratic formula to solve the following for the
+    # `index` variable.
+    #
+    # (index * (index + 1)) / 2 = scaled_index
+    #
+    index = int(math.floor(0.5 + math.sqrt(0.25 + 2 * scaled_index))) - 1
+
+    return values[index]
