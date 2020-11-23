@@ -6,70 +6,24 @@ from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
 
 
 @pytest.mark.trio
-async def test_dispatcher_detects_handshake_timeout_as_initiator(
-    alice, bob, autojump_clock
+async def test_dispatcher_intiator_and_recipient_detects_handshake_timeout(
+    driver, autojump_clock
 ):
-    try:
-        alice.enr_db.set_enr(bob.enr)
-    except OldSequenceNumber:
-        pass
-    try:
-        bob.enr_db.set_enr(alice.enr)
-    except OldSequenceNumber:
-        pass
+    await driver.initiator.send_ping()
 
-    async with alice.client() as alice_client:
-        async with bob.client() as bob_client:
-            async with alice.events.session_created.subscribe_and_wait():
-                async with bob.events.packet_sent.subscribe() as subscription:
-                    await alice_client.send_ping(
-                        endpoint=bob.endpoint, node_id=bob.node_id
-                    )
+    assert driver.initiator.session.is_during_handshake
+    assert driver.recipient.session.is_before_handshake
+    assert driver.initiator.session.remote_node_id == driver.recipient.node.node_id
+    assert not driver.initiator.session.is_timed_out
+    assert not driver.recipient.session.is_timed_out
 
-                    bob_client.get_manager().cancel()
-                    _, envelope = await subscription.receive()
-                    assert envelope.packet.is_who_are_you
-        # Here we know that the session with bob was created and that bob has terminated
-        #
-        # Now we wait for the timeout to be triggered
-        with trio.fail_after(SESSION_IDLE_TIMEOUT + 1):
-            async with alice.events.session_timeout.subscribe() as subscription:
-                session = await subscription.receive()
-                assert session.remote_node_id == bob.node_id
+    await trio.sleep(SESSION_IDLE_TIMEOUT - 1)
+    assert not driver.initiator.session.is_timed_out
+    assert not driver.recipient.session.is_timed_out
 
-
-@pytest.mark.trio
-async def test_dispatcher_detects_handshake_timeout_as_recipient(
-    alice, bob, autojump_clock
-):
-    try:
-        alice.enr_db.set_enr(bob.enr)
-    except OldSequenceNumber:
-        pass
-    try:
-        bob.enr_db.set_enr(alice.enr)
-    except OldSequenceNumber:
-        pass
-
-    async with bob.client():
-        async with alice.client() as alice_client:
-            async with bob.events.session_created.subscribe_and_wait():
-                async with alice.events.packet_received.subscribe() as subscription:
-                    await alice_client.send_ping(
-                        endpoint=bob.endpoint, node_id=bob.node_id
-                    )
-                    async for _, envelope in subscription:
-                        if envelope.packet.is_who_are_you:
-                            alice_client.get_manager().cancel()
-                            break
-        # Here we know that the session with bob was created and that alice has
-        # terminated, failing to send the final HandshakePacket
-        #
-        # Now we wait for the timeout to be triggered
-        with trio.fail_after(SESSION_IDLE_TIMEOUT + 1):
-            async with bob.events.session_timeout.subscribe() as subscription:
-                session = await subscription.receive()
-                assert session.remote_node_id == alice.node_id
+    await trio.sleep(1)
+    assert driver.initiator.session.is_timed_out
+    assert driver.recipient.session.is_timed_out
 
 
 @pytest.mark.trio
