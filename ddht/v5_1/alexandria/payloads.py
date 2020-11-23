@@ -3,6 +3,7 @@ from typing import NamedTuple, Sequence, Tuple
 from eth_enr import ENR, ENRAPI
 import rlp
 
+from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
@@ -43,3 +44,10 @@ class GetContentPayload(NamedTuple):
 class ContentPayload(NamedTuple):
     is_proof: bool
     payload: bytes
+
+
+AdvertisePayload = Tuple[Advertisement, ...]
+
+
+class AckPayload(NamedTuple):
+    advertisement_radius: int
