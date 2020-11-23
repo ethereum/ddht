@@ -2,7 +2,7 @@ from typing import AsyncIterator, Collection, Optional
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
-from eth_enr import ENRAPI, ENRDatabaseAPI
+from eth_enr import ENRAPI, QueryableENRDatabaseAPI
 from eth_enr.constants import IP_V4_ADDRESS_ENR_KEY, UDP_PORT_ENR_KEY
 from eth_enr.tools.factories import ENRFactory
 from eth_keys import keys
@@ -26,7 +26,7 @@ class Node(NodeAPI):
         self,
         private_key: keys.PrivateKey,
         endpoint: Endpoint,
-        enr_db: ENRDatabaseAPI,
+        enr_db: QueryableENRDatabaseAPI,
         events: Optional[EventsAPI] = None,
     ) -> None:
         self.private_key = private_key

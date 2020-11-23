@@ -3,7 +3,7 @@ import logging
 from typing import Collection, Dict, List, Optional, Set, Tuple
 
 from async_service import Service
-from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
+from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
 from eth_utils import ValidationError
@@ -174,7 +174,7 @@ class Network(Service, NetworkAPI):
         return self.client.pool
 
     @property
-    def enr_db(self) -> ENRDatabaseAPI:
+    def enr_db(self) -> QueryableENRDatabaseAPI:
         return self.client.enr_db
 
     #

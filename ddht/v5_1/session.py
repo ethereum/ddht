@@ -6,7 +6,7 @@ import secrets
 from typing import Any, Optional, Tuple, Type, cast
 import uuid
 
-from eth_enr import ENRAPI, ENRDatabaseAPI, IdentitySchemeAPI
+from eth_enr import ENRAPI, ENRDatabaseAPI, IdentitySchemeAPI, OldSequenceNumber
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import ValidationError
@@ -654,7 +654,10 @@ class SessionRecipient(BaseSession):
 
         if packet.auth_data.record is not None:
             remote_enr = packet.auth_data.record
-            self._enr_db.set_enr(remote_enr)
+            try:
+                self._enr_db.set_enr(remote_enr)
+            except OldSequenceNumber:
+                pass
         else:
             remote_enr = self._enr_db.get_enr(self.remote_node_id)
 

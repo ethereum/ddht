@@ -3,7 +3,7 @@ import secrets
 from typing import Collection, List, Optional, Tuple
 
 from async_service import Service
-from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
+from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
 from eth_utils.toolz import cons, first
@@ -68,7 +68,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         return self.network.enr_manager
 
     @property
-    def enr_db(self) -> ENRDatabaseAPI:
+    def enr_db(self) -> QueryableENRDatabaseAPI:
         return self.network.enr_db
 
     async def run(self) -> None:

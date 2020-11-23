@@ -13,7 +13,7 @@ from typing import (
 import uuid
 
 from async_service import ServiceAPI
-from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI, IdentitySchemeAPI
+from eth_enr import ENRAPI, ENRManagerAPI, IdentitySchemeAPI, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
@@ -235,7 +235,7 @@ class ClientAPI(ServiceAPI):
     events: EventsAPI
     dispatcher: DispatcherAPI
     pool: PoolAPI
-    enr_db: ENRDatabaseAPI
+    enr_db: QueryableENRDatabaseAPI
     request_tracker: RequestTrackerAPI
 
     @property
@@ -430,7 +430,7 @@ class NetworkProtocol(Protocol):
         ...
 
     @property
-    def enr_db(self) -> ENRDatabaseAPI:
+    def enr_db(self) -> QueryableENRDatabaseAPI:
         ...
 
     async def find_nodes(
@@ -480,7 +480,7 @@ class NetworkAPI(ServiceAPI):
 
     @property
     @abstractmethod
-    def enr_db(self) -> ENRDatabaseAPI:
+    def enr_db(self) -> QueryableENRDatabaseAPI:
         ...
 
     #

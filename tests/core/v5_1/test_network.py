@@ -2,7 +2,7 @@ import collections
 from contextlib import AsyncExitStack
 import secrets
 
-from eth_enr import ENRManager
+from eth_enr import ENRManager, OldSequenceNumber
 from eth_enr.tools.factories import ENRFactory
 from eth_utils import ValidationError
 import pytest
@@ -35,7 +35,10 @@ async def test_network_responds_to_find_node_requests(alice, bob):
         async with bob.network() as bob_network:
             for _ in range(200):
                 enr = ENRFactory()
-                bob.enr_db.set_enr(enr)
+                try:
+                    bob.enr_db.set_enr(enr)
+                except OldSequenceNumber:
+                    pass
                 bob_network.routing_table.update(enr.node_id)
                 distances.add(compute_log_distance(enr.node_id, bob.node_id))
                 if distances.issuperset({0, 256, 255}):
@@ -83,7 +86,10 @@ async def test_network_find_nodes_api(alice, bob):
         async with bob.network() as bob_network:
             for _ in range(200):
                 enr = ENRFactory()
-                bob.enr_db.set_enr(enr)
+                try:
+                    bob.enr_db.set_enr(enr)
+                except OldSequenceNumber:
+                    pass
                 bob_network.routing_table.update(enr.node_id)
                 distances.add(compute_log_distance(enr.node_id, bob.node_id))
                 if distances.issuperset({0, 256, 255}):
@@ -242,7 +248,10 @@ async def test_network_lookup_fallback_to_recursive_find_nodes(
 
     async with carol.network():
         # now add carol to bob's routing table
-        bob.enr_db.set_enr(carol.enr)
+        try:
+            bob.enr_db.set_enr(carol.enr)
+        except OldSequenceNumber:
+            pass
         bob_network.routing_table.update(carol.node_id)
 
         with trio.fail_after(2):
@@ -357,7 +366,10 @@ async def test_network_add_talk_protocol(alice):
 async def test_network_responds_to_unhandled_protocol_messages(
     alice, bob, autojump_clock, bob_client
 ):
-    bob.enr_db.set_enr(alice.enr)
+    try:
+        bob.enr_db.set_enr(alice.enr)
+    except OldSequenceNumber:
+        pass
 
     async with alice.network() as alice_network:
         with trio.fail_after(1):
@@ -391,7 +403,7 @@ async def test_network_bond_api(alice, bob, alice_network, bob_network):
 async def test_network_bond_api_fetches_enr(alice, bob, alice_network, bob_network):
     with trio.fail_after(2):
         # ensure alice has the *old* version of bob's ENR
-        alice.enr_db.set_enr(bob.enr)
+        alice.enr_db.get_enr(bob.enr.node_id) == bob.enr
 
         # create the new version of bob's ENR
         bob_network.enr_manager.update((b"test", b"value"))
@@ -419,7 +431,7 @@ async def test_network_bond_handles_timeout_retrieving_ENR(
     alice, bob, alice_network, bob_client, autojump_clock
 ):
     # ensure alice has the *old* version of bob's ENR
-    alice.enr_db.set_enr(bob.enr)
+    alice.enr_db.get_enr(bob.enr.node_id) == bob.enr
 
     # create the new version of bob's ENR
     bob_client.enr_manager.update((b"test", b"value"))

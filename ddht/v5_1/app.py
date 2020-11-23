@@ -1,7 +1,12 @@
 import argparse
+import sqlite3
 
-from eth.db.backends.level import LevelDB
-from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
+from eth_enr import (
+    ENRManager,
+    QueryableENRDatabaseAPI,
+    QueryableENRDB,
+    default_identity_scheme_registry,
+)
 from eth_keys import keys
 from eth_utils import encode_hex
 from eth_utils.toolz import merge
@@ -23,7 +28,7 @@ from ddht.v5_1.messages import v51_registry
 from ddht.v5_1.network import Network
 from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
-ENR_DATABASE_DIR_NAME = "enr-db"
+ENR_DATABASE_FILENAME = "enrdb.sqlite3"
 
 
 def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
@@ -66,9 +71,10 @@ class Application(BaseApplication):
 
         message_type_registry = v51_registry
 
-        enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
-        enr_database_dir.mkdir(exist_ok=True)
-        enr_db = ENRDB(LevelDB(enr_database_dir), identity_scheme_registry)
+        enr_database_file = self._boot_info.base_dir / ENR_DATABASE_FILENAME
+        enr_db: QueryableENRDatabaseAPI = QueryableENRDB(
+            sqlite3.connect(enr_database_file), identity_scheme_registry
+        )
 
         local_private_key = get_local_private_key(self._boot_info)
 

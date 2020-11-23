@@ -3,7 +3,7 @@ import socket
 from typing import Collection, List, Optional, Sequence, Tuple
 
 from async_service import Service
-from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManager
+from eth_enr import ENRAPI, ENRManager, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
@@ -52,7 +52,7 @@ class Client(Service, ClientAPI):
         self,
         local_private_key: keys.PrivateKey,
         listen_on: Endpoint,
-        enr_db: ENRDatabaseAPI,
+        enr_db: QueryableENRDatabaseAPI,
         events: EventsAPI = None,
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
