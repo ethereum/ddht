@@ -1,9 +1,10 @@
 import ipaddress
 import secrets
 from socket import inet_ntoa
+import sqlite3
 
 from async_service import background_trio_service
-from eth_enr import ENR, OldSequenceNumber
+from eth_enr import ENR, ENRManager, OldSequenceNumber, QueryableENRDB
 from eth_enr.tools.factories import ENRFactory
 from eth_utils import encode_hex
 import pytest
@@ -12,6 +13,7 @@ from web3 import IPCProvider, Web3
 
 from ddht.kademlia import compute_log_distance
 from ddht.rpc import RPCServer
+from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.tools.web3 import DiscoveryV5Module
 from ddht.v5_1.messages import (
@@ -119,8 +121,19 @@ def bob_node_id_param_w3(request, alice, bob, bob_network):
 
 
 @pytest.fixture
-def new_enr():
-    return ENRFactory(sequence_number=secrets.randbelow(100) + 1)
+def new_enr_manager():
+    enr_db = QueryableENRDB(sqlite3.connect(":memory:"))
+    private_key = PrivateKeyFactory()
+    base_enr = ENRFactory(
+        private_key=private_key.to_bytes(), sequence_number=secrets.randbelow(100) + 1,
+    )
+    enr_db.set_enr(base_enr)
+    return ENRManager(private_key, enr_db)
+
+
+@pytest.fixture
+def new_enr(new_enr_manager):
+    return new_enr_manager.enr
 
 
 @pytest.mark.trio
@@ -224,14 +237,25 @@ async def test_v51_rpc_set_enr_web3(make_request, w3, new_enr):
 
 @pytest.mark.trio
 async def test_v51_rpc_set_enr_web3_with_invalid_sequence_number(
-    make_request, w3, new_enr
+    make_request, w3, new_enr_manager,
 ):
-    response = await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
+    # grab the "old" version
+    old_enr = new_enr_manager.enr
+    await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr_manager.enr))
+
+    # update the ENR so the old version will have an old sequence number
+    new_enr_manager.update((b"test", b"value"))
+    assert new_enr_manager.enr.sequence_number == old_enr.sequence_number + 1
+
+    # ensure that the database has the new version
+    response = await trio.to_thread.run_sync(
+        w3.discv5.set_enr, repr(new_enr_manager.enr)
+    )
     assert response is None
 
-    new_enr._sequence_number = new_enr._sequence_number - 1
+    # setting the old one should throw an error
     with pytest.raises(Exception, match="Invalid ENR"):
-        await trio.to_thread.run_sync(w3.discv5.set_enr, repr(new_enr))
+        await trio.to_thread.run_sync(w3.discv5.set_enr, repr(old_enr))
 
 
 @pytest.mark.trio

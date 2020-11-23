@@ -5,7 +5,7 @@ from typing import AsyncIterator, Dict, NamedTuple, Optional, Set, Tuple
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
-from eth_enr import QueryableENRDatabaseAPI, QueryableENRDB, OldSequenceNumber
+from eth_enr import OldSequenceNumber, QueryableENRDatabaseAPI, QueryableENRDB
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
