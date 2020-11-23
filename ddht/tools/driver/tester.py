@@ -1,10 +1,11 @@
 from contextlib import AsyncExitStack
 import logging
+import sqlite3
 from typing import AsyncIterator, Dict, NamedTuple, Optional, Set, Tuple
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
-from eth_enr import ENRDB, ENRDatabaseAPI
+from eth_enr import QueryableENRDatabaseAPI, QueryableENRDB, OldSequenceNumber
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
@@ -101,7 +102,7 @@ class Tester(TesterAPI):
         self,
         private_key: Optional[keys.PrivateKey] = None,
         endpoint: Optional[Endpoint] = None,
-        enr_db: Optional[ENRDatabaseAPI] = None,
+        enr_db: Optional[QueryableENRDatabaseAPI] = None,
         events: Optional[EventsAPI] = None,
     ) -> Node:
         if private_key is None:
@@ -109,7 +110,7 @@ class Tester(TesterAPI):
         if endpoint is None:
             endpoint = EndpointFactory.localhost()
         if enr_db is None:
-            enr_db = ENRDB({})
+            enr_db = QueryableENRDB(sqlite3.connect(":memory:"))
         return Node(
             private_key=private_key, endpoint=endpoint, enr_db=enr_db, events=events
         )
@@ -134,7 +135,10 @@ class Tester(TesterAPI):
             recipient.endpoint, recipient.node_id
         )
         # the initiator always needs to have the remote enr present in their database
-        initiator.enr_db.set_enr(recipient.enr)
+        try:
+            initiator.enr_db.set_enr(recipient.enr)
+        except OldSequenceNumber:
+            pass
 
         recipient_pool, recipient_channels = self._get_or_create_pool_for_node(
             recipient

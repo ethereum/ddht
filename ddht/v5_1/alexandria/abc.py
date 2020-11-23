@@ -11,7 +11,7 @@ from typing import (
 )
 
 from async_service import ServiceAPI
-from eth_enr import ENRAPI, ENRDatabaseAPI, ENRManagerAPI
+from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_typing import NodeID
 import trio
 
@@ -195,7 +195,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     @property
     @abstractmethod
-    def enr_db(self) -> ENRDatabaseAPI:
+    def enr_db(self) -> QueryableENRDatabaseAPI:
         ...
 
     #

@@ -3,7 +3,7 @@ import secrets
 from socket import inet_ntoa
 
 from async_service import background_trio_service
-from eth_enr import ENR
+from eth_enr import ENR, OldSequenceNumber
 from eth_enr.tools.factories import ENRFactory
 from eth_utils import encode_hex
 import pytest
@@ -45,7 +45,10 @@ async def bob_network(bob):
 
 @pytest.fixture(params=("nodeid", "enode", "enr"))
 def bob_node_id_param(request, alice, bob, bob_network):
-    alice.enr_db.set_enr(bob.enr)
+    try:
+        alice.enr_db.set_enr(bob.enr)
+    except OldSequenceNumber:
+        pass
 
     if request.param == "nodeid":
         return bob.node_id.hex()
@@ -96,7 +99,10 @@ def invalid_node_id(request, bob, bob_network):
 
 @pytest.fixture(params=("nodeid", "nodeid-hex", "enode", "enr", "enr-repr"))
 def bob_node_id_param_w3(request, alice, bob, bob_network):
-    alice.enr_db.set_enr(bob.enr)
+    try:
+        alice.enr_db.set_enr(bob.enr)
+    except OldSequenceNumber:
+        pass
 
     if request.param == "nodeid":
         return bob.node_id

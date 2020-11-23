@@ -1,8 +1,8 @@
 import json
+import sqlite3
 
 from async_service import background_trio_service
-from eth_enr import ENR
-from eth_enr.enr_db import ENRDB
+from eth_enr import ENR, QueryableENRDB
 from eth_enr.enr_manager import ENRManager
 from eth_enr.tools.factories import PrivateKeyFactory
 from eth_utils import decode_hex, to_bytes
@@ -20,7 +20,7 @@ from ddht.tools.web3 import DiscoveryV5Module
 
 @pytest.fixture
 def enr_manager():
-    enr_db = ENRDB({})
+    enr_db = QueryableENRDB(sqlite3.connect(":memory:"))
     return ENRManager(PrivateKeyFactory(), enr_db)
 
 

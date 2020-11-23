@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import AsyncContextManager, Collection, NamedTuple, Optional, Tuple
 
-from eth_enr import ENRAPI, ENRDatabaseAPI
+from eth_enr import ENRAPI, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
 
@@ -41,7 +41,7 @@ class AlexandriaNodeAPI(ABC):
 class NodeAPI(ABC):
     private_key: keys.PrivateKey
     enr: ENRAPI
-    enr_db: ENRDatabaseAPI
+    enr_db: QueryableENRDatabaseAPI
     events: EventsAPI
     alexandria: AlexandriaNodeAPI
 

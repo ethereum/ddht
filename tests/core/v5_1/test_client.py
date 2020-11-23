@@ -12,20 +12,6 @@ from ddht.kademlia import KademliaRoutingTable
 from ddht.v5_1.messages import TalkRequestMessage
 
 
-@pytest.fixture
-async def alice_client(alice, bob):
-    alice.enr_db.set_enr(bob.enr)
-    async with alice.client() as alice_client:
-        yield alice_client
-
-
-@pytest.fixture
-async def bob_client(alice, bob):
-    bob.enr_db.set_enr(alice.enr)
-    async with bob.client() as bob_client:
-        yield bob_client
-
-
 @pytest.mark.trio
 async def test_client_send_ping(alice, bob, alice_client, bob_client):
     with trio.fail_after(2):
