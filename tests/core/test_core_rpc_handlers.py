@@ -15,7 +15,7 @@ from ddht.kademlia import KademliaRoutingTable
 from ddht.rpc import MAXIMUM_RPC_PAYLOAD_SIZE, RPCServer
 from ddht.rpc_handlers import get_core_rpc_handlers
 from ddht.tools.factories.node_id import NodeIDFactory
-from ddht.tools.web3 import DiscoveryV5Module
+from ddht.tools.w3 import DiscoveryV5Module
 
 
 @pytest.fixture

@@ -17,7 +17,7 @@ from ddht.kademlia import compute_log_distance
 from ddht.rpc import RPCServer
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_id import NodeIDFactory
-from ddht.tools.web3 import DiscoveryV5Module
+from ddht.tools.w3 import DiscoveryV5Module
 from ddht.v5_1.abc import TalkProtocolAPI
 from ddht.v5_1.messages import (
     FindNodeMessage,
