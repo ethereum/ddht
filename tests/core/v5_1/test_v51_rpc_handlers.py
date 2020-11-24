@@ -6,7 +6,7 @@ import sqlite3
 from async_service import background_trio_service
 from eth_enr import ENR, ENRManager, OldSequenceNumber, QueryableENRDB
 from eth_enr.tools.factories import ENRFactory
-from eth_utils import encode_hex
+from eth_utils import decode_hex, encode_hex
 import pytest
 import trio
 from web3 import IPCProvider, Web3
@@ -16,11 +16,14 @@ from ddht.rpc import RPCServer
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.tools.web3 import DiscoveryV5Module
+from ddht.v5_1.abc import TalkProtocolAPI
 from ddht.v5_1.messages import (
     FindNodeMessage,
     FoundNodesMessage,
     PingMessage,
     PongMessage,
+    TalkRequestMessage,
+    TalkResponseMessage,
 )
 from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
@@ -558,10 +561,10 @@ async def test_v51_rpc_sendFindNodes(make_request, bob_node_id_param, bob, bob_n
             "discv5_sendFindNodes", [bob_node_id_param, 0]
         )
         with trio.fail_after(2):
-            first_receive = await subscription.receive()
+            first_receipt = await subscription.receive()
 
-        assert encode_hex(first_receive.message.request_id) == single_response
-        assert first_receive.message.distances == (0,)
+        assert encode_hex(first_receipt.message.request_id) == single_response
+        assert first_receipt.message.distances == (0,)
 
         # request with multiple distances
         multiple_response = await make_request(
@@ -569,9 +572,9 @@ async def test_v51_rpc_sendFindNodes(make_request, bob_node_id_param, bob, bob_n
         )
 
         with trio.fail_after(2):
-            second_receive = await subscription.receive()
-        assert encode_hex(second_receive.message.request_id) == multiple_response
-        assert second_receive.message.distances == tuple(distances)
+            second_receipt = await subscription.receive()
+        assert encode_hex(second_receipt.message.request_id) == multiple_response
+        assert second_receipt.message.distances == tuple(distances)
 
 
 @pytest.mark.trio
@@ -590,10 +593,10 @@ async def test_v51_rpc_sendFindNodes_web3(
             w3.discv5.send_find_nodes, bob_node_id_param_w3, 0
         )
         with trio.fail_after(2):
-            first_receive = await subscription.receive()
+            first_receipt = await subscription.receive()
 
-        assert encode_hex(first_receive.message.request_id) == first_response.value
-        assert first_receive.message.distances == (0,)
+        assert encode_hex(first_receipt.message.request_id) == first_response.value
+        assert first_receipt.message.distances == (0,)
 
         # request with multiple distances
         second_response = await trio.to_thread.run_sync(
@@ -601,9 +604,9 @@ async def test_v51_rpc_sendFindNodes_web3(
         )
 
         with trio.fail_after(2):
-            second_receive = await subscription.receive()
-        assert encode_hex(second_receive.message.request_id) == second_response.value
-        assert second_receive.message.distances == tuple(distances)
+            second_receipt = await subscription.receive()
+        assert encode_hex(second_receipt.message.request_id) == second_response.value
+        assert second_receipt.message.distances == tuple(distances)
 
 
 @pytest.mark.trio
@@ -629,10 +632,10 @@ async def test_v51_rpc_sendFoundNodes(
             "discv5_sendFoundNodes", [bob_node_id_param, (single_enr,), request_id]
         )
         with trio.fail_after(2):
-            first_receive = await subscription.receive()
+            first_receipt = await subscription.receive()
 
-        assert first_receive.message.total == first_response
-        assert encode_hex(first_receive.message.request_id) == request_id
+        assert first_receipt.message.total == first_response
+        assert encode_hex(first_receipt.message.request_id) == request_id
 
         # request with multiple enrs
         second_response = await make_request(
@@ -640,10 +643,10 @@ async def test_v51_rpc_sendFoundNodes(
         )
 
         with trio.fail_after(2):
-            second_receive = await subscription.receive()
+            second_receipt = await subscription.receive()
 
-        assert second_receive.message.total == second_response
-        assert encode_hex(second_receive.message.request_id) == request_id
+        assert second_receipt.message.total == second_response
+        assert encode_hex(second_receipt.message.request_id) == request_id
 
 
 @pytest.mark.trio
@@ -670,10 +673,10 @@ async def test_v51_rpc_sendFoundNodes_web3(
             w3.discv5.send_found_nodes, bob_node_id_param_w3, (single_enr,), request_id
         )
         with trio.fail_after(2):
-            first_receive = await subscription.receive()
+            first_receipt = await subscription.receive()
 
-        assert first_receive.message.total == first_response.value
-        assert encode_hex(first_receive.message.request_id) == request_id
+        assert first_receipt.message.total == first_response.value
+        assert encode_hex(first_receipt.message.request_id) == request_id
 
         # request with multiple enrs
         second_response = await trio.to_thread.run_sync(
@@ -681,7 +684,197 @@ async def test_v51_rpc_sendFoundNodes_web3(
         )
 
         with trio.fail_after(2):
-            second_receive = await subscription.receive()
+            second_receipt = await subscription.receive()
 
-        assert second_receive.message.total == second_response.value
-        assert encode_hex(second_receive.message.request_id) == request_id
+        assert second_receipt.message.total == second_response.value
+        assert encode_hex(second_receipt.message.request_id) == request_id
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendTalkRequest(make_request, bob_node_id_param, bob_network):
+    async with bob_network.client.dispatcher.subscribe(
+        TalkRequestMessage
+    ) as subscription:
+        response = await make_request(
+            "discv5_sendTalkRequest", [bob_node_id_param, "0x1234", "0x1234"]
+        )
+        with trio.fail_after(2):
+            receipt = await subscription.receive()
+
+        assert encode_hex(receipt.request_id) == response
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendTalkRequest_web3(
+    make_request, bob_node_id_param_w3, bob_network, w3
+):
+    async with bob_network.client.dispatcher.subscribe(
+        TalkRequestMessage
+    ) as subscription:
+        response = await trio.to_thread.run_sync(
+            w3.discv5.send_talk_request, bob_node_id_param_w3, "0x1234", "0x1234",
+        )
+        with trio.fail_after(2):
+            receipt = await subscription.receive()
+
+        assert encode_hex(receipt.request_id) == response.value
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendTalkResponse(make_request, bob_node_id_param, bob_network):
+    async with bob_network.client.dispatcher.subscribe(
+        TalkResponseMessage
+    ) as subscription:
+        response = await make_request(
+            "discv5_sendTalkResponse", [bob_node_id_param, "0x1234", "0x1234"]
+        )
+        with trio.fail_after(2):
+            receipt = await subscription.receive()
+
+        assert response is None
+        assert encode_hex(receipt.request_id) == "0x1234"
+
+
+@pytest.mark.trio
+async def test_v51_rpc_sendTalkResponse_web3(
+    make_request, bob_node_id_param_w3, bob_network, w3
+):
+    async with bob_network.client.dispatcher.subscribe(
+        TalkResponseMessage
+    ) as subscription:
+        response = await trio.to_thread.run_sync(
+            w3.discv5.send_talk_response, bob_node_id_param_w3, "0x1234", "0x1234",
+        )
+        with trio.fail_after(2):
+            receipt = await subscription.receive()
+
+        assert response is None
+        assert encode_hex(receipt.request_id) == "0x1234"
+
+
+@pytest.mark.trio
+async def test_v51_rpc_talk(make_request, bob_network, bob_node_id_param):
+    class ProtocolTest(TalkProtocolAPI):
+        protocol_id = b"test"
+
+    async def _do_talk_response(network):
+        network.add_talk_protocol(ProtocolTest())
+
+        async with network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+            request = await subscription.receive()
+            await network.client.send_talk_response(
+                request.sender_node_id,
+                request.sender_endpoint,
+                payload=b"test-response-payload",
+                request_id=request.message.request_id,
+            )
+
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(_do_talk_response, bob_network)
+
+        with trio.fail_after(2):
+            response = await make_request(
+                "discv5_talk", [bob_node_id_param, encode_hex(b"test"), "0x1234"]
+            )
+
+    assert decode_hex(response) == b"test-response-payload"
+
+
+@pytest.mark.trio
+async def test_v51_rpc_talk_web3(make_request, bob_network, bob_node_id_param_w3, w3):
+    class ProtocolTest(TalkProtocolAPI):
+        protocol_id = b"test"
+
+    async def _do_talk_response(network):
+        network.add_talk_protocol(ProtocolTest())
+
+        async with network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+            request = await subscription.receive()
+            await network.client.send_talk_response(
+                request.sender_node_id,
+                request.sender_endpoint,
+                payload=b"test-response-payload",
+                request_id=request.message.request_id,
+            )
+
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(_do_talk_response, bob_network)
+
+        with trio.fail_after(2):
+
+            response = await trio.to_thread.run_sync(
+                w3.discv5.talk, bob_node_id_param_w3, encode_hex(b"test"), "0x1234",
+            )
+
+    assert decode_hex(response.value) == b"test-response-payload"
+
+
+@pytest.mark.trio
+async def test_v51_rpc_talk_with_unsupported_protocol(make_request, bob):
+    async with bob.network() as bob_network:
+        with pytest.raises(Exception, match="'error':"):
+            await make_request(
+                "discv5_talk", [bob_network.local_node_id.hex(), "0x1234", "0x1234"]
+            )
+
+
+@pytest.mark.trio
+async def test_v51_rpc_talk_web3_with_unsupported_protocol(make_request, bob, w3):
+    async with bob.network() as bob_network:
+        with pytest.raises(Exception, match="Unexpected Error"):
+            await trio.to_thread.run_sync(
+                w3.discv5.talk,
+                bob_network.local_node_id.hex(),
+                encode_hex(b"test"),
+                "0x1234",
+            )
+
+
+@pytest.mark.parametrize(
+    "endpoint", ("discv5_sendTalkRequest", "discv5_sendTalkResponse", "discv5_talk")
+)
+@pytest.mark.trio
+async def test_v51_rpc_talk_invalid_params(
+    make_request, invalid_node_id, bob, endpoint
+):
+    # bad node_id
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [invalid_node_id, "0x12", "0x12"])
+
+    # invalid 1st bytes arg
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), 1, "0x12"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), 257, "0x12"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), 1.2, "0x12"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), [], "0x12"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "xyz", "0x12"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), [1, "2"], "0x12"])
+
+    # invalid 2nd bytes arg
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", 1])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", 257])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", 1.2])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", []])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", "xyz"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", [1, "2"]])
+
+    # wrong params count
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex()])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12"])
+    with pytest.raises(Exception, match="'error':"):
+        await make_request(endpoint, [bob.node_id.hex(), "0x12", "0x12", "0x12"])
