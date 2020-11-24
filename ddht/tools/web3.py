@@ -150,23 +150,35 @@ class IntegerPayload(NamedTuple):
         return cls(value=response)
 
 
-class RPC:
-    nodeInfo = RPCEndpoint("discv5_nodeInfo")
-    updateNodeInfo = RPCEndpoint("discv5_updateNodeInfo")
-    routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
-    getENR = RPCEndpoint("discv5_getENR")
-    setENR = RPCEndpoint("discv5_setENR")
-    deleteENR = RPCEndpoint("discv5_deleteENR")
-    lookupENR = RPCEndpoint("discv5_lookupENR")
+class BoolPayload(NamedTuple):
+    value: bool
 
-    ping = RPCEndpoint("discv5_ping")
-    sendPing = RPCEndpoint("discv5_sendPing")
-    sendPong = RPCEndpoint("discv5_sendPong")
+    @classmethod
+    def from_rpc_response(cls, response: bool) -> "BoolPayload":
+        return cls(value=response)
+
+
+class RPC:
+    # core
+    nodeInfo = RPCEndpoint("discv5_nodeInfo")
+    routingTableInfo = RPCEndpoint("discv5_routingTableInfo")
+    updateNodeInfo = RPCEndpoint("discv5_updateNodeInfo")
+
+    # v5.1
+    bond = RPCEndpoint("discv5_bond")
+    deleteENR = RPCEndpoint("discv5_deleteENR")
     findNodes = RPCEndpoint("discv5_findNodes")
+    getENR = RPCEndpoint("discv5_getENR")
+    lookupENR = RPCEndpoint("discv5_lookupENR")
+    ping = RPCEndpoint("discv5_ping")
+    recursiveFindNodes = RPCEndpoint("discv5_recursiveFindNodes")
     sendFindNodes = RPCEndpoint("discv5_sendFindNodes")
     sendFoundNodes = RPCEndpoint("discv5_sendFoundNodes")
+    sendPing = RPCEndpoint("discv5_sendPing")
+    sendPong = RPCEndpoint("discv5_sendPong")
     sendTalkRequest = RPCEndpoint("discv5_sendTalkRequest")
     sendTalkResponse = RPCEndpoint("discv5_sendTalkResponse")
+    setENR = RPCEndpoint("discv5_setENR")
     talk = RPCEndpoint("discv5_talk")
 
 
@@ -394,4 +406,16 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
         RPC.talk,
         result_formatters=lambda method: HexStrPayload.from_rpc_response,
         mungers=[talk_request_munger],
+    )
+    bond: Method[Callable[[NodeIDIdentifier], BoolPayload]] = Method(
+        RPC.bond,
+        result_formatters=lambda method: BoolPayload.from_rpc_response,
+        mungers=[node_identifier_munger],
+    )
+    recursive_find_nodes: Method[
+        Callable[[NodeIDIdentifier], Tuple[ENRAPI, ...]]
+    ] = Method(
+        RPC.recursiveFindNodes,
+        result_formatters=lambda method: find_nodes_response_formatter,
+        mungers=[node_identifier_munger],
     )

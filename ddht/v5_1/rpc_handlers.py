@@ -284,6 +284,39 @@ class TalkHandler(RPCHandler[TalkRPCParams, HexStr]):
         return encode_hex(response)
 
 
+class RecursiveFindNodesHandler(RPCHandler[NodeID, Tuple[str, ...]]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> NodeID:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 1)
+        raw_destination = raw_params[0]
+        node_id, _ = validate_and_extract_destination(raw_destination)
+        return node_id
+
+    async def do_call(self, params: NodeID) -> Tuple[str, ...]:
+        node_id = params
+        found_nodes = await self._network.recursive_find_nodes(node_id)
+        return tuple(repr(node) for node in found_nodes)
+
+
+class BondHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], int]):
+    def __init__(self, network: NetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> Tuple[NodeID, Optional[Endpoint]]:
+        raw_params = extract_params(request)
+        validate_params_length(raw_params, 1)
+        raw_destination = raw_params[0]
+        node_id, endpoint = validate_and_extract_destination(raw_destination)
+        return node_id, endpoint
+
+    async def do_call(self, params: Tuple[NodeID, Optional[Endpoint]]) -> int:
+        node_id, endpoint = params
+        return await self._network.bond(node_id, endpoint=endpoint)
+
+
 class GetENRHandler(RPCHandler[NodeID, GetENRResponse]):
     def __init__(self, network: NetworkAPI) -> None:
         self._network = network
@@ -371,11 +404,13 @@ class LookupENRHandler(
 
 @to_dict
 def get_v51_rpc_handlers(network: NetworkAPI) -> Iterable[Tuple[str, RPCHandlerAPI]]:
+    yield ("discv5_bond", BondHandler(network))
     yield ("discv5_deleteENR", DeleteENRHandler(network))
     yield ("discv5_findNodes", FindNodesHandler(network))
     yield ("discv5_getENR", GetENRHandler(network))
     yield ("discv5_lookupENR", LookupENRHandler(network))
     yield ("discv5_ping", PingHandler(network))
+    yield ("discv5_recursiveFindNodes", RecursiveFindNodesHandler(network))
     yield ("discv5_sendFindNodes", SendFindNodesHandler(network))
     yield ("discv5_sendFoundNodes", SendFoundNodesHandler(network))
     yield ("discv5_sendPing", SendPingHandler(network))
