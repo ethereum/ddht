@@ -26,6 +26,7 @@ class ByteList(List):  # type: ignore
 
 byte_list = ByteList(max_length=2048)
 uint40 = UInt(40)
+content_key_sedes = ByteList(max_length=256)
 
 
 PingSedes = Container(field_sedes=(uint32,))
@@ -42,6 +43,9 @@ AdvertisementSedes = Container(
 )
 AdvertiseSedes = List(AdvertisementSedes, max_length=32)
 AckSedes = Container(field_sedes=(uint256,))
+
+LocateSedes = Container(field_sedes=(content_key_sedes,))
+LocationsSedes = Container(field_sedes=(uint8, List(AdvertisementSedes, max_length=32)))
 
 # sedes used for encoding alexandria content
 content_sedes = ByteList(max_length=GB)
