@@ -23,3 +23,7 @@ POWERS_OF_TWO = tuple(2 ** n for n in range(256))
 # - up-to 10 bytes for RLP encoding overhead.
 #
 MAX_PAYLOAD_SIZE = DISCOVERY_MAX_PACKET_SIZE - 90
+
+
+# One hour in seconds
+ONE_HOUR = 60 * 60

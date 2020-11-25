@@ -20,6 +20,7 @@ from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
 from ddht.v5_1.alexandria.advertisements import Advertisement
+from ddht.v5_1.alexandria.constants import ONE_HOUR
 from ddht.v5_1.alexandria.messages import (
     AckMessage,
     AlexandriaMessage,
@@ -55,6 +56,18 @@ class ContentStorageAPI(ABC):
         start_key: Optional[ContentKey] = None,
         end_key: Optional[ContentKey] = None,
     ) -> Iterable[ContentKey]:
+        ...
+
+
+class BroadcastLogAPI(ABC):
+    @abstractmethod
+    def log(self, node_id: NodeID, advertisement: Advertisement) -> None:
+        ...
+
+    @abstractmethod
+    def was_logged(
+        self, node_id: NodeID, advertisement: Advertisement, max_age: int = ONE_HOUR
+    ) -> bool:
         ...
 
 
