@@ -137,7 +137,11 @@ async def common_recursive_find_nodes(
 
         try:
             found_enrs = await network.find_nodes(node_id, distance)
-        except (trio.TooSlowError, MissingEndpointFields):
+        except trio.TooSlowError:
+            unresponsive_node_ids.add(node_id)
+            unresponsive_cache[node_id] = trio.current_time()
+            return
+        except MissingEndpointFields:
             unresponsive_node_ids.add(node_id)
             unresponsive_cache[node_id] = trio.current_time()
             return
