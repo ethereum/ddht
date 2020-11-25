@@ -4,12 +4,15 @@ import trio
 
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.kademlia import KademliaRoutingTable, compute_log_distance
+from ddht.tools.factories.alexandria import AdvertisementFactory
 from ddht.tools.factories.content import ContentFactory
-from ddht.v5_1.alexandria.advertisements import Advertisement
+from ddht.v5_1.alexandria.advertisements import partition_advertisements
+from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.messages import (
     AdvertiseMessage,
     FindNodesMessage,
     GetContentMessage,
+    LocateMessage,
 )
 from ddht.v5_1.alexandria.partials.proof import compute_proof, validate_proof
 from ddht.v5_1.alexandria.payloads import AckPayload
@@ -118,17 +121,10 @@ async def test_alexandria_network_responds_to_find_nodes(
 
 
 @pytest.mark.trio
-async def test_alexandria_network_advertise(
+async def test_alexandria_network_advertise_single_message(
     alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
 ):
-    advertisements = tuple(
-        Advertisement.create(
-            content_key=b"\x01testkey",
-            hash_tree_root=b"\x12" * 32,
-            private_key=alice.private_key,
-        )
-        for _ in range(10)
-    )
+    advertisements = (AdvertisementFactory(private_key=alice.private_key),)
 
     async with bob_alexandria_client.subscribe(AdvertiseMessage) as subscription:
 
@@ -148,11 +144,12 @@ async def test_alexandria_network_advertise(
                 ack_payloads = await alice_alexandria_network.advertise(
                     bob.node_id, advertisements=advertisements,
                 )
-                assert len(ack_payloads) == 1
-                ack_payload = ack_payloads[0]
 
-                assert isinstance(ack_payload, AckPayload)
-                assert ack_payload.advertisement_radius == 12345
+            assert len(ack_payloads) == 1
+            ack_payload = ack_payloads[0]
+
+            assert isinstance(ack_payload, AckPayload)
+            assert ack_payload.advertisement_radius == 12345
 
 
 @pytest.mark.parametrize(
@@ -284,3 +281,99 @@ async def test_alexandria_network_get_content_from_nodes_api_impartial_chunks(
                 assert result_data[0 : len(content)] == content
 
             nursery.cancel_scope.cancel()
+
+
+@pytest.mark.trio
+async def test_alexandria_network_advertise_multiple_messages(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisements = tuple(
+        AdvertisementFactory(private_key=alice.private_key) for _ in range(20)
+    )
+    num_messages = len(partition_advertisements(advertisements, MAX_PAYLOAD_SIZE))
+
+    async with bob_alexandria_client.subscribe(AdvertiseMessage) as subscription:
+
+        async def _respond():
+            for _ in range(num_messages):
+                request = await subscription.receive()
+                await bob_alexandria_client.send_ack(
+                    request.sender_node_id,
+                    request.sender_endpoint,
+                    advertisement_radius=12345,
+                    request_id=request.request_id,
+                )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                ack_payloads = await alice_alexandria_network.advertise(
+                    bob.node_id, advertisements=advertisements,
+                )
+
+            assert len(ack_payloads) == num_messages
+            assert all(
+                isinstance(ack_payload, AckPayload) for ack_payload in ack_payloads
+            )
+
+
+@pytest.mark.trio
+async def test_alexandria_network_locate_single_response(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisement = AdvertisementFactory(private_key=alice.private_key)
+
+    async with bob_alexandria_client.subscribe(LocateMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_locations(
+                request.sender_node_id,
+                request.sender_endpoint,
+                advertisements=(advertisement,),
+                request_id=request.request_id,
+            )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                locations = await alice_alexandria_network.locate(
+                    bob.node_id, content_key=advertisement.content_key,
+                )
+                assert len(locations) == 1
+                location = locations[0]
+
+                assert location == advertisement
+
+
+@pytest.mark.trio
+async def test_alexandria_network_locate_multiple_responses(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisements = tuple(
+        AdvertisementFactory(content_key=b"\x01test-key") for _ in range(20)
+    )
+    num_messages = len(partition_advertisements(advertisements, MAX_PAYLOAD_SIZE))
+    assert num_messages > 1
+
+    async with bob_alexandria_client.subscribe(LocateMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_locations(
+                request.sender_node_id,
+                request.sender_endpoint,
+                advertisements=advertisements,
+                request_id=request.request_id,
+            )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(1):
+                locations = await alice_alexandria_network.locate(
+                    bob.node_id, content_key=b"\x01test-key",
+                )
+                assert locations == advertisements

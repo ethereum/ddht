@@ -446,6 +446,17 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
+    async def locate(
+        self,
+        node_id: NodeID,
+        *,
+        content_key: ContentKey,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[Advertisement, ...]:
+        ...
+
+    @abstractmethod
     def recursive_find_nodes(
         self, target: NodeID
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
