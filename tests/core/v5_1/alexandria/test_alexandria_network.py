@@ -1,13 +1,16 @@
+from contextlib import AsyncExitStack
+
 from eth_enr.tools.factories import ENRFactory
 import pytest
 import trio
 
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
-from ddht.kademlia import KademliaRoutingTable, compute_log_distance
+from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
 from ddht.tools.factories.alexandria import AdvertisementFactory
 from ddht.tools.factories.content import ContentFactory
 from ddht.v5_1.alexandria.advertisements import partition_advertisements
 from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
+from ddht.v5_1.alexandria.content import compute_content_distance
 from ddht.v5_1.alexandria.messages import (
     AdvertiseMessage,
     FindNodesMessage,
@@ -377,3 +380,74 @@ async def test_alexandria_network_locate_multiple_responses(
                     bob.node_id, content_key=b"\x01test-key",
                 )
                 assert locations == advertisements
+
+
+@pytest.mark.trio
+async def test_alexandria_network_broadcast_api(
+    tester, alice, alice_alexandria_network, autojump_clock,
+):
+    async with AsyncExitStack() as stack:
+        network_group = await stack.enter_async_context(
+            tester.alexandria.network_group(10)
+        )
+
+        furthest_network = max(
+            network_group,
+            key=lambda network: compute_distance(alice.node_id, network.local_node_id),
+        )
+        closest_network = min(
+            network_group,
+            key=lambda network: compute_distance(alice.node_id, network.local_node_id),
+        )
+
+        furthest_node_distance_from_alice = compute_distance(
+            furthest_network.local_node_id, alice.node_id,
+        )
+
+        furthest_ad = AdvertisementFactory()
+
+        for _ in range(100):
+            advertisement = AdvertisementFactory()
+
+            distance_from_alice = compute_content_distance(
+                alice.node_id, advertisement.content_id
+            )
+            distance_from_furthest = compute_content_distance(
+                alice.node_id, furthest_ad.content_id
+            )
+
+            if distance_from_alice > distance_from_furthest:
+                furthest_ad = advertisement
+
+            if distance_from_furthest >= furthest_node_distance_from_alice:
+                break
+
+        async with trio.open_nursery() as nursery:
+
+            async def _respond(network, subscription):
+                request = await subscription.receive()
+                await network.client.send_ack(
+                    request.sender_node_id,
+                    request.sender_endpoint,
+                    advertisement_radius=network.local_advertisement_radius,
+                    request_id=request.request_id,
+                )
+
+            for network in network_group:
+                subscription = await stack.enter_async_context(
+                    network.client.subscribe(AdvertiseMessage)
+                )
+                nursery.start_soon(_respond, network, subscription)
+
+            alice_alexandria_network.enr_db.set_enr(closest_network.enr_manager.enr)
+            await alice_alexandria_network.bond(closest_network.local_node_id)
+
+            for _ in range(10000):
+                await trio.lowlevel.checkpoint()
+
+            with trio.fail_after(30):
+                result = await alice_alexandria_network.broadcast(advertisement)
+                assert len(result) > 0
+                assert len(result) <= 3
+
+            nursery.cancel_scope.cancel()

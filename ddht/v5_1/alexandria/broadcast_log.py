@@ -5,11 +5,12 @@ from typing import Dict
 from eth_typing import Hash32, NodeID
 from lru import LRU
 
+from ddht.v5_1.alexandria.abc import BroadcastLogAPI
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.constants import ONE_HOUR
 
 
-class BroadcastLog:
+class BroadcastLog(BroadcastLogAPI):
     """
     Tracks the last time each advertisement was broadcast to each peer.
     """
