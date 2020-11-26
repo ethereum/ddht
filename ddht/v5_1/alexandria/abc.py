@@ -281,5 +281,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
+    def recursive_find_nodes(
+        self, target: NodeID
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...

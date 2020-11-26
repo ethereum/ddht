@@ -442,7 +442,9 @@ class NetworkProtocol(Protocol):
     ) -> Tuple[ENRAPI, ...]:
         ...
 
-    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
+    def recursive_find_nodes(
+        self, target: NodeID
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...
 
 
@@ -538,7 +540,9 @@ class NetworkAPI(ServiceAPI):
         ...
 
     @abstractmethod
-    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
+    def recursive_find_nodes(
+        self, target: NodeID
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...
 
     @abstractmethod

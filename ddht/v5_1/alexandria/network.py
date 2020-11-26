@@ -1,6 +1,5 @@
 import logging
-import secrets
-from typing import Collection, List, Optional, Tuple
+from typing import AsyncContextManager, Collection, List, Optional, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
@@ -10,10 +9,11 @@ from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
 
-from ddht._utils import every
+from ddht._utils import every, weighted_choice
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.kademlia import KademliaRoutingTable
+from ddht.kademlia import KademliaRoutingTable, at_log_distance
+from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.advertisements import Advertisement
@@ -119,7 +119,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self._routing_table_ready.set()
         return True
 
-    async def _bond(self, node_id: NodeID, endpoint: Endpoint) -> None:
+    async def _bond(self, node_id: NodeID, endpoint: Optional[Endpoint] = None) -> None:
         await self.bond(node_id, endpoint=endpoint)
 
     async def ping(
@@ -150,8 +150,10 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             enr for response in responses for enr in response.message.payload.enrs
         )
 
-    async def recursive_find_nodes(self, target: NodeID) -> Tuple[ENRAPI, ...]:
-        return await common_recursive_find_nodes(self, target)
+    def recursive_find_nodes(
+        self, target: NodeID
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        return common_recursive_find_nodes(self, target)
 
     async def advertise(
         self,
@@ -311,17 +313,43 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     await self._routing_table_ready.wait()
                     break
 
-        # TODO: Need better logic here for more quickly populating the
-        # routing table.  Should start off aggressively filling in the
-        # table, only backing off once the table contains some minimum
-        # number of records **or** searching for new records fails to find
-        # new nodes.  Maybe use a TokenBucket
-        async for _ in every(30):
-            async with trio.open_nursery() as nursery:
-                target_node_id = NodeID(secrets.token_bytes(32))
-                found_enrs = await self.recursive_find_nodes(target_node_id)
-                for enr in found_enrs:
-                    if enr.node_id == self.local_node_id:
-                        continue
-                    endpoint = Endpoint.from_enr(enr)
-                    nursery.start_soon(self._bond, enr.node_id, endpoint)
+        # Now we enter into an infinite loop that continually probes the
+        # network to beep the routing table fresh.  We both perform completely
+        # random lookups, as well as targeted lookups on the outermost routing
+        # table buckets which are not full.
+        #
+        # The `TokenBucket` allows us to burst at the beginning, making quick
+        # successive probes, then slowing down once the
+        #
+        # TokenBucket starts with 10 tokens, refilling at 1 token every 30
+        # seconds.
+        token_bucket = TokenBucket(1 / 30, 10)
+
+        async with trio.open_nursery() as nursery:
+            while self.manager.is_running:
+                await token_bucket.take()
+
+                # Get the logarithmic distance to the "largest" buckets
+                # that are not full.
+                non_full_bucket_distances = tuple(
+                    idx + 1
+                    for idx, bucket in enumerate(self.routing_table.buckets)
+                    if len(bucket) < self.routing_table.bucket_size  # noqa: E501
+                )[-16:]
+
+                # Probe one of the not-full-buckets with a weighted preference
+                # towards the largest buckets.
+                distance_to_probe = weighted_choice(non_full_bucket_distances)
+                target_node_id = at_log_distance(self.local_node_id, distance_to_probe)
+
+                async with self.recursive_find_nodes(target_node_id) as enr_aiter:
+                    async for enr in enr_aiter:
+                        if enr.node_id == self.local_node_id:
+                            continue
+
+                        try:
+                            self.enr_db.set_enr(enr)
+                        except OldSequenceNumber:
+                            pass
+
+                        nursery.start_soon(self._bond, enr.node_id)

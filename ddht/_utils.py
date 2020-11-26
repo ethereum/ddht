@@ -17,6 +17,7 @@ from typing import (
     Collection,
     Iterable,
     Iterator,
+    List,
     Optional,
     Sequence,
     Tuple,
@@ -200,3 +201,65 @@ def weighted_choice(values: Sequence[TValue]) -> TValue:
     index = int(math.floor(0.5 + math.sqrt(0.25 + 2 * scaled_index))) - 1
 
     return values[index]
+
+
+async def adaptive_timeout(
+    *tasks: Tuple[Callable[..., Awaitable[None]], Sequence[Any]],
+    threshold: int = 1,
+    variance: float = 2,
+) -> None:
+    """
+    Given a set of tasks this function will run them concurrently.  Once at
+    least `threshold` have completed, the average completion time is measured.
+    The remaining tasks are then given `avg_task_time * variance` to complete after
+    which they will be cancelled
+    """
+    if threshold >= len(tasks):
+        raise ValueError("The `threshold` value must be less than the number of tasks")
+    elif threshold < 1:
+        raise ValueError("The `threshold` value must be 1 or greater")
+
+    # a mutable list to track the average task time
+    task_times: List[float] = []
+    condition = trio.Condition()
+
+    # a thin wrapper around the provided tasks which measures their execution
+    # time.
+    async def task_wrapper(
+        task_fn: Callable[..., Awaitable[None]], args: Sequence[Any]
+    ) -> None:
+        nonlocal task_times
+
+        start_at = trio.current_time()
+        await task_fn(*args)
+        elapsed = trio.current_time() - start_at
+        async with condition:
+            task_times.append(elapsed)
+            condition.notify_all()
+
+    async with trio.open_nursery() as nursery:
+        for task_fn, task_args in tasks:
+            nursery.start_soon(task_wrapper, task_fn, task_args)
+
+        start_at = trio.current_time()
+
+        # wait for `threshold` tasks to complete
+        while len(task_times) < threshold:
+            async with condition:
+                await condition.wait()
+
+        # measure the average task completion time and calculate the remaining
+        # timeout for the remaining tasks.
+        avg_task_time = sum(task_times) / len(task_times)
+        timeout_at = start_at + (avg_task_time * variance)
+        timeout_remaining = timeout_at - trio.current_time()
+
+        # apply the calculated timeout on the remaining tasks
+        if timeout_remaining > 0:
+            with trio.move_on_after(timeout_remaining):
+                while len(task_times) < len(tasks):
+                    async with condition:
+                        await condition.wait()
+
+        # cancel any remaining tasks.
+        nursery.cancel_scope.cancel()
