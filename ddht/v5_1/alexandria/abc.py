@@ -86,6 +86,12 @@ class ContentProviderAPI(ServiceAPI):
         ...
 
 
+class AdvertisementProviderAPI(ServiceAPI):
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+
 class RadiusTrackerAPI(ServiceAPI):
     @abstractmethod
     async def ready(self) -> None:
@@ -347,10 +353,11 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     radius_tracker: RadiusTrackerAPI
 
+    advertisement_db: AdvertisementDatabaseAPI
+    advertisement_provider: AdvertisementProviderAPI
+
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
-
-    advertisement_db: AdvertisementDatabaseAPI
 
     @abstractmethod
     async def ready(self) -> None:
