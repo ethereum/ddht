@@ -884,7 +884,7 @@ async def test_v51_rpc_recursiveFindNodes(tester, bob, make_request):
         bootnodes = collections.deque((bob.enr,), maxlen=4)
         nodes = [bob]
         target_node_id = None
-        for _ in range(20):
+        for _ in range(8):
             node = tester.node()
             nodes.append(node)
             await stack.enter_async_context(node.network(bootnodes=bootnodes))
@@ -896,13 +896,13 @@ async def test_v51_rpc_recursiveFindNodes(tester, bob, make_request):
                 target_node_id = node.node_id
 
         # give the the network some time to interconnect.
-        with trio.fail_after(20):
-            for _ in range(200):
+        with trio.fail_after(60):
+            for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
         await make_request("discv5_bond", [bob.node_id.hex()])
 
-        with trio.fail_after(20):
+        with trio.fail_after(60):
             found_enrs = await make_request(
                 "discv5_recursiveFindNodes", [target_node_id.hex()]
             )
@@ -918,7 +918,7 @@ async def test_v51_rpc_recursiveFindNodes_web3(tester, bob, w3):
         bootnodes = collections.deque((bob.enr,), maxlen=4)
         nodes = [bob]
         target_node_id = None
-        for _ in range(20):
+        for _ in range(8):
             node = tester.node()
             nodes.append(node)
             await stack.enter_async_context(node.network(bootnodes=bootnodes))
@@ -930,15 +930,15 @@ async def test_v51_rpc_recursiveFindNodes_web3(tester, bob, w3):
                 target_node_id = node.node_id
 
         # give the the network some time to interconnect.
-        with trio.fail_after(20):
-            for _ in range(200):
+        with trio.fail_after(60):
+            for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
         await trio.to_thread.run_sync(
             w3.discv5.bond, bob.node_id.hex(),
         )
 
-        with trio.fail_after(20):
+        with trio.fail_after(60):
             found_enrs = await trio.to_thread.run_sync(
                 w3.discv5.recursive_find_nodes, target_node_id
             )

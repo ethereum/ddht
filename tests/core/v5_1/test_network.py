@@ -264,7 +264,7 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
         await stack.enter_async_context(bob.network())
         bootnodes = collections.deque((bob.enr,), maxlen=4)
         nodes = [bob, alice]
-        for _ in range(20):
+        for _ in range(10):
             node = tester.node()
             nodes.append(node)
             await stack.enter_async_context(node.network(bootnodes=bootnodes))
@@ -293,8 +293,10 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
         )
         best_node_ids_by_distance = set(node_ids_by_distance[:3])
 
-        with trio.fail_after(60):
-            found_enrs = await alice_network.recursive_find_nodes(target_node_id)
+        async with alice_network.recursive_find_nodes(target_node_id) as enr_aiter:
+            with trio.fail_after(60):
+                found_enrs = tuple([enr async for enr in enr_aiter])
+
         found_node_ids = tuple(enr.node_id for enr in found_enrs)
 
         # Ensure that one of the three closest node ids was in the returned node ids

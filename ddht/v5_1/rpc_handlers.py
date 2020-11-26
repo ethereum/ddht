@@ -16,6 +16,7 @@ from eth_utils import (
 
 from ddht.abc import RPCHandlerAPI
 from ddht.endpoint import Endpoint
+from ddht.kademlia import compute_distance
 from ddht.rpc import RPCError, RPCHandler, RPCRequest
 from ddht.v5_1.abc import NetworkAPI
 from ddht.validation import (
@@ -297,7 +298,13 @@ class RecursiveFindNodesHandler(RPCHandler[NodeID, Tuple[str, ...]]):
 
     async def do_call(self, params: NodeID) -> Tuple[str, ...]:
         node_id = params
-        found_nodes = await self._network.recursive_find_nodes(node_id)
+        async with self._network.recursive_find_nodes(node_id) as enr_aiter:
+            found_nodes = tuple(
+                sorted(
+                    [enr async for enr in enr_aiter],
+                    key=lambda enr: compute_distance(node_id, enr.node_id),
+                )
+            )
         return tuple(repr(node) for node in found_nodes)
 
 
