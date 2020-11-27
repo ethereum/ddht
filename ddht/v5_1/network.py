@@ -169,8 +169,15 @@ async def common_recursive_find_nodes(
             enr for enr in found_enrs if enr.node_id not in received_node_ids
         )
         received_node_ids.update(enr.node_id for enr in new_enrs)
+
         for enr in new_enrs:
-            await send_channel.send(enr)
+            try:
+                await send_channel.send(enr)
+            except trio.BrokenResourceError:
+                # In the event that the consumer of `recursive_find_nodes`
+                # exits early before the lookup has completed we can end up
+                # operating on a closed channel.
+                return
 
     async def worker(
         worker_id: NodeID, send_channel: trio.abc.SendChannel[ENRAPI]
@@ -195,11 +202,17 @@ async def common_recursive_find_nodes(
             # Some of the node ids may have come from our routing table.
             # These won't be present in the `received_node_ids` so we
             # detect this here and send them over the channel.
-            for node_id in node_ids:
-                if node_id not in received_node_ids:
-                    enr = network.enr_db.get_enr(node_id)
-                    received_node_ids.add(node_id)
-                    await send_channel.send(enr)
+            try:
+                for node_id in node_ids:
+                    if node_id not in received_node_ids:
+                        enr = network.enr_db.get_enr(node_id)
+                        received_node_ids.add(node_id)
+                        await send_channel.send(enr)
+            except trio.BrokenResourceError:
+                # In the event that the consumer of `recursive_find_nodes`
+                # exits early before the lookup has completed we can end up
+                # operating on a closed channel.
+                return
 
             if len(node_ids) == 1:
                 await do_lookup(node_ids[0], send_channel)
