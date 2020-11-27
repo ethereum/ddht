@@ -173,7 +173,7 @@ async def common_recursive_find_nodes(
         for enr in new_enrs:
             try:
                 await send_channel.send(enr)
-            except trio.BrokenResourceError:
+            except (trio.BrokenResourceError, trio.ClosedResourceError):
                 # In the event that the consumer of `recursive_find_nodes`
                 # exits early before the lookup has completed we can end up
                 # operating on a closed channel.
@@ -208,7 +208,7 @@ async def common_recursive_find_nodes(
                         enr = network.enr_db.get_enr(node_id)
                         received_node_ids.add(node_id)
                         await send_channel.send(enr)
-            except trio.BrokenResourceError:
+            except (trio.BrokenResourceError, trio.ClosedResourceError):
                 # In the event that the consumer of `recursive_find_nodes`
                 # exits early before the lookup has completed we can end up
                 # operating on a closed channel.
