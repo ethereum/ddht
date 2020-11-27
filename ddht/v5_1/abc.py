@@ -432,6 +432,11 @@ class NetworkProtocol(Protocol):
     def enr_db(self) -> QueryableENRDatabaseAPI:
         ...
 
+    async def bond(
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+    ) -> bool:
+        ...
+
     async def find_nodes(
         self,
         node_id: NodeID,
@@ -444,6 +449,17 @@ class NetworkProtocol(Protocol):
     def recursive_find_nodes(
         self, target: NodeID
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        ...
+
+
+class RoutingTableManagerAPI(ServiceAPI):
+    @property
+    @abstractmethod
+    def routing_table(self) -> RoutingTableAPI:
+        ...
+
+    @abstractmethod
+    async def ready(self) -> None:
         ...
 
 
