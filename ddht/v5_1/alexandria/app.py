@@ -1,8 +1,10 @@
 import argparse
+import sqlite3
 
 from ddht.app import BaseApplication
 from ddht.boot_info import BootInfo
-from ddht.v5_1.alexandria.abc import ContentStorageAPI
+from ddht.v5_1.alexandria.abc import AdvertisementDatabaseAPI, ContentStorageAPI
+from ddht.v5_1.alexandria.advertisement_db import AdvertisementDatabase
 from ddht.v5_1.alexandria.boot_info import AlexandriaBootInfo
 from ddht.v5_1.alexandria.content_storage import MemoryContentStorage
 from ddht.v5_1.alexandria.network import AlexandriaNetwork
@@ -24,10 +26,16 @@ class AlexandriaApplication(BaseApplication):
 
         content_storage: ContentStorageAPI = MemoryContentStorage()
 
+        # Temporarily we just use an in memory database for advertisements.
+        advertisement_db: AdvertisementDatabaseAPI = AdvertisementDatabase(
+            sqlite3.connect(":memory:"),
+        )
+
         alexandria_network = AlexandriaNetwork(
             network=self.base_protocol_app.network,
             bootnodes=self._alexandria_boot_info.bootnodes,
             content_storage=content_storage,
+            advertisement_db=advertisement_db,
         )
 
         self.manager.run_daemon_child_service(alexandria_network)

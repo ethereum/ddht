@@ -17,6 +17,7 @@ from ddht.v5_1.abc import (
     SessionAPI,
 )
 from ddht.v5_1.alexandria.abc import (
+    AdvertisementDatabaseAPI,
     AlexandriaClientAPI,
     AlexandriaNetworkAPI,
     ContentStorageAPI,
@@ -28,6 +29,7 @@ from ddht.v5_1.packets import AnyPacket
 
 class AlexandriaNodeAPI(ABC):
     content_storage: ContentStorageAPI
+    advertisement_db: AdvertisementDatabaseAPI
 
     @abstractmethod
     def client(

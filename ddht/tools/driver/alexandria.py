@@ -1,3 +1,4 @@
+import sqlite3
 from typing import AsyncContextManager, AsyncIterator, Collection, Optional
 
 from async_generator import asynccontextmanager
@@ -9,6 +10,7 @@ from ddht.tools.driver._utils import NamedLock
 from ddht.tools.driver.abc import AlexandriaNodeAPI, NodeAPI
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI, AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.advertisement_db import AdvertisementDatabase
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.content_storage import MemoryContentStorage
 from ddht.v5_1.alexandria.network import AlexandriaNetwork
@@ -20,6 +22,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
     def __init__(self, node: NodeAPI) -> None:
         self.node = node
         self.content_storage = MemoryContentStorage()
+        self.advertisement_db = AdvertisementDatabase(sqlite3.connect(":memory:"),)
         self._lock = NamedLock()
 
     @asynccontextmanager
@@ -57,7 +60,10 @@ class AlexandriaNode(AlexandriaNodeAPI):
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
                 alexandria_network = AlexandriaNetwork(
-                    network=network, bootnodes=(), content_storage=self.content_storage,
+                    network=network,
+                    bootnodes=(),
+                    content_storage=self.content_storage,
+                    advertisement_db=self.advertisement_db,
                 )
                 async with background_trio_service(alexandria_network):
                     yield alexandria_network

@@ -17,9 +17,14 @@ from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
-from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
+from ddht.v5_1.alexandria.abc import (
+    AdvertisementDatabaseAPI,
+    AlexandriaNetworkAPI,
+    ContentStorageAPI,
+)
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.client import AlexandriaClient
+from ddht.v5_1.alexandria.content import compute_content_distance
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.partials._utils import get_chunk_count_for_data_length
@@ -57,9 +62,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         network: NetworkAPI,
         bootnodes: Collection[ENRAPI],
         content_storage: ContentStorageAPI,
+        advertisement_db: AdvertisementDatabaseAPI,
         max_advertisement_count: int = 65536,
     ) -> None:
         self._bootnodes = tuple(bootnodes)
+
+        self.max_advertisement_count = max_advertisement_count
 
         self.client = AlexandriaClient(network)
 
@@ -71,6 +79,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.content_provider = ContentProvider(
             client=self.client, content_storage=content_storage,
         )
+
+        self.advertisement_db = advertisement_db
 
         self._last_pong_at = LRU(2048)
         self._routing_table_ready = trio.Event()
@@ -104,6 +114,23 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.manager.run_daemon_task(self._serve_find_nodes)
 
         await self.manager.wait_finished()
+
+    #
+    # Local properties
+    #
+    @property
+    def local_advertisement_radius(self) -> int:
+        advertisement_count = self.advertisement_db.count()
+
+        if advertisement_count < self.max_advertisement_count:
+            return 2 ** 256 - 1
+
+        furthest_advertisement = first(
+            self.advertisement_db.furthest(self.local_node_id)
+        )
+        return compute_content_distance(
+            self.local_node_id, furthest_advertisement.content_id,
+        )
 
     #
     # High Level API

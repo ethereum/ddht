@@ -285,10 +285,12 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     client: AlexandriaClientAPI
     routing_table: RoutingTableAPI
 
-    advertisement_db: AdvertisementDatabaseAPI
+    max_advertisement_count: int
 
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
+
+    advertisement_db: AdvertisementDatabaseAPI
 
     @property
     @abstractmethod
@@ -308,6 +310,14 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     @property
     @abstractmethod
     def enr_db(self) -> QueryableENRDatabaseAPI:
+        ...
+
+    #
+    # Local properties
+    #
+    @property
+    @abstractmethod
+    def local_advertisement_radius(self) -> int:
         ...
 
     #
