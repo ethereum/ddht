@@ -140,6 +140,32 @@ class KademliaRoutingTable(RoutingTableAPI):
 
         self.bucket_update_order: Deque[int] = collections.deque()
 
+    def __contains__(self, node_id: NodeID) -> bool:
+        """
+        We include both bucket and replacement caches here since inclusion
+        checks should typically apply to both.
+        """
+        bucket, cache = self.get_index_bucket_and_replacement_cache(node_id)
+        return node_id in bucket or node_id in cache
+
+    def __iter__(self) -> Iterator[NodeID]:
+        """
+        We include both bucket and replacement caches here since iteration
+        typically involves the cache as well.
+        """
+        for bucket in self.buckets:
+            yield from bucket
+        for cache in self.replacement_caches:
+            yield from cache
+
+    def __len__(self) -> int:
+        """
+        We explicitely only measure the nodes in the buckets since
+        operationally we don't care about the cache sizes when inspecting the
+        table.
+        """
+        return sum(len(bucket) for bucket in self.buckets)
+
     @property
     def num_buckets(self) -> int:
         return len(self.buckets)

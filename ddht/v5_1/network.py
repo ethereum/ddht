@@ -487,68 +487,10 @@ class Network(Service, NetworkAPI):
         self.manager.run_daemon_child_service(self.client)
         await self.client.wait_listening()
 
-        self.manager.run_daemon_task(self._periodically_report_routing_table)
-        self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
-        self.manager.run_daemon_task(self._track_last_pong)
-        self.manager.run_daemon_task(self._manage_routing_table)
-        self.manager.run_daemon_task(self._pong_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
         self.manager.run_daemon_task(self._handle_unhandled_talk_requests)
 
         await self.manager.wait_finished()
-
-    async def _periodically_report_routing_table(self) -> None:
-        async for _ in every(30, initial_delay=10):
-            non_empty_buckets = tuple(
-                reversed(
-                    tuple(
-                        (idx, bucket)
-                        for idx, bucket in enumerate(self.routing_table.buckets, 1)
-                        if bucket
-                    )
-                )
-            )
-            total_size = sum(len(bucket) for idx, bucket in non_empty_buckets)
-            bucket_info = "|".join(
-                tuple(
-                    f"{idx}:{'F' if len(bucket) == self.routing_table.bucket_size else len(bucket)}"
-                    for idx, bucket in non_empty_buckets
-                )
-            )
-            self.logger.debug(
-                "routing-table-info: size=%d  buckets=%s", total_size, bucket_info,
-            )
-
-    async def _pong_when_pinged(self) -> None:
-        async def _maybe_add_to_routing_table(
-            request: InboundMessage[PingMessage],
-        ) -> None:
-            try:
-                enr = await self.lookup_enr(
-                    request.sender_node_id,
-                    enr_seq=request.message.enr_seq,
-                    endpoint=request.sender_endpoint,
-                )
-            except (trio.TooSlowError, EmptyFindNodesResponse):
-                return
-
-            self.routing_table.update(enr.node_id)
-            self._routing_table_ready.set()
-
-        async with trio.open_nursery() as nursery:
-            async with self.dispatcher.subscribe(PingMessage) as subscription:
-                async for request in subscription:
-                    await self.dispatcher.send_message(
-                        request.to_response(
-                            PongMessage(
-                                request.request_id,
-                                self.enr_manager.enr.sequence_number,
-                                request.sender_endpoint.ip_address,
-                                request.sender_endpoint.port,
-                            )
-                        )
-                    )
-                    nursery.start_soon(_maybe_add_to_routing_table, request)
 
     async def _serve_find_nodes(self) -> None:
         async with self.dispatcher.subscribe(FindNodeMessage) as subscription:

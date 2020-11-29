@@ -5,6 +5,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    Collection,
     ContextManager,
     Deque,
     Generic,
@@ -128,7 +129,7 @@ class MessageTypeRegistryAPI(MessageTypeRegistryBaseType):
         ...
 
 
-class RoutingTableAPI(ABC):
+class RoutingTableAPI(Collection[NodeID]):
     center_node_id: NodeID
     bucket_size: int
 

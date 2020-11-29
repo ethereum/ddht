@@ -420,9 +420,18 @@ class TalkProtocolAPI(ABC):
     protocol_id: bytes
 
 
+class PingHandlerAPI(ServiceAPI):
+    async def ready(self) -> None:
+        ...
+
+    def get_last_ping_at(self, node_id: NodeID) -> None:
+        ...
+
+
 class NetworkProtocol(Protocol):
     logger: logging.Logger
     routing_table: RoutingTableAPI
+    ping_tracker: PingHandlerAPI
 
     @property
     def local_node_id(self) -> NodeID:
