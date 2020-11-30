@@ -13,7 +13,7 @@ import pytest
 from ddht.tools.factories.content import ContentFactory
 from ddht.v5_1.alexandria.abc import ContentStorageAPI
 from ddht.v5_1.alexandria.content_storage import (
-    BatchDecomissioned,
+    BatchDecommissioned,
     ContentAlreadyExists,
     ContentNotFound,
     FileSystemContentStorage,
@@ -147,7 +147,7 @@ def test_content_storage_atomic_batch(base_storage):
         assert not batch.has_content(b"key-d")
         assert not base_storage.has_content(b"key-d")
 
-        # delete a pre-exisitng key and then write something new to it
+        # delete a pre-existing key and then write something new to it
         batch.delete_content(b"key-b")
         batch.set_content(b"key-b", b"updated-content-b")
 
@@ -161,15 +161,15 @@ def test_content_storage_atomic_batch(base_storage):
         assert base_keys == {b"key-a", b"key-b", b"key-c"}
 
     # batch operations should now raise exceptions
-    with pytest.raises(BatchDecomissioned):
+    with pytest.raises(BatchDecommissioned):
         batch.has_content(b"key-a")
-    with pytest.raises(BatchDecomissioned):
+    with pytest.raises(BatchDecommissioned):
         batch.get_content(b"key-a")
-    with pytest.raises(BatchDecomissioned):
+    with pytest.raises(BatchDecommissioned):
         batch.set_content(b"key-a", b"dummy")
-    with pytest.raises(BatchDecomissioned):
+    with pytest.raises(BatchDecommissioned):
         batch.delete_content(b"key-a")
-    with pytest.raises(BatchDecomissioned):
+    with pytest.raises(BatchDecommissioned):
         set(batch.enumerate_keys())
 
     assert not base_storage.has_content(b"key-a")

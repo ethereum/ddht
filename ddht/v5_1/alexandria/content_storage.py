@@ -17,23 +17,23 @@ class ContentAlreadyExists(Exception):
     pass
 
 
-class BatchDecomissioned(Exception):
+class BatchDecommissioned(Exception):
     pass
 
 
 class _AtomicBatch(ContentStorageAPI):
     _deleted: Set[ContentKey]
-    is_decomissioned: bool
+    is_decommissioned: bool
 
     def __init__(self, storage: ContentStorageAPI) -> None:
         self._storage = storage
         self._batch = MemoryContentStorage()
         self._deleted = set()
-        self.is_decomissioned = False
+        self.is_decommissioned = False
 
     def has_content(self, content_key: ContentKey) -> bool:
-        if self.is_decomissioned:
-            raise BatchDecomissioned
+        if self.is_decommissioned:
+            raise BatchDecommissioned
 
         if content_key in self._deleted:
             return False
@@ -43,8 +43,8 @@ class _AtomicBatch(ContentStorageAPI):
             return self._storage.has_content(content_key)
 
     def get_content(self, content_key: ContentKey) -> bytes:
-        if self.is_decomissioned:
-            raise BatchDecomissioned
+        if self.is_decommissioned:
+            raise BatchDecommissioned
 
         if content_key in self._deleted:
             raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
@@ -57,8 +57,8 @@ class _AtomicBatch(ContentStorageAPI):
     def set_content(
         self, content_key: ContentKey, content: bytes, exists_ok: bool = False
     ) -> None:
-        if self.is_decomissioned:
-            raise BatchDecomissioned
+        if self.is_decommissioned:
+            raise BatchDecommissioned
 
         if self.has_content(content_key) and not exists_ok:
             raise ContentAlreadyExists(
@@ -69,8 +69,8 @@ class _AtomicBatch(ContentStorageAPI):
         self._deleted.discard(content_key)
 
     def delete_content(self, content_key: ContentKey) -> None:
-        if self.is_decomissioned:
-            raise BatchDecomissioned
+        if self.is_decommissioned:
+            raise BatchDecommissioned
 
         if not self.has_content(content_key):
             raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
@@ -86,8 +86,8 @@ class _AtomicBatch(ContentStorageAPI):
         start_key: Optional[ContentKey] = None,
         end_key: Optional[ContentKey] = None,
     ) -> Iterator[ContentKey]:
-        if self.is_decomissioned:
-            raise BatchDecomissioned
+        if self.is_decommissioned:
+            raise BatchDecommissioned
 
         base_keys = set(self._storage.enumerate_keys(start_key, end_key)).difference(
             self._deleted
@@ -99,10 +99,10 @@ class _AtomicBatch(ContentStorageAPI):
         raise NotImplementedError("Atomic batch recursion not supported")
 
     def finalize(self) -> Tuple[Set[ContentKey], Tuple[Tuple[ContentKey, bytes], ...]]:
-        if self.is_decomissioned:
-            raise BatchDecomissioned
+        if self.is_decommissioned:
+            raise BatchDecommissioned
 
-        self.is_decomissioned = True
+        self.is_decommissioned = True
         to_write = tuple(
             (content_key, self._batch.get_content(content_key))
             for content_key in self._batch.enumerate_keys()
@@ -168,6 +168,10 @@ class MemoryContentStorage(ContentStorageAPI):
 
         yield batch
 
+        # It is possible that any of these lines could raise an exception which
+        # would leave us in an intermediate state.  The atomicity requirements
+        # for this API are not critical and thus we accept this as a complexity
+        # trade-off.
         to_delete, to_write = batch.finalize()
         for content_key in to_delete:
             self.delete_content(content_key)
@@ -375,6 +379,10 @@ class FileSystemContentStorage(ContentStorageAPI):
 
         yield batch
 
+        # It is possible that any of these lines could raise an exception which
+        # would leave us in an intermediate state.  The atomicity requirements
+        # for this API are not critical and thus we accept this as a complexity
+        # trade-off.
         to_delete, to_write = batch.finalize()
         for content_key in to_delete:
             self.delete_content(content_key)
