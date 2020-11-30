@@ -159,6 +159,15 @@ class BaseSession(SessionAPI):
     async def _process_message_buffers(self) -> None:
         ...
 
+    async def await_handshake_completion(self) -> None:
+        if self.is_after_handshake:
+            raise Exception("Handshake is already complete")
+
+        async with self._events.session_handshake_complete.subscribe() as subscription:
+            async for session in subscription:
+                if session.id == self.id:
+                    return
+
     def decode_message(self, packet: Packet[MessagePacket]) -> BaseMessage:
         return decode_message(
             self.keys.decryption_key,

@@ -116,6 +116,10 @@ class SessionAPI(ABC):
     def is_after_handshake(self) -> bool:
         ...
 
+    @abstractmethod
+    async def await_handshake_completion(self) -> None:
+        ...
+
     #
     # Message and Envelope handlers
     #
