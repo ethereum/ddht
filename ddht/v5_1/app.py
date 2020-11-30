@@ -109,6 +109,7 @@ class Application(BaseApplication):
             local_private_key=local_private_key,
             listen_on=listen_on,
             enr_db=enr_db,
+            session_cache_size=self._args.session_cache_size,
             events=events,
             message_type_registry=message_type_registry,
         )

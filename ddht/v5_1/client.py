@@ -53,6 +53,7 @@ class Client(Service, ClientAPI):
         local_private_key: keys.PrivateKey,
         listen_on: Endpoint,
         enr_db: QueryableENRDatabaseAPI,
+        session_cache_size: int,
         events: EventsAPI = None,
         message_type_registry: MessageTypeRegistry = v51_registry,
     ) -> None:
@@ -107,6 +108,7 @@ class Client(Service, ClientAPI):
             enr_db=self.enr_db,
             outbound_envelope_send_channel=self._outbound_envelope_send_channel,
             inbound_message_send_channel=self._inbound_message_send_channel,
+            session_cache_size=session_cache_size,
             message_type_registry=self._registry,
             events=self.events,
         )

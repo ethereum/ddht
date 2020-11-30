@@ -62,6 +62,7 @@ class Node(NodeAPI):
                 local_private_key=self.private_key,
                 listen_on=self.endpoint,
                 enr_db=self.enr_db,
+                session_cache_size=1024,
                 events=self.events,
             )
             async with background_trio_service(client):
@@ -77,6 +78,7 @@ class Node(NodeAPI):
                 local_private_key=self.private_key,
                 listen_on=self.endpoint,
                 enr_db=self.enr_db,
+                session_cache_size=1024,
                 events=self.events,
             )
             network = Network(client, bootnodes)

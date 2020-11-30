@@ -98,11 +98,6 @@ class SessionAPI(ABC):
     def timeout_at(self) -> float:
         ...
 
-    @property
-    @abstractmethod
-    def last_message_received_at(self) -> float:
-        ...
-
     #
     # Handshake Status
     #

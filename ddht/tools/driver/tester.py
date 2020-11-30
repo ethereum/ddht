@@ -93,6 +93,7 @@ class Tester(TesterAPI):
                 enr_db=node.enr_db,
                 outbound_envelope_send_channel=channels.outbound_envelope_send_channel,
                 inbound_message_send_channel=channels.inbound_message_send_channel,
+                session_cache_size=1024,
                 events=node.events,
             )
             self._pools[node.node_id] = PoolAndChannels(pool, channels)

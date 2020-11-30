@@ -148,7 +148,7 @@ class Dispatcher(Service, DispatcherAPI):
         self.manager.run_daemon_task(
             self._handle_outbound_messages, self._outbound_message_receive_channel,
         )
-        self.manager.run_daemon_task(self._monitor_hanshake_completions)
+        self.manager.run_daemon_task(self._monitor_handshake_completions)
         await self.manager.wait_finished()
 
     async def _handle_inbound_envelopes(
@@ -235,7 +235,7 @@ class Dispatcher(Service, DispatcherAPI):
     #
     # Session Management
     #
-    async def _monitor_hanshake_completions(self) -> None:
+    async def _monitor_handshake_completions(self) -> None:
         """
         Ensure that we only ever have one fully handshaked session for any
         given endpoint/node-id.  Anytime we find a duplicate sessions exists we
