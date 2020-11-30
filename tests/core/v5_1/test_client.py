@@ -285,9 +285,7 @@ async def test_client_talk_request_response_timeout(alice, bob_client, autojump_
 
 @given(datagram_bytes=st.binary(max_size=1024))
 @pytest.mark.trio
-async def test_client_handles_malformed_datagrams(
-    tester, datagram_bytes, autojump_clock
-):
+async def test_client_handles_malformed_datagrams(tester, datagram_bytes):
     bob = tester.node()
     async with bob.client() as bob_client:
         alice = tester.node()
