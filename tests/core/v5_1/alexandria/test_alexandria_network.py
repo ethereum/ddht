@@ -151,11 +151,14 @@ async def test_alexandria_network_advertise(
                 assert ack_payload.advertisement_radius == 12345
 
 
+@pytest.mark.parametrize(
+    "content_size", (512, 2048),
+)
 @pytest.mark.trio
 async def test_alexandria_network_get_content_proof_api(
-    alice, bob, alice_alexandria_network, bob_alexandria_client,
+    alice, bob, alice_alexandria_network, bob_alexandria_client, content_size,
 ):
-    content = ContentFactory(length=16 * 32 * 4)
+    content = ContentFactory(length=content_size)
     proof = compute_proof(content, sedes=content_sedes)
 
     async with bob_alexandria_client.subscribe(GetContentMessage) as subscription:
@@ -163,15 +166,20 @@ async def test_alexandria_network_get_content_proof_api(
 
             async def _serve():
                 request = await subscription.receive()
-                partial = proof.to_partial(
-                    request.message.payload.start_chunk_index * 32,
-                    request.message.payload.max_chunks * 32,
-                )
-                payload = partial.serialize()
+                if content_size > 1024:
+                    partial = proof.to_partial(
+                        request.message.payload.start_chunk_index * 32,
+                        request.message.payload.max_chunks * 32,
+                    )
+                    payload = partial.serialize()
+                    is_proof = True
+                else:
+                    payload = content
+                    is_proof = False
                 await bob_alexandria_client.send_content(
                     request.sender_node_id,
                     request.sender_endpoint,
-                    is_proof=True,
+                    is_proof=is_proof,
                     payload=payload,
                     request_id=request.request_id,
                 )
