@@ -12,7 +12,7 @@ from typing import (
 
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
-from eth_typing import NodeID
+from eth_typing import Hash32, NodeID
 import trio
 
 from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
@@ -29,6 +29,7 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     TAlexandriaMessage,
 )
+from ddht.v5_1.alexandria.partials.proof import Proof
 from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.alexandria.typing import ContentKey
 
@@ -268,6 +269,30 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
     ) -> Tuple[ENRAPI, ...]:
+        ...
+
+    async def get_content_proof(
+        self,
+        node_id: NodeID,
+        *,
+        hash_tree_root: Hash32,
+        content_key: ContentKey,
+        start_chunk_index: int,
+        max_chunks: int,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> Proof:
+        ...
+
+    @abstractmethod
+    async def get_content_from_nodes(
+        self,
+        nodes: Collection[Tuple[NodeID, Optional[Endpoint]]],
+        *,
+        hash_tree_root: Hash32,
+        content_key: ContentKey,
+        concurrency: int = 4,
+    ) -> Proof:
         ...
 
     @abstractmethod
