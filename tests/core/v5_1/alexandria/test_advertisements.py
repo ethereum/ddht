@@ -8,6 +8,7 @@ import pytest
 import ssz
 
 from ddht.tools.factories.alexandria import AdvertisementFactory
+from ddht.tools.factories.content import ContentFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.v5_1.alexandria.advertisements import (
     ADVERTISEMENT_FIXED_SIZE,
@@ -54,7 +55,10 @@ def test_advertisement_to_and_from_sedes_payload():
     assert result == advertisement
 
 
-@given(content_key=st.binary(min_size=33, max_size=128),)
+content_key_st = st.integers(min_value=33, max_value=128).map(ContentFactory)
+
+
+@given(content_key=content_key_st,)
 def test_advertisement_encoded_size(content_key):
     advertisement = AdvertisementFactory(content_key=content_key)
     encoded = ssz.encode(advertisement.to_sedes_payload(), sedes=AdvertisementSedes)
@@ -62,11 +66,7 @@ def test_advertisement_encoded_size(content_key):
     assert len(encoded) == ADVERTISEMENT_FIXED_SIZE + len(content_key) - 4
 
 
-@given(
-    content_keys=st.lists(
-        st.binary(min_size=33, max_size=128), min_size=1, max_size=5,
-    ),
-)
+@given(content_keys=st.lists(content_key_st),)
 def test_advertise_message_encoded_size(content_keys):
     advertisements = tuple(
         AdvertisementFactory(content_key=content_key) for content_key in content_keys
@@ -82,11 +82,7 @@ def test_advertise_message_encoded_size(content_keys):
     )
 
 
-@given(
-    content_keys=st.lists(
-        st.binary(min_size=33, max_size=128), min_size=1, max_size=20,
-    ),
-)
+@given(content_keys=st.lists(content_key_st))
 def test_advertisement_partitioning(content_keys):
     advertisements = tuple(
         AdvertisementFactory(
