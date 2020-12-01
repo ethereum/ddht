@@ -48,6 +48,7 @@ from ddht.v5_1.pool import Pool
 class Client(Service, ClientAPI):
     logger = logging.getLogger("ddht.Client")
 
+    # commentx
     def __init__(
         self,
         local_private_key: keys.PrivateKey,
