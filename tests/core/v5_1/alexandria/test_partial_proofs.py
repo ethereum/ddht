@@ -1,11 +1,10 @@
-from hypothesis import example, given
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 from ssz import get_hash_tree_root
 from ssz.hash import hash_eth2
 
 from ddht.tools.factories.content import ContentFactory
-from ddht.v5_1.alexandria.constants import GB
 from ddht.v5_1.alexandria.partials.proof import (
     Proof,
     compute_proof,
@@ -15,7 +14,7 @@ from ddht.v5_1.alexandria.partials.proof import (
 from ddht.v5_1.alexandria.sedes import ByteList, content_sedes
 
 
-@given(content=st.binary(min_size=0, max_size=GB))
+@settings(deadline=1000, max_examples=100)
 @example(content=b"")
 @example(content=b"\x00" * 31)
 @example(content=b"\x00" * 32)
@@ -23,6 +22,7 @@ from ddht.v5_1.alexandria.sedes import ByteList, content_sedes
 @example(content=b"\x00" * 63)
 @example(content=b"\x00" * 64)
 @example(content=b"\x00" * 65)
+@given(content=st.binary(min_size=1, max_size=10240))
 def test_ssz_full_proofs(content):
     expected_hash_tree_root = get_hash_tree_root(content, sedes=content_sedes)
     proof = compute_proof(content, sedes=content_sedes)
@@ -134,14 +134,16 @@ def test_ssz_partial_proof_construction(content, data_slice):
     assert data_from_partial == content[data_slice]
 
 
+@settings(deadline=1000, max_examples=100)
 @given(data=st.data())
 def test_ssz_partial_proof_fuzzy(data):
-    content = data.draw(st.binary(min_size=0, max_size=GB))
+    content = data.draw(st.binary(min_size=1, max_size=10240))
+    content_length = len(content)
 
     slice_start = data.draw(
-        st.integers(min_value=0, max_value=max(0, len(content) - 1))
+        st.integers(min_value=0, max_value=max(0, content_length - 1))
     )
-    slice_stop = data.draw(st.integers(min_value=slice_start, max_value=len(content)))
+    slice_stop = data.draw(st.integers(min_value=slice_start, max_value=content_length))
     data_slice = slice(slice_start, slice_stop)
 
     full_proof = compute_proof(content, sedes=content_sedes)
@@ -739,9 +741,10 @@ def test_ssz_partial_proof_merge():
     assert combined_data[0:128] == CONTENT_12345[0:128]
 
 
+@settings(deadline=1000, max_examples=100)
 @given(data=st.data())
 def test_ssz_partial_proof_merge_fuzzy(data):
-    content = data.draw(st.binary(min_size=0, max_size=GB))
+    content = data.draw(st.binary(min_size=1, max_size=10240))
 
     full_proof = compute_proof(content, sedes=content_sedes)
 

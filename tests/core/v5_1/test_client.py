@@ -2,7 +2,7 @@ from contextlib import AsyncExitStack
 import itertools
 
 from eth_enr.tools.factories import ENRFactory
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
 import trio
@@ -283,6 +283,7 @@ async def test_client_talk_request_response_timeout(alice, bob_client, autojump_
             )
 
 
+@settings(deadline=1000)
 @given(datagram_bytes=st.binary(max_size=1024))
 @pytest.mark.trio
 async def test_client_handles_malformed_datagrams(tester, datagram_bytes):

@@ -3,7 +3,6 @@ from hypothesis import strategies as st
 import pytest
 from ssz.constants import CHUNK_SIZE
 
-from ddht.v5_1.alexandria.constants import GB
 from ddht.v5_1.alexandria.partials._utils import get_chunk_count_for_data_length
 from ddht.v5_1.alexandria.partials.chunking import (
     MissingSegment,
@@ -15,7 +14,7 @@ from ddht.v5_1.alexandria.partials.chunking import (
 )
 
 
-@settings(max_examples=1000)
+@settings(deadline=1000, max_examples=100)
 @example(content=b"\x00" * 31)
 @example(content=b"\x00" * 32)
 @example(content=b"\x00" * 33)
@@ -25,7 +24,7 @@ from ddht.v5_1.alexandria.partials.chunking import (
 @example(
     content=b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00"  # noqa: E501
 )
-@given(content=st.binary(min_size=0, max_size=GB))
+@given(content=st.binary(min_size=1, max_size=10240))
 def test_ssz_compute_chunks(content):
     # TODO: clear up this discrepancy.  When the content is the empty
     # bytestring, we actually have zero chunks, but most of the code treats it
