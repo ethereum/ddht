@@ -17,9 +17,10 @@ from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
-from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.client import AlexandriaClient
+from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.partials._utils import get_chunk_count_for_data_length
 from ddht.v5_1.alexandria.partials.chunking import slice_segments_to_max_chunk_count
@@ -51,13 +52,24 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # Delegate to the AlexandriaClient for determining `protocol_id`
     protocol_id = AlexandriaClient.protocol_id
 
-    def __init__(self, network: NetworkAPI, bootnodes: Collection[ENRAPI]) -> None:
+    def __init__(
+        self,
+        network: NetworkAPI,
+        bootnodes: Collection[ENRAPI],
+        content_storage: ContentStorageAPI,
+        max_advertisement_count: int = 65536,
+    ) -> None:
         self._bootnodes = tuple(bootnodes)
 
         self.client = AlexandriaClient(network)
 
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
+        )
+
+        self.content_storage = content_storage
+        self.content_provider = ContentProvider(
+            client=self.client, content_storage=content_storage,
         )
 
         self._last_pong_at = LRU(2048)
@@ -81,6 +93,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
+        self.manager.run_daemon_child_service(self.content_provider)
 
         # Long running processes
         self.manager.run_daemon_task(self._periodically_report_routing_table)

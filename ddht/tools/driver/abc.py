@@ -16,13 +16,19 @@ from ddht.v5_1.abc import (
     PoolAPI,
     SessionAPI,
 )
-from ddht.v5_1.alexandria.abc import AlexandriaClientAPI, AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.abc import (
+    AlexandriaClientAPI,
+    AlexandriaNetworkAPI,
+    ContentStorageAPI,
+)
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.messages import PingMessage, PongMessage
 from ddht.v5_1.packets import AnyPacket
 
 
 class AlexandriaNodeAPI(ABC):
+    content_storage: ContentStorageAPI
+
     @abstractmethod
     def client(
         self, network: Optional[NetworkAPI] = None

@@ -10,6 +10,7 @@ from ddht.tools.driver.abc import AlexandriaNodeAPI, NodeAPI
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI, AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
+from ddht.v5_1.alexandria.content_storage import MemoryContentStorage
 from ddht.v5_1.alexandria.network import AlexandriaNetwork
 
 
@@ -18,6 +19,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
     def __init__(self, node: NodeAPI) -> None:
         self.node = node
+        self.content_storage = MemoryContentStorage()
         self._lock = NamedLock()
 
     @asynccontextmanager
@@ -54,6 +56,8 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
-                alexandria_network = AlexandriaNetwork(network, ())
+                alexandria_network = AlexandriaNetwork(
+                    network=network, bootnodes=(), content_storage=self.content_storage,
+                )
                 async with background_trio_service(alexandria_network):
                     yield alexandria_network
