@@ -1,4 +1,4 @@
-from hypothesis import example, given, settings
+from hypothesis import example, given
 from hypothesis import strategies as st
 import pytest
 from ssz import get_hash_tree_root
@@ -15,7 +15,6 @@ from ddht.v5_1.alexandria.partials.proof import (
 from ddht.v5_1.alexandria.sedes import ByteList, content_sedes
 
 
-@settings(max_examples=1000)
 @given(content=st.binary(min_size=0, max_size=GB))
 @example(content=b"")
 @example(content=b"\x00" * 31)
@@ -135,7 +134,6 @@ def test_ssz_partial_proof_construction(content, data_slice):
     assert data_from_partial == content[data_slice]
 
 
-@settings(max_examples=1000)
 @given(data=st.data())
 def test_ssz_partial_proof_fuzzy(data):
     content = data.draw(st.binary(min_size=0, max_size=GB))
@@ -741,7 +739,6 @@ def test_ssz_partial_proof_merge():
     assert combined_data[0:128] == CONTENT_12345[0:128]
 
 
-@settings(max_examples=1000)
 @given(data=st.data())
 def test_ssz_partial_proof_merge_fuzzy(data):
     content = data.draw(st.binary(min_size=0, max_size=GB))
