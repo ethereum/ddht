@@ -1,8 +1,7 @@
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
 
-from ddht.tools.factories.content import ContentFactory
 from ddht.v5_1.alexandria.partials.proof import (
     Proof,
     compute_proof,
@@ -46,6 +45,7 @@ def test_proof_path_serialization_round_trip(path, previous):
     assert result == path
 
 
+@settings(deadline=1000, max_examples=100)
 @given(data=st.data(),)
 def test_proof_path_serialization_round_trip_fuzzy(data):
     path = data.draw(st.lists(st.booleans(), min_size=0, max_size=25).map(tuple))
@@ -56,10 +56,8 @@ def test_proof_path_serialization_round_trip_fuzzy(data):
     assert result == path
 
 
-MB = 1024 * 1024
-
-
-@given(content=st.binary(min_size=0, max_size=MB))
+@settings(deadline=1000, max_examples=100)
+@given(content=st.binary(min_size=1, max_size=10240))
 def test_full_proof_serialization_and_deserialization(content):
     proof = compute_proof(content, sedes=content_sedes)
 
@@ -73,16 +71,10 @@ def test_full_proof_serialization_and_deserialization(content):
     assert result == proof
 
 
+@settings(deadline=1000, max_examples=100)
 @given(data=st.data())
 def test_partial_proof_serialization_and_deserialization(data):
-    content = data.draw(
-        st.one_of(
-            st.binary(min_size=1, max_size=1024),
-            st.integers(min_value=1, max_value=256).map(
-                lambda v: ContentFactory(v * 128)
-            ),
-        )
-    )
+    content = data.draw(st.binary(min_size=1, max_size=10240))
 
     slice_start = data.draw(st.integers(min_value=0, max_value=len(content) - 1))
     slice_stop = data.draw(st.integers(min_value=slice_start, max_value=len(content)))
