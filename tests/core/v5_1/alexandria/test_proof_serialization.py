@@ -1,4 +1,4 @@
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 import pytest
 
@@ -59,7 +59,6 @@ def test_proof_path_serialization_round_trip_fuzzy(data):
 MB = 1024 * 1024
 
 
-@settings(max_examples=1000)
 @given(content=st.binary(min_size=0, max_size=MB))
 def test_full_proof_serialization_and_deserialization(content):
     proof = compute_proof(content, sedes=content_sedes)
@@ -74,7 +73,6 @@ def test_full_proof_serialization_and_deserialization(content):
     assert result == proof
 
 
-@settings(max_examples=1000)
 @given(data=st.data())
 def test_partial_proof_serialization_and_deserialization(data):
     content = data.draw(
