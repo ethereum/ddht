@@ -3,6 +3,7 @@ from typing import (
     Any,
     AsyncContextManager,
     Collection,
+    ContextManager,
     Iterable,
     Optional,
     Sequence,
@@ -44,7 +45,9 @@ class ContentStorageAPI(ABC):
         ...
 
     @abstractmethod
-    def set_content(self, content_key: ContentKey, content: bytes) -> None:
+    def set_content(
+        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
+    ) -> None:
         ...
 
     @abstractmethod
@@ -57,6 +60,10 @@ class ContentStorageAPI(ABC):
         start_key: Optional[ContentKey] = None,
         end_key: Optional[ContentKey] = None,
     ) -> Iterable[ContentKey]:
+        ...
+
+    @abstractmethod
+    def atomic(self) -> ContextManager["ContentStorageAPI"]:
         ...
 
 

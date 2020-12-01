@@ -1,7 +1,8 @@
 import bisect
+import contextlib
 import pathlib
 import sqlite3
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, ContextManager, Dict, Iterator, Optional, Set, Tuple
 
 from ddht.v5_1.alexandria.abc import ContentStorageAPI
 from ddht.v5_1.alexandria.content import content_key_to_content_id
@@ -10,6 +11,106 @@ from ddht.v5_1.alexandria.typing import ContentKey
 
 class ContentNotFound(Exception):
     pass
+
+
+class ContentAlreadyExists(Exception):
+    pass
+
+
+class BatchDecommissioned(Exception):
+    pass
+
+
+class _AtomicBatch(ContentStorageAPI):
+    _deleted: Set[ContentKey]
+    is_decommissioned: bool
+
+    def __init__(self, storage: ContentStorageAPI) -> None:
+        self._storage = storage
+        self._batch = MemoryContentStorage()
+        self._deleted = set()
+        self.is_decommissioned = False
+
+    def has_content(self, content_key: ContentKey) -> bool:
+        if self.is_decommissioned:
+            raise BatchDecommissioned
+
+        if content_key in self._deleted:
+            return False
+        elif self._batch.has_content(content_key):
+            return True
+        else:
+            return self._storage.has_content(content_key)
+
+    def get_content(self, content_key: ContentKey) -> bytes:
+        if self.is_decommissioned:
+            raise BatchDecommissioned
+
+        if content_key in self._deleted:
+            raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
+
+        try:
+            return self._batch.get_content(content_key)
+        except ContentNotFound:
+            return self._storage.get_content(content_key)
+
+    def set_content(
+        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
+    ) -> None:
+        if self.is_decommissioned:
+            raise BatchDecommissioned
+
+        if self.has_content(content_key) and not exists_ok:
+            raise ContentAlreadyExists(
+                f"Content already exists for key: content_key={content_key.hex()}"
+            )
+
+        self._batch.set_content(content_key, content, exists_ok=exists_ok)
+        self._deleted.discard(content_key)
+
+    def delete_content(self, content_key: ContentKey) -> None:
+        if self.is_decommissioned:
+            raise BatchDecommissioned
+
+        if not self.has_content(content_key):
+            raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
+
+        if self._batch.has_content(content_key):
+            self._batch.delete_content(content_key)
+
+        if self._storage.has_content(content_key):
+            self._deleted.add(content_key)
+
+    def enumerate_keys(
+        self,
+        start_key: Optional[ContentKey] = None,
+        end_key: Optional[ContentKey] = None,
+    ) -> Iterator[ContentKey]:
+        if self.is_decommissioned:
+            raise BatchDecommissioned
+
+        base_keys = set(self._storage.enumerate_keys(start_key, end_key)).difference(
+            self._deleted
+        )
+        batch_keys = set(self._batch.enumerate_keys(start_key, end_key))
+        yield from sorted(base_keys | batch_keys)
+
+    def atomic(self) -> ContextManager[ContentStorageAPI]:
+        raise NotImplementedError("Atomic batch recursion not supported")
+
+    def finalize(self) -> Tuple[Set[ContentKey], Tuple[Tuple[ContentKey, bytes], ...]]:
+        if self.is_decommissioned:
+            raise BatchDecommissioned
+
+        self.is_decommissioned = True
+        to_write = tuple(
+            (content_key, self._batch.get_content(content_key))
+            for content_key in self._batch.enumerate_keys()
+        )
+        return (
+            self._deleted,
+            to_write,
+        )
 
 
 class MemoryContentStorage(ContentStorageAPI):
@@ -27,7 +128,13 @@ class MemoryContentStorage(ContentStorageAPI):
         except KeyError:
             raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
 
-    def set_content(self, content_key: ContentKey, content: bytes) -> None:
+    def set_content(
+        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
+    ) -> None:
+        if content_key in self._db and exists_ok is False:
+            raise ContentAlreadyExists(
+                f"Content already exists for key: content_key={content_key.hex()}"
+            )
         self._db[content_key] = content
 
     def delete_content(self, content_key: ContentKey) -> None:
@@ -40,7 +147,7 @@ class MemoryContentStorage(ContentStorageAPI):
         self,
         start_key: Optional[ContentKey] = None,
         end_key: Optional[ContentKey] = None,
-    ) -> Iterable[ContentKey]:
+    ) -> Iterator[ContentKey]:
         all_keys = sorted(self._db.keys())
 
         if start_key is None:
@@ -54,6 +161,22 @@ class MemoryContentStorage(ContentStorageAPI):
             right = bisect.bisect_right(all_keys, end_key)
 
         yield from all_keys[left:right]
+
+    @contextlib.contextmanager
+    def atomic(self) -> Iterator[ContentStorageAPI]:
+        batch = _AtomicBatch(self)
+
+        yield batch
+
+        # It is possible that any of these lines could raise an exception which
+        # would leave us in an intermediate state.  The atomicity requirements
+        # for this API are not critical and thus we accept this as a complexity
+        # trade-off.
+        to_delete, to_write = batch.finalize()
+        for content_key in to_delete:
+            self.delete_content(content_key)
+        for content_key, content in to_write:
+            self.set_content(content_key, content, exists_ok=True)
 
 
 STORAGE_CREATE_STATEMENT = """CREATE TABLE storage (
@@ -93,7 +216,8 @@ STORAGE_INSERT_QUERY = """INSERT INTO storage
 def insert_content(
     conn: sqlite3.Connection, content_key: ContentKey, path: pathlib.Path,
 ) -> None:
-    conn.execute(STORAGE_INSERT_QUERY, (content_key, str(path)))
+    with conn:
+        conn.execute(STORAGE_INSERT_QUERY, (content_key, str(path)))
 
 
 STORAGE_EXISTS_QUERY = """SELECT EXISTS (
@@ -132,7 +256,8 @@ DELETE_CONTENT_QUERY = """DELETE FROM storage WHERE storage.content_key = ?"""
 
 
 def delete_content(conn: sqlite3.Connection, content_key: ContentKey) -> bool:
-    cursor = conn.execute(DELETE_CONTENT_QUERY, (content_key,))
+    with conn:
+        cursor = conn.execute(DELETE_CONTENT_QUERY, (content_key,))
     return bool(cursor.rowcount)
 
 
@@ -149,7 +274,7 @@ def enumerate_content_keys(
     conn: sqlite3.Connection,
     left_bound: Optional[ContentKey],
     right_bound: Optional[ContentKey],
-) -> Iterable[ContentKey]:
+) -> Iterator[ContentKey]:
     query: str
     params: Tuple[Any, ...]
 
@@ -195,12 +320,19 @@ class FileSystemContentStorage(ContentStorageAPI):
         content_path = self.base_dir / content_path_rel
         return content_path.read_bytes()
 
-    def set_content(self, content_key: ContentKey, content: bytes) -> None:
+    def set_content(
+        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
+    ) -> None:
         """
         /content_id.hex()[:2]/content_id.hex()[2:4]/content_id.hex()
         """
         if self.has_content(content_key):
-            raise Exception("Unhandled")
+            if exists_ok:
+                self.delete_content(content_key)
+            else:
+                raise ContentAlreadyExists(
+                    f"Content already exists for key: content_key={content_key.hex()}"
+                )
         content_id = content_key_to_content_id(content_key)
         content_id_hex = content_id.hex()
 
@@ -210,9 +342,6 @@ class FileSystemContentStorage(ContentStorageAPI):
             self.base_dir / content_id_hex[:2] / content_id_hex[2:4] / content_id_hex
         )
         content_path_rel = content_path.relative_to(self.base_dir)
-
-        if content_path.exists():
-            raise Exception("Unhandled")
 
         # Lazily create the directory structure
         content_path.parent.mkdir(parents=True, exist_ok=True)
@@ -241,5 +370,21 @@ class FileSystemContentStorage(ContentStorageAPI):
         self,
         start_key: Optional[ContentKey] = None,
         end_key: Optional[ContentKey] = None,
-    ) -> Iterable[ContentKey]:
+    ) -> Iterator[ContentKey]:
         yield from enumerate_content_keys(self._conn, start_key, end_key)
+
+    @contextlib.contextmanager
+    def atomic(self) -> Iterator[ContentStorageAPI]:
+        batch = _AtomicBatch(self)
+
+        yield batch
+
+        # It is possible that any of these lines could raise an exception which
+        # would leave us in an intermediate state.  The atomicity requirements
+        # for this API are not critical and thus we accept this as a complexity
+        # trade-off.
+        to_delete, to_write = batch.finalize()
+        for content_key in to_delete:
+            self.delete_content(content_key)
+        for content_key, content in to_write:
+            self.set_content(content_key, content, exists_ok=True)
