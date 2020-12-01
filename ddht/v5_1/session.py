@@ -64,6 +64,7 @@ class BaseSession(SessionAPI):
         self.id = uuid.uuid4()
 
         self.created_at = trio.current_time()
+        self._handshake_complete = trio.Event()
 
         if events is None:
             events = Events()
@@ -158,6 +159,12 @@ class BaseSession(SessionAPI):
     @abstractmethod
     async def _process_message_buffers(self) -> None:
         ...
+
+    async def await_handshake_completion(self) -> None:
+        if self.is_after_handshake:
+            raise Exception("Handshake is already complete")
+
+        await self._handshake_complete.wait()
 
     def decode_message(self, packet: Packet[MessagePacket]) -> BaseMessage:
         return decode_message(
@@ -311,6 +318,7 @@ class SessionInitiator(BaseSession):
                     self.logger.debug("%s: HandshakeFailure: %s", self, err)
                     return False
                 self._status = SessionStatus.AFTER
+                self._handshake_complete.set()
                 self._last_message_received_at = trio.current_time()
                 await self._events.session_handshake_complete.trigger(self)
 
@@ -546,6 +554,7 @@ class SessionRecipient(BaseSession):
                     return False
                 else:
                     self._status = SessionStatus.AFTER
+                    self._handshake_complete.set()
                     await self._events.session_handshake_complete.trigger(self)
                     await self._process_message_buffers()
                     return True

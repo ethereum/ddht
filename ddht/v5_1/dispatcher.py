@@ -20,7 +20,7 @@ from ddht.base_message import (
 from ddht.endpoint import Endpoint
 from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
-from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
+from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT, SESSION_IDLE_TIMEOUT
 from ddht.v5_1.envelope import InboundEnvelope
 from ddht.v5_1.events import Events
 from ddht.v5_1.exceptions import SessionNotFound
@@ -149,6 +149,7 @@ class Dispatcher(Service, DispatcherAPI):
             self._handle_outbound_messages, self._outbound_message_receive_channel,
         )
         self.manager.run_daemon_task(self._monitor_handshake_completions)
+        self.manager.run_daemon_task(self._monitor_new_sessions)
         await self.manager.wait_finished()
 
     async def _handle_inbound_envelopes(
@@ -268,21 +269,26 @@ class Dispatcher(Service, DispatcherAPI):
                         )
                         self._pool.remove_session(other.id)
 
+    async def _monitor_new_sessions(self) -> None:
+        async with trio.open_nursery() as nursery:
+            async with self._events.session_created.subscribe() as subscription:
+                async for session in subscription:
+                    nursery.start_soon(self._monitor_session_timeout, session)
+
     async def _monitor_session_timeout(self, session: SessionAPI) -> None:
         """
         Monitor for the session to timeout, removing it from the pool.
         """
-        while self.manager.is_running:
-            await trio.sleep_until(session.timeout_at)
+        with trio.move_on_after(SESSION_IDLE_TIMEOUT) as scope:
+            await session.await_handshake_completion()
 
-            if session.is_timed_out:
-                try:
-                    self._pool.remove_session(session.id)
-                except SessionNotFound:
-                    break
-                else:
-                    await self._events.session_timeout.trigger(session)
-                    break
+        if scope.cancelled_caught:
+            try:
+                self._pool.remove_session(session.id)
+            except SessionNotFound:
+                pass
+            else:
+                await self._events.session_timeout.trigger(session)
 
     def _get_sessions_for_inbound_envelope(
         self, envelope: InboundEnvelope
@@ -314,7 +320,6 @@ class Dispatcher(Service, DispatcherAPI):
             self.logger.debug(
                 "Inbound envelope %s initiated new session: %s", envelope, session
             )
-            self.manager.run_task(self._monitor_session_timeout, session)
             sessions = (session,)
 
         return sessions
@@ -341,7 +346,6 @@ class Dispatcher(Service, DispatcherAPI):
             self.logger.debug(
                 "Outbound message %s initiated new session: %s", message, session
             )
-            self.manager.run_task(self._monitor_session_timeout, session)
             sessions = (session,)
 
         return sessions
