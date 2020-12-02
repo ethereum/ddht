@@ -4,6 +4,7 @@ from typing import (
     Any,
     AsyncContextManager,
     Collection,
+    NamedTuple,
     Optional,
     Protocol,
     Sequence,
@@ -420,11 +421,23 @@ class TalkProtocolAPI(ABC):
     protocol_id: bytes
 
 
+class CommonPingPayload(NamedTuple):
+    request_id: bytes
+    sender_node_id: NodeID
+    sender_endpoint: Endpoint
+    enr_seq: int
+
+
 class PingHandlerAPI(ServiceAPI):
     async def ready(self) -> None:
         ...
 
-    def get_last_ping_at(self, node_id: NodeID) -> None:
+    @abstractmethod
+    async def send_pong(self, payload: CommonPingPayload) -> None:
+        ...
+
+    @abstractmethod
+    def subscribe_ping(self) -> AsyncContextManager[trio.abc.ReceiveChannel[CommonPingPayload]]:
         ...
 
 

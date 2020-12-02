@@ -21,8 +21,7 @@ from eth_utils.toolz import take
 from lru import LRU
 import trio
 
-from ddht._utils import adaptive_timeout, every, reduce_enrs
-from ddht.base_message import InboundMessage
+from ddht._utils import adaptive_timeout, reduce_enrs
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.exceptions import (
@@ -37,6 +36,7 @@ from ddht.kademlia import (
 )
 from ddht.v5_1.abc import (
     ClientAPI,
+    CommonPingPayload,
     DispatcherAPI,
     EventsAPI,
     NetworkAPI,
@@ -51,6 +51,7 @@ from ddht.v5_1.messages import (
     PongMessage,
     TalkRequestMessage,
 )
+from ddht.v5_1.ping_handler import BasePingHandler
 
 
 @asynccontextmanager
@@ -264,6 +265,35 @@ async def common_recursive_find_nodes(
     )
 
 
+class PingHandler(BasePingHandler):
+    _network: NetworkAPI
+
+    async def send_pong(self, payload: CommonPingPayload) -> None:
+        await self._network.client.send_pong(
+            payload.sender_node_id,
+            payload.sender_endpoint,
+            request_id=payload.request_id,
+        )
+
+    async def _feed_ping_subscription(self, send_channel: trio.abc.SendChannel[CommonPingPayload]):
+        async with send_channel:
+            async with self._network.dispatcher.subscribe(PingMessage) as subscription:
+                async for request in subscription:
+                    await send_channel.send(CommonPingPayload(
+                        request_id=request.request_id,
+                        sender_node_id=request.sender_node_id,
+                        sender_endpoint=request.sender_endpoint,
+                        enr_seq=request.message.enr_seq,
+                    ))
+
+    @asynccontextmanager
+    async def subscribe_ping(self) -> AsyncIterator[trio.abc.ReceiveChannel[CommonPingPayload]]:
+        send_channel, receive_channel = trio.open_memory_channel[CommonPingPayload](16)
+        async with receive_channel:
+            self.manager.run_task(self._feed_ping_subscription, send_channel)
+            yield receive_channel
+
+
 class Network(Service, NetworkAPI):
     logger = logging.getLogger("ddht.Network")
 
@@ -281,6 +311,8 @@ class Network(Service, NetworkAPI):
         self._last_pong_at = LRU(2048)
 
         self._talk_protocols = {}
+
+        self.ping_handler = PingHandler(self)
 
     #
     # Proxied ClientAPI properties
@@ -486,6 +518,8 @@ class Network(Service, NetworkAPI):
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
         await self.client.wait_listening()
+
+        self.manager.run_daemon_child_service(self.ping_handler)
 
         self.manager.run_daemon_task(self._serve_find_nodes)
         self.manager.run_daemon_task(self._handle_unhandled_talk_requests)

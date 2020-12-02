@@ -1,33 +1,28 @@
 from async_service import Service
 
 from eth_enr import OldSequenceNumber
-from eth_typing import NodeID
+from eth_utils import ValidationError
 from lru import LRU
 import trio
 
-from ddht.endpoint import Endpoint
 from ddht.exceptions import EmptyFindNodesResponse
-from ddht.v5_1.abc import PingHandlerAPI, ClientAPI
+from ddht.v5_1.abc import PingHandlerAPI, CommonPingPayload, NetworkProtocol
 
 
-class PingHandler(Service, PingHandlerAPI):
-    def __init__(self, client: ClientAPI) -> None:
-        self._client = client
+class BasePingHandler(Service, PingHandlerAPI):
+    def __init__(self,
+                 network: NetworkProtocol) -> None:
+        self._network = network
         self._last_pong_at = LRU(4096)
 
-    async def _maybe_add_to_routing_table(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        enr_seq: int,
-    ) -> None:
+    async def _maybe_add_to_routing_table(self, payload: CommonPingPayload) -> None:
         try:
             enr = await self._network.lookup_enr(
-                node_id,
-                enr_seq=enr_seq,
-                endpoint=endpoint,
+                payload.sender_node_id,
+                enr_seq=payload.enr_seq,
+                endpoint=payload.sender_endpoint,
             )
-        except (trio.TooSlowError, EmptyFindNodesResponse):
+        except (trio.TooSlowError, EmptyFindNodesResponse, ValidationError):
             return
 
         try:
@@ -35,22 +30,11 @@ class PingHandler(Service, PingHandlerAPI):
         except OldSequenceNumber:
             pass
 
-        self.routing_table.update(enr.node_id)
+        self._network.routing_table.update(enr.node_id)
 
     async def _pong_when_pinged(self) -> None:
         async with trio.open_nursery() as nursery:
-            async with self.dispatcher.subscribe(PingMessage) as subscription:
-                async for request in subscription:
-                    await self._network.client.send_pong(
-                        request.sender_node_id,
-                        request.sender_endpoint,
-                        self._network.enr_manager.enr.sequence_number,
-                        request.sender_endpoint.ip_address,
-                        request.sender_endpoint.port,
-                    )
-                    nursery.start_soon(
-                        self._maybe_add_to_routing_table,
-                        request.sender_node_id,
-                        request.sender_endpoint,
-                        request.message.enr_seq,
-                    )
+            async with self.subscribe_ping() as subscription:
+                async for payload in subscription:
+                    await self.send_pong(payload)
+                    nursery.start_soon(self._maybe_add_to_routing_table, payload)

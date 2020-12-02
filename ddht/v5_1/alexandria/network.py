@@ -1,6 +1,7 @@
 import logging
-from typing import AsyncContextManager, Collection, List, Optional, Tuple
+from typing import AsyncContextManager, AsyncIterator, Collection, List, Optional, Tuple
 
+from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
@@ -16,7 +17,7 @@ from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
-from ddht.v5_1.abc import NetworkAPI
+from ddht.v5_1.abc import NetworkAPI, CommonPingPayload
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.client import AlexandriaClient
@@ -31,6 +32,7 @@ from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.network import common_recursive_find_nodes
+from ddht.v5_1.ping_handler import BasePingHandler
 
 NEIGHBORHOOD_DISTANCES = (
     # First bucket is combined (128 + 64 + 32) since these will rarely be
@@ -44,6 +46,35 @@ NEIGHBORHOOD_DISTANCES = (
     # This last one is 3/4 of the network
     (255, 256),
 )
+
+
+class PingHandler(BasePingHandler):
+    _network: AlexandriaNetworkAPI
+
+    async def send_pong(self, payload: CommonPingPayload) -> None:
+        await self._network.client.send_pong(
+            payload.sender_node_id,
+            payload.sender_endpoint,
+            request_id=payload.request_id,
+        )
+
+    async def _feed_ping_subscription(self, send_channel: trio.abc.SendChannel[CommonPingPayload]):
+        async with send_channel:
+            async with self._network.dispatcher.subscribe(PingMessage) as subscription:
+                async for request in subscription:
+                    await send_channel.send(CommonPingPayload(
+                        request_id=request.request_id,
+                        sender_node_id=request.sender_node_id,
+                        sender_endpoint=request.sender_endpoint,
+                        enr_seq=request.message.enr_seq,
+                    ))
+
+    @asynccontextmanager
+    async def subscribe_ping(self) -> AsyncIterator[trio.abc.ReceiveChannel[CommonPingPayload]]:
+        send_channel, receive_channel = trio.open_memory_channel[CommonPingPayload](16)
+        async with receive_channel:
+            self.manager.run_task(self._feed_ping_subscription, send_channel)
+            yield receive_channel
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
@@ -66,6 +97,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
+
+        self.ping_handler = PingHandler(self)
 
         self.content_storage = content_storage
         self.content_provider = ContentProvider(
@@ -94,6 +127,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
         self.manager.run_daemon_child_service(self.content_provider)
+        self.manager.run_daemon_child_service(self.ping_handler)
 
         # Long running processes
         self.manager.run_daemon_task(self._periodically_report_routing_table)
