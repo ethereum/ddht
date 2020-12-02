@@ -17,9 +17,14 @@ from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
-from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
+from ddht.v5_1.alexandria.abc import (
+    AdvertisementDatabaseAPI,
+    AlexandriaNetworkAPI,
+    ContentStorageAPI,
+)
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.client import AlexandriaClient
+from ddht.v5_1.alexandria.content import compute_content_distance
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.partials._utils import get_chunk_count_for_data_length
@@ -57,9 +62,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         network: NetworkAPI,
         bootnodes: Collection[ENRAPI],
         content_storage: ContentStorageAPI,
+        advertisement_db: AdvertisementDatabaseAPI,
         max_advertisement_count: int = 65536,
     ) -> None:
         self._bootnodes = tuple(bootnodes)
+
+        self.max_advertisement_count = max_advertisement_count
 
         self.client = AlexandriaClient(network)
 
@@ -71,6 +79,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.content_provider = ContentProvider(
             client=self.client, content_storage=content_storage,
         )
+
+        self.advertisement_db = advertisement_db
 
         self._last_pong_at = LRU(2048)
         self._routing_table_ready = trio.Event()
@@ -104,6 +114,23 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.manager.run_daemon_task(self._serve_find_nodes)
 
         await self.manager.wait_finished()
+
+    #
+    # Local properties
+    #
+    @property
+    def local_advertisement_radius(self) -> int:
+        advertisement_count = self.advertisement_db.count()
+
+        if advertisement_count < self.max_advertisement_count:
+            return 2 ** 256 - 1
+
+        furthest_advertisement = first(
+            self.advertisement_db.furthest(self.local_node_id)
+        )
+        return compute_content_distance(
+            self.local_node_id, furthest_advertisement.content_id,
+        )
 
     #
     # High Level API
@@ -144,12 +171,28 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         await self.bond(node_id, endpoint=endpoint)
 
     async def ping(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+        self,
+        node_id: NodeID,
+        *,
+        enr_seq: Optional[int] = None,
+        advertisement_radius: Optional[int] = None,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
     ) -> PongPayload:
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
+        if enr_seq is None:
+            enr_seq = self.network.enr_manager.enr.sequence_number
+        if advertisement_radius is None:
+            advertisement_radius = self.local_advertisement_radius
 
-        response = await self.client.ping(node_id, endpoint=endpoint,)
+        response = await self.client.ping(
+            node_id,
+            enr_seq=enr_seq,
+            advertisement_radius=advertisement_radius,
+            endpoint=endpoint,
+            request_id=request_id,
+        )
         return response.payload
 
     async def find_nodes(
@@ -451,6 +494,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     request.sender_node_id,
                     request.sender_endpoint,
                     enr_seq=self.enr_manager.enr.sequence_number,
+                    advertisement_radius=self.local_advertisement_radius,
                     request_id=request.request_id,
                 )
                 enr = await self.network.lookup_enr(

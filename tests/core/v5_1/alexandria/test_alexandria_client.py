@@ -41,45 +41,67 @@ async def test_alexandria_client_handles_empty_response(
             nursery.start_soon(_respond_empty)
 
             with pytest.raises(ProtocolNotSupported):
-                await alice_alexandria_client.ping(bob.node_id, bob.endpoint)
+                await alice_alexandria_client.ping(
+                    bob.node_id, bob.endpoint, enr_seq=0, advertisement_radius=1234,
+                )
 
 
 @pytest.mark.trio
 async def test_alexandria_client_send_ping(bob, bob_network, alice_alexandria_client):
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
-        await alice_alexandria_client.send_ping(bob.node_id, bob.endpoint, enr_seq=100)
+        await alice_alexandria_client.send_ping(
+            bob.node_id,
+            bob.endpoint,
+            enr_seq=1234,
+            advertisement_radius=4321,
+            request_id=b"\x01\x02",
+        )
         with trio.fail_after(1):
             talk_response = await subscription.receive()
+
+        assert talk_response.request_id == b"\x01\x02"
         message = decode_message(talk_response.message.payload)
         assert isinstance(message, PingMessage)
-        assert message.payload.enr_seq == 100
+        assert message.payload.enr_seq == 1234
+        assert message.payload.advertisement_radius == 4321
 
 
 @pytest.mark.trio
 async def test_alexandria_client_send_pong(bob, bob_network, alice_alexandria_client):
     async with bob_network.dispatcher.subscribe(TalkResponseMessage) as subscription:
         await alice_alexandria_client.send_pong(
-            bob.node_id, bob.endpoint, enr_seq=100, request_id=b"\x01\x02"
+            bob.node_id,
+            bob.endpoint,
+            enr_seq=1234,
+            advertisement_radius=4321,
+            request_id=b"\x01\x02",
         )
         with trio.fail_after(1):
             talk_response = await subscription.receive()
         message = decode_message(talk_response.message.payload)
         assert isinstance(message, PongMessage)
-        assert message.payload.enr_seq == 100
+        assert message.payload.enr_seq == 1234
+        assert message.payload.advertisement_radius == 4321
 
 
 @pytest.mark.trio
 async def test_alexandria_client_ping_request_response(
     alice, bob, bob_network, alice_alexandria_client, bob_alexandria_client,
 ):
-    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
+    async with bob_alexandria_client.subscribe(PingMessage) as subscription:
 
         async def _respond():
             request = await subscription.receive()
+
+            assert request.message.payload.enr_seq == 6789
+            assert request.message.payload.advertisement_radius == 9876
+            assert request.request_id == b"\x01\x02"
+
             await bob_alexandria_client.send_pong(
-                alice.node_id,
-                alice.endpoint,
-                enr_seq=bob.enr.sequence_number,
+                request.sender_node_id,
+                request.sender_endpoint,
+                enr_seq=1234,
+                advertisement_radius=4321,
                 request_id=request.request_id,
             )
 
@@ -88,10 +110,15 @@ async def test_alexandria_client_ping_request_response(
 
             with trio.fail_after(1):
                 pong_message = await alice_alexandria_client.ping(
-                    bob.node_id, bob.endpoint
+                    bob.node_id,
+                    bob.endpoint,
+                    enr_seq=6789,
+                    advertisement_radius=9876,
+                    request_id=b"\x01\x02",
                 )
                 assert isinstance(pong_message, PongMessage)
-                assert pong_message.payload.enr_seq == bob.enr.sequence_number
+                assert pong_message.payload.enr_seq == 1234
+                assert pong_message.payload.advertisement_radius == 4321
 
 
 @pytest.mark.trio
@@ -107,11 +134,12 @@ async def test_alexandria_api_ping_request_response_request_id_mismatch(
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
 
         async def _respond_wrong_request_id():
-            await subscription.receive()
+            request = await subscription.receive()
             await bob_alexandria_client.send_pong(
-                alice.node_id,
-                alice.endpoint,
-                enr_seq=bob.enr.sequence_number,
+                request.sender_node_id,
+                request.sender_endpoint,
+                enr_seq=1234,
+                advertisement_radius=4321,
                 request_id=alice_network.client.request_tracker.get_free_request_id(
                     bob.node_id
                 ),
@@ -122,7 +150,9 @@ async def test_alexandria_api_ping_request_response_request_id_mismatch(
 
             with pytest.raises(trio.TooSlowError):
                 with trio.fail_after(1):
-                    await alice_alexandria_client.ping(bob.node_id, bob.endpoint)
+                    await alice_alexandria_client.ping(
+                        bob.node_id, bob.endpoint, enr_seq=0, advertisement_radius=1234,
+                    )
 
 
 @pytest.mark.trio

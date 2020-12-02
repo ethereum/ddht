@@ -23,18 +23,24 @@ from ddht.v5_1.alexandria.payloads import (
 )
 
 
-@given(enr_seq=st.integers(min_value=0, max_value=2 ** 32 - 1))
-def test_ping_message_encoding_round_trip(enr_seq):
-    payload = PingPayload(enr_seq=enr_seq)
+@given(
+    enr_seq=st.integers(min_value=0, max_value=2 ** 32 - 1),
+    advertisement_radius=st.integers(min_value=0, max_value=2 ** 256 - 1),
+)
+def test_ping_message_encoding_round_trip(enr_seq, advertisement_radius):
+    payload = PingPayload(enr_seq=enr_seq, advertisement_radius=advertisement_radius)
     message = PingMessage(payload)
     encoded = message.to_wire_bytes()
     result = decode_message(encoded)
     assert result == message
 
 
-@given(enr_seq=st.integers(min_value=0, max_value=2 ** 32 - 1))
-def test_pong_message_encoding_round_trip(enr_seq):
-    payload = PongPayload(enr_seq=enr_seq)
+@given(
+    enr_seq=st.integers(min_value=0, max_value=2 ** 32 - 1),
+    advertisement_radius=st.integers(min_value=0, max_value=2 ** 256 - 1),
+)
+def test_pong_message_encoding_round_trip(enr_seq, advertisement_radius):
+    payload = PongPayload(enr_seq=enr_seq, advertisement_radius=advertisement_radius)
     message = PongMessage(payload)
     encoded = message.to_wire_bytes()
     result = decode_message(encoded)

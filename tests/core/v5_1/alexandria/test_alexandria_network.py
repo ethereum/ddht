@@ -32,10 +32,14 @@ async def test_alexandria_network_responds_to_pings(
 ):
     with trio.fail_after(2):
         pong_message = await alice_alexandria_network.client.ping(
-            bob.node_id, bob.endpoint
+            bob.node_id, bob.endpoint, enr_seq=0, advertisement_radius=1,
         )
 
     assert pong_message.payload.enr_seq == bob.enr.sequence_number
+    assert (
+        pong_message.payload.advertisement_radius
+        == bob_alexandria_network.local_advertisement_radius
+    )
 
 
 @pytest.mark.trio

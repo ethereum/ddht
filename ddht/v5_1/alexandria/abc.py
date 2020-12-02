@@ -160,13 +160,20 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Endpoint,
         *,
         enr_seq: int,
+        advertisement_radius: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         ...
 
     @abstractmethod
     async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, enr_seq: int, request_id: bytes,
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: int,
+        advertisement_radius: int,
+        request_id: bytes,
     ) -> None:
         ...
 
@@ -243,7 +250,14 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     # High Level Request/Response
     #
     @abstractmethod
-    async def ping(self, node_id: NodeID, endpoint: Endpoint) -> PongMessage:
+    async def ping(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        enr_seq: int,
+        advertisement_radius: int,
+        request_id: Optional[bytes] = None,
+    ) -> PongMessage:
         ...
 
     @abstractmethod
@@ -285,10 +299,12 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     client: AlexandriaClientAPI
     routing_table: RoutingTableAPI
 
-    advertisement_db: AdvertisementDatabaseAPI
+    max_advertisement_count: int
 
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
+
+    advertisement_db: AdvertisementDatabaseAPI
 
     @property
     @abstractmethod
@@ -311,6 +327,14 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     #
+    # Local properties
+    #
+    @property
+    @abstractmethod
+    def local_advertisement_radius(self) -> int:
+        ...
+
+    #
     # High Level Request/Response
     #
     @abstractmethod
@@ -321,7 +345,13 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     @abstractmethod
     async def ping(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+        self,
+        node_id: NodeID,
+        *,
+        enr_seq: Optional[int] = None,
+        advertisement_radius: Optional[int] = None,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
     ) -> PongPayload:
         ...
 

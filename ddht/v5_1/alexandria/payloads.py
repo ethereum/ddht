@@ -9,10 +9,12 @@ from ddht.v5_1.alexandria.typing import ContentKey
 
 class PingPayload(NamedTuple):
     enr_seq: int
+    advertisement_radius: int
 
 
 class PongPayload(NamedTuple):
     enr_seq: int
+    advertisement_radius: int
 
 
 class FindNodesPayload(NamedTuple):

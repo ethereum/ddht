@@ -286,17 +286,24 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         endpoint: Endpoint,
         *,
         enr_seq: int,
+        advertisement_radius: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
-        message = PingMessage(PingPayload(enr_seq))
+        message = PingMessage(PingPayload(enr_seq, advertisement_radius))
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
         )
 
     async def send_pong(
-        self, node_id: NodeID, endpoint: Endpoint, *, enr_seq: int, request_id: bytes,
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        enr_seq: int,
+        advertisement_radius: int,
+        request_id: bytes,
     ) -> None:
-        message = PongMessage(PongPayload(enr_seq))
+        message = PongMessage(PongPayload(enr_seq, advertisement_radius))
         await self._send_response(node_id, endpoint, message, request_id=request_id)
 
     async def send_find_nodes(
@@ -389,9 +396,18 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
     #
     # High Level Request/Response
     #
-    async def ping(self, node_id: NodeID, endpoint: Endpoint) -> PongMessage:
-        request = PingMessage(PingPayload(self.network.enr_manager.enr.sequence_number))
-        response = await self._request(node_id, endpoint, request, PongMessage)
+    async def ping(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        enr_seq: int,
+        advertisement_radius: int,
+        request_id: Optional[bytes] = None,
+    ) -> PongMessage:
+        request = PingMessage(PingPayload(enr_seq, advertisement_radius))
+        response = await self._request(
+            node_id, endpoint, request, PongMessage, request_id
+        )
         return response
 
     async def find_nodes(
