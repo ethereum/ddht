@@ -2,6 +2,7 @@ from contextlib import AsyncExitStack
 import itertools
 
 from eth_enr.tools.factories import ENRFactory
+from eth_utils import ValidationError
 from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
@@ -9,7 +10,7 @@ import trio
 
 from ddht.datagram import OutboundDatagram
 from ddht.kademlia import KademliaRoutingTable
-from ddht.v5_1.messages import TalkRequestMessage
+from ddht.v5_1.messages import FindNodeMessage, FoundNodesMessage, TalkRequestMessage
 
 
 @pytest.mark.trio
@@ -43,6 +44,7 @@ async def test_client_send_find_nodes(alice, bob, alice_client, bob_client):
 @pytest.mark.parametrize(
     "enrs",
     (
+        (),
         ENRFactory.create_batch(1),
         ENRFactory.create_batch(2),
         ENRFactory.create_batch(10),
@@ -61,6 +63,7 @@ async def test_client_send_found_nodes(alice, bob, alice_client, bob_client, enr
                 with trio.fail_after(2):
                     first_message = await subscription.receive()
                     remaining_messages = []
+                    assert first_message.message.total >= 1
                     for _ in range(first_message.message.total - 1):
                         remaining_messages.append(await subscription.receive())
         all_received_enrs = tuple(first_message.message.enrs) + tuple(
@@ -232,6 +235,29 @@ async def test_client_request_response_find_nodes_found_nodes(
                     assert found_node_ids == expected_node_ids
 
     assert len(checked_bucket_indexes) > 4
+
+
+@pytest.mark.trio
+async def test_client_request_response_find_nodes_invalid_total(
+    alice, bob, alice_client, bob_client
+):
+    async with trio.open_nursery() as nursery:
+        async with bob_client.dispatcher.subscribe(FindNodeMessage) as subscription:
+
+            async def _respond():
+                request = await subscription.receive()
+                message = request.to_response(
+                    FoundNodesMessage(request.request_id, 0, ())
+                )
+                await bob_client.dispatcher.send_message(message)
+
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(2):
+                with pytest.raises(ValidationError, match="total=0"):
+                    await alice_client.find_nodes(
+                        bob.node_id, bob.endpoint, distances=[123],
+                    )
 
 
 @pytest.mark.trio
