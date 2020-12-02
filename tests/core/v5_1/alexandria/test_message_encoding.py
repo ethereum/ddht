@@ -9,6 +9,8 @@ from ddht.v5_1.alexandria.messages import (
     AdvertiseMessage,
     FindNodesMessage,
     FoundNodesMessage,
+    LocateMessage,
+    LocationsMessage,
     PingMessage,
     PongMessage,
     decode_message,
@@ -18,6 +20,8 @@ from ddht.v5_1.alexandria.payloads import (
     Advertisement,
     FindNodesPayload,
     FoundNodesPayload,
+    LocatePayload,
+    LocationsPayload,
     PingPayload,
     PongPayload,
 )
@@ -73,22 +77,14 @@ def test_found_nodes_message_encoding_round_trip(num_enr_records):
 
 PRIVATE_KEY = keys.PrivateKey(b"unicornsrainbowscupcakessparkles")
 
+advertisement_st = st.tuples(
+    st.binary(min_size=1, max_size=128), st.binary(min_size=32, max_size=32),
+).map(lambda key_and_root: Advertisement.create(*key_and_root, PRIVATE_KEY))
 
-@given(
-    raw_advertisements=st.lists(
-        st.tuples(
-            st.binary(min_size=1, max_size=128), st.binary(min_size=32, max_size=32),
-        ),
-        min_size=1,
-        max_size=5,
-    ),
-)
-def test_advertisement_message_encoding_round_trip(raw_advertisements):
-    payload = tuple(
-        Advertisement.create(content_key, hash_tree_root, PRIVATE_KEY)
-        for content_key, hash_tree_root in raw_advertisements
-    )
-    message = AdvertiseMessage(payload)
+
+@given(advertisements=st.lists(advertisement_st, min_size=1, max_size=5).map(tuple),)
+def test_advertisement_message_encoding_round_trip(advertisements):
+    message = AdvertiseMessage(advertisements)
     encoded = message.to_wire_bytes()
     result = decode_message(encoded)
     assert result == message
@@ -98,6 +94,24 @@ def test_advertisement_message_encoding_round_trip(raw_advertisements):
 def test_ack_message_encoding_round_trip(advertisement_radius):
     payload = AckPayload(advertisement_radius)
     message = AckMessage(payload)
+    encoded = message.to_wire_bytes()
+    result = decode_message(encoded)
+    assert result == message
+
+
+@given(content_key=st.binary(min_size=33, max_size=128),)
+def test_locate_message_encoding_round_trip(content_key):
+    payload = LocatePayload(content_key)
+    message = LocateMessage(payload)
+    encoded = message.to_wire_bytes()
+    result = decode_message(encoded)
+    assert result == message
+
+
+@given(advertisements=st.lists(advertisement_st, min_size=1, max_size=5).map(tuple),)
+def test_locations_message_encoding_round_trip(advertisements):
+    payload = LocationsPayload(len(advertisements), advertisements)
+    message = LocationsMessage(payload)
     encoded = message.to_wire_bytes()
     result = decode_message(encoded)
     assert result == message

@@ -14,6 +14,8 @@ from ddht.v5_1.alexandria.payloads import (
     FindNodesPayload,
     FoundNodesPayload,
     GetContentPayload,
+    LocatePayload,
+    LocationsPayload,
     PingPayload,
     PongPayload,
 )
@@ -24,6 +26,8 @@ from ddht.v5_1.alexandria.sedes import (
     FindNodesSedes,
     FoundNodesSedes,
     GetContentSedes,
+    LocateSedes,
+    LocationsSedes,
     PingSedes,
     PongSedes,
 )
@@ -190,6 +194,54 @@ class AckMessage(AlexandriaMessage[AckPayload]):
     payload_type = AckPayload
 
     payload: AckPayload
+
+
+@register
+class LocateMessage(AlexandriaMessage[LocatePayload]):
+    message_id = 9
+    sedes = LocateSedes
+    payload_type = LocatePayload
+
+    payload: LocatePayload
+
+    @classmethod
+    def from_payload_args(
+        cls: Type[TAlexandriaMessage], payload_args: Any
+    ) -> TAlexandriaMessage:
+        payload = tuple(payload_args)
+        return cls(payload)
+
+
+@register
+class LocationsMessage(AlexandriaMessage[LocationsPayload]):
+    message_id = 10
+    sedes = LocationsSedes
+    payload_type = LocationsPayload
+
+    payload: LocationsPayload
+
+    def get_payload_for_encoding(
+        self,
+    ) -> Tuple[int, Tuple[Tuple[bytes, Hash32, int, int, int, int], ...]]:
+        return (
+            self.payload.total,
+            tuple(
+                advertisement.to_sedes_payload()
+                for advertisement in self.payload.locations
+            ),
+        )
+
+    @classmethod
+    def from_payload_args(
+        cls: Type[TAlexandriaMessage], payload_args: Any
+    ) -> TAlexandriaMessage:
+        total, ssz_advertisement_list = payload_args
+        advertisements = tuple(
+            Advertisement.from_sedes_payload(sedes_payload)
+            for sedes_payload in ssz_advertisement_list
+        )
+        payload = cls.payload_type(total, advertisements)
+        return cls(payload)
 
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:
