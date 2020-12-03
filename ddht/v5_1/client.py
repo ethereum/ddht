@@ -6,6 +6,7 @@ from async_service import Service
 from eth_enr import ENRAPI, ENRManager, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
+from eth_utils import ValidationError
 import trio
 
 from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, InboundMessage
@@ -389,10 +390,9 @@ class Client(Service, ClientAPI):
                         tail_responses.append(await subscription.receive())
                     responses = (head_response,) + tuple(tail_responses)
                 else:
-                    # TODO: this code path needs to be excercised and
-                    # probably replaced with some sort of
-                    # `SessionTerminated` exception.
-                    raise Exception("Invalid `total` counter in response")
+                    raise ValidationError(
+                        f"Invalid `total` counter in response: total={total}"
+                    )
 
                 return responses
 
