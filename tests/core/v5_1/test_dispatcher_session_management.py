@@ -1,29 +1,53 @@
+import secrets
+
 from eth_enr import OldSequenceNumber
 import pytest
 import trio
 
+from ddht.base_message import AnyOutboundMessage
 from ddht.v5_1.constants import SESSION_IDLE_TIMEOUT
+from ddht.v5_1.messages import PingMessage
 
 
 @pytest.mark.trio
-async def test_dispatcher_intiator_and_recipient_detects_handshake_timeout(
-    driver, autojump_clock
+async def test_dispatcher_detects_handshake_timeout_as_initiator(
+    alice, bob, alice_client, bob_client, autojump_clock
 ):
-    await driver.initiator.send_ping()
+    await bob_client.get_manager().stop()
+    alice_client.pool.initiate_session(bob.endpoint, bob.node_id)
 
-    assert driver.initiator.session.is_during_handshake
-    assert driver.recipient.session.is_before_handshake
-    assert driver.initiator.session.remote_node_id == driver.recipient.node.node_id
-    assert not driver.initiator.session.is_timed_out
-    assert not driver.recipient.session.is_timed_out
+    with trio.fail_after(SESSION_IDLE_TIMEOUT + 1):
+        async with alice.events.session_timeout.subscribe() as subscription:
+            session = await subscription.receive()
+            assert session.remote_node_id == bob.node_id
 
-    await trio.sleep(SESSION_IDLE_TIMEOUT - 1)
-    assert not driver.initiator.session.is_timed_out
-    assert not driver.recipient.session.is_timed_out
 
-    await trio.sleep(1)
-    assert driver.initiator.session.is_timed_out
-    assert driver.recipient.session.is_timed_out
+@pytest.mark.trio
+async def test_dispatcher_detects_handshake_timeout_as_recipient(
+    alice, bob, alice_client, bob_client, autojump_clock
+):
+    async with bob.events.packet_received.subscribe() as subscription:
+
+        async def _respond():
+            await subscription.receive()
+            await alice_client.get_manager().stop()
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            message = AnyOutboundMessage(
+                PingMessage(
+                    secrets.token_bytes(4), bob_client.enr_manager.enr.sequence_number,
+                ),
+                bob.endpoint,
+                bob.node_id,
+            )
+            await alice_client.dispatcher._outbound_message_send_channel.send(message)
+
+    with trio.fail_after(SESSION_IDLE_TIMEOUT + 1):
+        async with bob.events.session_timeout.subscribe() as subscription:
+            session = await subscription.receive()
+            assert session.remote_node_id == alice.node_id
 
 
 @pytest.mark.trio
