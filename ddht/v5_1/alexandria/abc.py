@@ -27,6 +27,7 @@ from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
     ContentMessage,
     FoundNodesMessage,
+    LocationsMessage,
     PongMessage,
     TAlexandriaMessage,
 )
@@ -246,6 +247,28 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> None:
         ...
 
+    @abstractmethod
+    async def send_locate(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_key: ContentKey,
+        request_id: bytes,
+    ) -> bytes:
+        ...
+
+    @abstractmethod
+    async def send_locations(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisements: Sequence[Advertisement],
+        request_id: bytes,
+    ) -> int:
+        ...
+
     #
     # High Level Request/Response
     #
@@ -292,6 +315,17 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         *,
         advertisements: Collection[Advertisement],
     ) -> Tuple[AckMessage, ...]:
+        ...
+
+    @abstractmethod
+    async def locate(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_key: ContentKey,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[InboundMessage[LocationsMessage], ...]:
         ...
 
 

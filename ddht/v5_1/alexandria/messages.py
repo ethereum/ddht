@@ -204,13 +204,6 @@ class LocateMessage(AlexandriaMessage[LocatePayload]):
 
     payload: LocatePayload
 
-    @classmethod
-    def from_payload_args(
-        cls: Type[TAlexandriaMessage], payload_args: Any
-    ) -> TAlexandriaMessage:
-        payload = tuple(payload_args)
-        return cls(payload)
-
 
 @register
 class LocationsMessage(AlexandriaMessage[LocationsPayload]):

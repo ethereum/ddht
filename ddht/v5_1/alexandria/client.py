@@ -40,6 +40,8 @@ from ddht.v5_1.alexandria.messages import (
     FindNodesMessage,
     FoundNodesMessage,
     GetContentMessage,
+    LocateMessage,
+    LocationsMessage,
     PingMessage,
     PongMessage,
     TAlexandriaMessage,
@@ -51,6 +53,8 @@ from ddht.v5_1.alexandria.payloads import (
     FindNodesPayload,
     FoundNodesPayload,
     GetContentPayload,
+    LocatePayload,
+    LocationsPayload,
     PingPayload,
     PongPayload,
 )
@@ -393,6 +397,37 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
             node_id, endpoint, message, request_id=request_id
         )
 
+    async def send_locate(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_key: ContentKey,
+        request_id: bytes,
+    ) -> bytes:
+        message = LocateMessage(LocatePayload(content_key))
+        return await self._send_request(
+            node_id, endpoint, message, request_id=request_id
+        )
+
+    async def send_locations(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        advertisements: Sequence[Advertisement],
+        request_id: bytes,
+    ) -> int:
+        advertisement_batches = partition_advertisements(
+            advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
+        )
+        num_batches = len(advertisement_batches)
+        for batch in advertisement_batches:
+            message = LocationsMessage(LocationsPayload(num_batches, batch))
+            await self._send_response(node_id, endpoint, message, request_id=request_id)
+
+        return num_batches
+
     #
     # High Level Request/Response
     #
@@ -495,6 +530,39 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 for message in messages
             ]
         )
+
+    async def locate(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_key: ContentKey,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[InboundMessage[LocationsMessage], ...]:
+        request = LocateMessage(LocatePayload(content_key))
+
+        subscription: trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]
+        # unclear why `subscribe_request` isn't properly carrying the type information
+        async with self.subscribe_request(  # type: ignore
+            node_id, endpoint, request, LocationsMessage, request_id=request_id,
+        ) as subscription:
+            head_response = await subscription.receive()
+            total = head_response.message.payload.total
+            responses: Tuple[InboundMessage[LocationsMessage], ...]
+            if total == 1:
+                responses = (head_response,)
+            elif total > 1:
+                tail_responses: List[InboundMessage[LocationsMessage]] = []
+                for _ in range(total - 1):
+                    tail_responses.append(await subscription.receive())
+                responses = (head_response,) + tuple(tail_responses)
+            else:
+                # TODO: this code path needs to be excercised and
+                # probably replaced with some sort of
+                # `SessionTerminated` exception.
+                raise Exception("Invalid `total` counter in response")
+
+            return responses
 
     #
     # Long Running Processes to manage subscriptions
