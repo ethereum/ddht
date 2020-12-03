@@ -86,6 +86,16 @@ class ContentProviderAPI(ServiceAPI):
         ...
 
 
+class RadiusTrackerAPI(ServiceAPI):
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+    @abstractmethod
+    async def get_advertisement_radius(self, node_id: NodeID) -> int:
+        ...
+
+
 class AdvertisementDatabaseAPI(ABC):
     @abstractmethod
     def exists(self, advertisement: Advertisement) -> bool:
@@ -334,6 +344,8 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     routing_table: RoutingTableAPI
 
     max_advertisement_count: int
+
+    radius_tracker: RadiusTrackerAPI
 
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI

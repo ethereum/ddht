@@ -41,7 +41,9 @@ async def rpc_server(ipc_path, alice):
 
 @pytest.fixture
 def w3(rpc_server, ipc_path):
-    return Web3(IPCProvider(ipc_path), modules={"discv5": (DiscoveryV5Module,)})
+    return Web3(
+        IPCProvider(ipc_path, timeout=30), modules={"discv5": (DiscoveryV5Module,)}
+    )
 
 
 @pytest.fixture

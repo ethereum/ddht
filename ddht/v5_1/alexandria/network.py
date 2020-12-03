@@ -31,6 +31,7 @@ from ddht.v5_1.alexandria.partials._utils import get_chunk_count_for_data_length
 from ddht.v5_1.alexandria.partials.chunking import slice_segments_to_max_chunk_count
 from ddht.v5_1.alexandria.partials.proof import Proof, compute_proof, validate_proof
 from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
+from ddht.v5_1.alexandria.radius_tracker import RadiusTracker
 from ddht.v5_1.alexandria.resource_queue import ResourceQueue
 from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentKey
@@ -71,6 +72,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         self.client = AlexandriaClient(network)
 
+        self.radius_tracker = RadiusTracker(self)
+
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
@@ -104,6 +107,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
         self.manager.run_daemon_child_service(self.content_provider)
+        self.manager.run_daemon_child_service(self.radius_tracker)
 
         # Long running processes
         self.manager.run_daemon_task(self._periodically_report_routing_table)
