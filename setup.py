@@ -31,7 +31,7 @@ extras_require = {
         "twine",
         "ipython",
     ],
-    "web3": ["web3>=5.12.1,<6"],
+    "web3": ["web3>=5.13.1,<6"],
     "alexandria": [
         "ssz>=0.2.4,<0.3",
     ],
