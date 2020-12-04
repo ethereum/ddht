@@ -67,11 +67,9 @@ async def test_network_responds_to_find_node_requests(alice, bob):
 
 
 @pytest.mark.trio
-async def test_network_ping_api(alice, bob):
-    async with alice.network() as alice_network:
-        async with bob.network():
-            with trio.fail_after(2):
-                pong = await alice_network.ping(bob.node_id)
+async def test_network_ping_api(alice, bob, alice_network, bob_network):
+    with trio.fail_after(2):
+        pong = await alice_network.ping(bob.node_id)
 
     assert pong.enr_seq == bob.enr.sequence_number
     assert pong.packet_ip == alice.endpoint.ip_address

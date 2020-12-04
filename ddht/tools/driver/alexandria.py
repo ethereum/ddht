@@ -66,4 +66,5 @@ class AlexandriaNode(AlexandriaNodeAPI):
                     advertisement_db=self.advertisement_db,
                 )
                 async with background_trio_service(alexandria_network):
+                    await alexandria_network.ready()
                     yield alexandria_network

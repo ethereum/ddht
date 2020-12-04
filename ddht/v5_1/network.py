@@ -285,6 +285,13 @@ class Network(Service, NetworkAPI):
 
         self._talk_protocols = {}
 
+        self._ping_handler_ready = trio.Event()
+        self._find_nodes_handler_ready = trio.Event()
+
+    async def ready(self) -> None:
+        await self._ping_handler_ready.wait()
+        await self._find_nodes_handler_ready.wait()
+
     #
     # Proxied ClientAPI properties
     #
@@ -644,6 +651,8 @@ class Network(Service, NetworkAPI):
 
         async with trio.open_nursery() as nursery:
             async with self.dispatcher.subscribe(PingMessage) as subscription:
+                self._ping_handler_ready.set()
+
                 async for request in subscription:
                     await self.dispatcher.send_message(
                         request.to_response(
@@ -659,6 +668,8 @@ class Network(Service, NetworkAPI):
 
     async def _serve_find_nodes(self) -> None:
         async with self.dispatcher.subscribe(FindNodeMessage) as subscription:
+            self._find_nodes_handler_ready.set()
+
             async for request in subscription:
                 response_enrs: List[ENRAPI] = []
                 distances = set(request.message.distances)
