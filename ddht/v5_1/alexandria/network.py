@@ -473,6 +473,25 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
         return tuple(response.payload for response in responses)
 
+    async def locate(
+        self,
+        node_id: NodeID,
+        *,
+        content_key: ContentKey,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> Tuple[Advertisement, ...]:
+        if endpoint is None:
+            endpoint = await self.network.endpoint_for_node_id(node_id)
+        responses = await self.client.locate(
+            node_id, content_key=content_key, endpoint=endpoint, request_id=request_id,
+        )
+        return tuple(
+            advertisement
+            for response in responses
+            for advertisement in response.message.payload.locations
+        )
+
     #
     # Long Running Processes
     #
