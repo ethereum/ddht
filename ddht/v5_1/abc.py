@@ -500,7 +500,11 @@ class NetworkAPI(ServiceAPI):
     #
     @abstractmethod
     async def bond(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
+        self,
+        node_id: NodeID,
+        *,
+        endpoint: Optional[Endpoint] = None,
+        max_cache_age: int = 60,
     ) -> bool:
         ...
 

@@ -1,5 +1,5 @@
 import logging
-from typing import AsyncContextManager, Collection, List, Optional, Tuple
+from typing import AsyncContextManager, Collection, Dict, List, Optional, Tuple
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
@@ -58,6 +58,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # Delegate to the AlexandriaClient for determining `protocol_id`
     protocol_id = AlexandriaClient.protocol_id
 
+    _last_bond_cache: Dict[NodeID, float]
+
     def __init__(
         self,
         network: NetworkAPI,
@@ -86,6 +88,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.advertisement_db = advertisement_db
 
         self._last_pong_at = LRU(2048)
+        self._last_bond_cache = LRU(4096)
         self._routing_table_ready = trio.Event()
 
         self._ping_handler_ready = trio.Event()
@@ -147,8 +150,24 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # High Level API
     #
     async def bond(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+        self,
+        node_id: NodeID,
+        *,
+        endpoint: Optional[Endpoint] = None,
+        max_cache_age: int = 60,
     ) -> bool:
+        try:
+            last_bonded_at = self._last_bond_cache[node_id]
+        except KeyError:
+            pass
+        else:
+            last_bonded_ago = trio.current_time() - last_bonded_at
+            if last_bonded_ago <= max_cache_age:
+                self.logger.debug(
+                    "Recently bonded successfully with %s", node_id.hex(),
+                )
+                return True
+
         self.logger.debug(
             "Bonding with %s", node_id.hex(),
         )
@@ -176,6 +195,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
 
         self._routing_table_ready.set()
+
+        self._last_bond_cache[node_id] = trio.current_time()
+
         return True
 
     async def _bond(self, node_id: NodeID, endpoint: Optional[Endpoint] = None) -> None:

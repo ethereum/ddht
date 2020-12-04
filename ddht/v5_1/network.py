@@ -230,11 +230,11 @@ async def common_recursive_find_nodes(
 
     async def _monitor_done(send_channel: trio.abc.SendChannel[ENRAPI]) -> None:
         async with send_channel:
-            while True:
-                # this `fail_after` is a failsafe to prevent deadlock situations
-                # which are possible with `Condition` objects.
-                with trio.fail_after(60):
-                    async with condition:
+            async with condition:
+                while True:
+                    # this `fail_after` is a failsafe to prevent deadlock situations
+                    # which are possible with `Condition` objects.
+                    with trio.fail_after(60):
                         node_ids = get_unqueried_node_ids()
 
                         if not node_ids and not in_flight:
@@ -273,6 +273,8 @@ class Network(Service, NetworkAPI):
     _bootnodes: Tuple[ENRAPI, ...]
     _talk_protocols: Dict[bytes, TalkProtocolAPI]
 
+    _last_bond_cache: Dict[NodeID, float]
+
     def __init__(self, client: ClientAPI, bootnodes: Collection[ENRAPI],) -> None:
         self.client = client
 
@@ -284,6 +286,8 @@ class Network(Service, NetworkAPI):
         self._last_pong_at = LRU(2048)
 
         self._talk_protocols = {}
+
+        self._last_bond_cache = LRU(4096)
 
         self._ping_handler_ready = trio.Event()
         self._find_nodes_handler_ready = trio.Event()
@@ -333,8 +337,24 @@ class Network(Service, NetworkAPI):
     # High Level API
     #
     async def bond(
-        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
+        self,
+        node_id: NodeID,
+        *,
+        endpoint: Optional[Endpoint] = None,
+        max_cache_age: int = 60,
     ) -> bool:
+        try:
+            last_bonded_at = self._last_bond_cache[node_id]
+        except KeyError:
+            pass
+        else:
+            last_bonded_ago = trio.current_time() - last_bonded_at
+            if last_bonded_ago <= max_cache_age:
+                self.logger.debug(
+                    "Recently bonded successfully with %s", node_id.hex(),
+                )
+                return True
+
         self.logger.debug(
             "Bonding with %s", node_id.hex(),
         )
@@ -374,6 +394,9 @@ class Network(Service, NetworkAPI):
         )
 
         self._routing_table_ready.set()
+
+        self._last_bond_cache[node_id] = trio.current_time()
+
         return True
 
     async def _bond(self, node_id: NodeID, endpoint: Optional[Endpoint] = None) -> None:

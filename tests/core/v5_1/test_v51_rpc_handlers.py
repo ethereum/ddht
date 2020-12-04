@@ -31,12 +31,11 @@ from ddht.v5_1.rpc_handlers import get_v51_rpc_handlers
 
 
 @pytest.fixture
-async def rpc_server(ipc_path, alice):
-    async with alice.network() as network:
-        server = RPCServer(ipc_path, get_v51_rpc_handlers(network))
-        async with background_trio_service(server):
-            await server.wait_serving()
-            yield server
+async def rpc_server(ipc_path, alice, alice_network):
+    server = RPCServer(ipc_path, get_v51_rpc_handlers(alice_network))
+    async with background_trio_service(server):
+        await server.wait_serving()
+        yield server
 
 
 @pytest.fixture
@@ -46,19 +45,8 @@ def w3(rpc_server, ipc_path):
     )
 
 
-@pytest.fixture
-async def bob_network(bob):
-    async with bob.network() as network:
-        yield network
-
-
 @pytest.fixture(params=("nodeid", "enode", "enr"))
 def bob_node_id_param(request, alice, bob, bob_network):
-    try:
-        alice.enr_db.set_enr(bob.enr)
-    except OldSequenceNumber:
-        pass
-
     if request.param == "nodeid":
         return bob.node_id.hex()
     elif request.param == "enode":
