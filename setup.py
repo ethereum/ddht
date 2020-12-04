@@ -31,7 +31,7 @@ extras_require = {
         "twine",
         "ipython",
     ],
-    "web3": ["web3>=5.12.1,<6"],
+    "web3": ["web3>=5.13.1,<6"],
     "alexandria": [
         "ssz>=0.2.4,<0.3",
     ],
@@ -42,6 +42,9 @@ extras_require = {
 
 extras_require["dev"] = (
     extras_require["dev"]
+    + extras_require["alexandria"]  # noqa: W504
+    + extras_require["benchmark"]  # noqa: W504
+    + extras_require["web3"]  # noqa: W504
     + extras_require["test"]  # noqa: W504
     + extras_require["lint"]  # noqa: W504
     + extras_require["doc"]  # noqa: W504
