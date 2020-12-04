@@ -10,12 +10,12 @@ async def test_dispatcher_detects_handshake_timeout_as_initiator(
     alice, bob, alice_client, bob_client, autojump_clock
 ):
     await bob_client.get_manager().stop()
-    alice_client.pool.initiate_session(bob.endpoint, bob.node_id)
+    session = alice_client.pool.initiate_session(bob.endpoint, bob.node_id)
 
     with trio.fail_after(SESSION_IDLE_TIMEOUT + 1):
         async with alice.events.session_timeout.subscribe() as subscription:
-            session = await subscription.receive()
-            assert session.remote_node_id == bob.node_id
+            actual = await subscription.receive()
+            assert session.id == actual.id
 
 
 @pytest.mark.trio
@@ -23,12 +23,12 @@ async def test_dispatcher_detects_handshake_timeout_as_recipient(
     alice, bob, alice_client, bob_client, autojump_clock
 ):
     await bob_client.get_manager().stop()
-    alice_client.pool.receive_session(bob.endpoint)
+    session = alice_client.pool.receive_session(bob.endpoint)
 
     with trio.fail_after(SESSION_IDLE_TIMEOUT + 1):
         async with alice.events.session_timeout.subscribe() as subscription:
-            session = await subscription.receive()
-            assert session.remote_node_id == bob.node_id
+            actual = await subscription.receive()
+            assert actual.id == session.id
 
 
 @pytest.mark.trio

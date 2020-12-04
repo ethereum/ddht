@@ -321,101 +321,102 @@ class DiscoveryV5Module(ModuleV2):  # type: ignore
     """
 
     get_node_info: Method[Callable[[], NodeInfo]] = Method(
-        RPC.nodeInfo, result_formatters=lambda method: NodeInfo.from_rpc_response,
+        RPC.nodeInfo,
+        result_formatters=lambda method, module: NodeInfo.from_rpc_response,
     )
     update_node_info: Method[Callable[[VarArg(ENR_KV)], UpdateENRPayload]] = Method(
         RPC.updateNodeInfo,
-        result_formatters=lambda method: UpdateENRPayload.from_rpc_response,
+        result_formatters=lambda method, module: UpdateENRPayload.from_rpc_response,
         mungers=[kv_pair_munger],
     )
     get_routing_table_info: Method[Callable[[], TableInfo]] = Method(
         RPC.routingTableInfo,
-        result_formatters=lambda method: TableInfo.from_rpc_response,
+        result_formatters=lambda method, module: TableInfo.from_rpc_response,
     )
     get_enr: Method[Callable[[NodeIDIdentifier], GetENRPayload]] = Method(
         RPC.getENR,
-        result_formatters=lambda method: GetENRPayload.from_rpc_response,
+        result_formatters=lambda method, module: GetENRPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
     set_enr: Method[Callable[[str], EmptyPayload]] = Method(
         RPC.setENR,
-        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        result_formatters=lambda method, module: EmptyPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
     delete_enr: Method[Callable[[NodeIDIdentifier], EmptyPayload]] = Method(
         RPC.deleteENR,
-        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        result_formatters=lambda method, module: EmptyPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
     lookup_enr: Method[Callable[[NodeIDIdentifier], GetENRPayload]] = Method(
         RPC.lookupENR,
-        result_formatters=lambda method: GetENRPayload.from_rpc_response,
+        result_formatters=lambda method, module: GetENRPayload.from_rpc_response,
         mungers=[node_identifier_and_sequence_munger],
     )
     ping: Method[Callable[[NodeIDIdentifier], PongPayload]] = Method(
         RPC.ping,
-        result_formatters=lambda method: PongPayload.from_rpc_response,
+        result_formatters=lambda method, module: PongPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
     send_ping: Method[Callable[[NodeIDIdentifier], SendPingPayload]] = Method(
         RPC.sendPing,
-        result_formatters=lambda method: SendPingPayload.from_rpc_response,
+        result_formatters=lambda method, module: SendPingPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
     send_pong: Method[Callable[[NodeIDIdentifier, HexStr], EmptyPayload]] = Method(
         RPC.sendPong,
-        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        result_formatters=lambda method, module: EmptyPayload.from_rpc_response,
         mungers=[send_pong_munger],
     )
     find_nodes: Method[
         Callable[[NodeIDIdentifier, Union[int, Sequence[int]]], Tuple[ENRAPI, ...]]
     ] = Method(
         RPC.findNodes,
-        result_formatters=lambda method: find_nodes_response_formatter,
+        result_formatters=lambda method, module: find_nodes_response_formatter,
         mungers=[find_nodes_munger],
     )
     send_find_nodes: Method[
         Callable[[NodeIDIdentifier, Union[int, Sequence[int]]], HexStrPayload]
     ] = Method(
         RPC.sendFindNodes,
-        result_formatters=lambda method: HexStrPayload.from_rpc_response,
+        result_formatters=lambda method, module: HexStrPayload.from_rpc_response,
         mungers=[find_nodes_munger],
     )
     send_found_nodes: Method[
         Callable[[NodeIDIdentifier, Tuple[ENRAPI], HexStr], IntegerPayload]
     ] = Method(
         RPC.sendFoundNodes,
-        result_formatters=lambda method: IntegerPayload.from_rpc_response,
+        result_formatters=lambda method, module: IntegerPayload.from_rpc_response,
         mungers=[send_found_nodes_munger],
     )
     send_talk_request: Method[
         Callable[[NodeIDIdentifier, HexStr, HexStr], HexStrPayload]
     ] = Method(
         RPC.sendTalkRequest,
-        result_formatters=lambda method: HexStrPayload.from_rpc_response,
+        result_formatters=lambda method, module: HexStrPayload.from_rpc_response,
         mungers=[talk_request_munger],
     )
     send_talk_response: Method[
         Callable[[NodeIDIdentifier, HexStr, HexStr], EmptyPayload]
     ] = Method(
         RPC.sendTalkResponse,
-        result_formatters=lambda method: EmptyPayload.from_rpc_response,
+        result_formatters=lambda method, module: EmptyPayload.from_rpc_response,
         mungers=[talk_request_munger],
     )
     talk: Method[Callable[[NodeIDIdentifier, HexStr, HexStr], HexStrPayload]] = Method(
         RPC.talk,
-        result_formatters=lambda method: HexStrPayload.from_rpc_response,
+        result_formatters=lambda method, module: HexStrPayload.from_rpc_response,
         mungers=[talk_request_munger],
     )
     bond: Method[Callable[[NodeIDIdentifier], BoolPayload]] = Method(
         RPC.bond,
-        result_formatters=lambda method: BoolPayload.from_rpc_response,
+        result_formatters=lambda method, module: BoolPayload.from_rpc_response,
         mungers=[node_identifier_munger],
     )
     recursive_find_nodes: Method[
         Callable[[NodeIDIdentifier], Tuple[ENRAPI, ...]]
     ] = Method(
         RPC.recursiveFindNodes,
-        result_formatters=lambda method: find_nodes_response_formatter,
+        result_formatters=lambda method, module: find_nodes_response_formatter,
         mungers=[node_identifier_munger],
     )
