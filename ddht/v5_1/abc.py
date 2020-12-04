@@ -451,6 +451,10 @@ class NetworkAPI(ServiceAPI):
     client: ClientAPI
     routing_table: RoutingTableAPI
 
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
     #
     # Proxied ClientAPI properties
     #

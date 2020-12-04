@@ -84,4 +84,5 @@ class Node(NodeAPI):
             network = Network(client, bootnodes)
             async with background_trio_service(network):
                 await client.wait_listening()
+                await network.ready()
                 yield network

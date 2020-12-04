@@ -88,6 +88,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self._last_pong_at = LRU(2048)
         self._routing_table_ready = trio.Event()
 
+        self._ping_handler_ready = trio.Event()
+        self._find_nodes_handler_ready = trio.Event()
+
+    async def ready(self) -> None:
+        await self._ping_handler_ready.wait()
+        await self._find_nodes_handler_ready.wait()
+
     @property
     def network(self) -> NetworkAPI:
         return self.client.network
@@ -512,6 +519,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def _pong_when_pinged(self) -> None:
         async with self.client.subscribe(PingMessage) as subscription:
+            self._ping_handler_ready.set()
+
             async for request in subscription:
                 await self.client.send_pong(
                     request.sender_node_id,
@@ -530,6 +539,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def _serve_find_nodes(self) -> None:
         async with self.client.subscribe(FindNodesMessage) as subscription:
+            self._find_nodes_handler_ready.set()
+
             async for request in subscription:
                 response_enrs: List[ENRAPI] = []
                 distances = set(request.message.payload.distances)

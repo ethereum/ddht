@@ -352,6 +352,13 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     advertisement_db: AdvertisementDatabaseAPI
 
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+    #
+    # Properties from base network
+    #
     @property
     @abstractmethod
     def network(self) -> NetworkAPI:
