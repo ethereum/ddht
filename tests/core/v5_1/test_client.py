@@ -8,8 +8,11 @@ from hypothesis import strategies as st
 import pytest
 import trio
 
+from ddht.base_message import AnyOutboundMessage
 from ddht.datagram import OutboundDatagram
+from ddht.enr import partition_enrs
 from ddht.kademlia import KademliaRoutingTable
+from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.messages import FindNodeMessage, FoundNodesMessage, TalkRequestMessage
 
 
@@ -235,6 +238,138 @@ async def test_client_request_response_find_nodes_found_nodes(
                     assert found_node_ids == expected_node_ids
 
     assert len(checked_bucket_indexes) > 4
+
+
+@pytest.mark.trio
+async def test_client_request_response_stream_find_nodes_found_nodes(
+    alice, bob, alice_client, bob_client
+):
+    table = KademliaRoutingTable(bob.node_id, 256)
+    for i in range(1000):
+        enr = ENRFactory()
+        table.update(enr.node_id)
+        bob.enr_db.set_enr(enr)
+
+    for distance in range(256, 1, -1):
+        bucket = table.buckets[distance - 1]
+        if not len(bucket):
+            break
+
+        async with trio.open_nursery() as nursery:
+            async with bob.events.find_nodes_received.subscribe() as subscription:
+                expected_enrs = tuple(bob.enr_db.get_enr(node_id) for node_id in bucket)
+
+                async def _send_response():
+                    find_nodes = await subscription.receive()
+                    await bob_client.send_found_nodes(
+                        alice.node_id,
+                        alice.endpoint,
+                        enrs=expected_enrs,
+                        request_id=find_nodes.message.request_id,
+                    )
+
+                nursery.start_soon(_send_response)
+
+                with trio.fail_after(2):
+                    async with alice_client.stream_find_nodes(
+                        bob.node_id, bob.endpoint, distances=[distance]
+                    ) as resp_aiter:
+                        found_nodes_messages = tuple(
+                            [resp async for resp in resp_aiter]
+                        )
+                found_node_ids = {
+                    enr.node_id
+                    for message in found_nodes_messages
+                    for enr in message.message.enrs
+                }
+                expected_node_ids = {enr.node_id for enr in expected_enrs}
+                assert found_node_ids == expected_node_ids
+
+                nursery.cancel_scope.cancel()
+
+
+@pytest.mark.trio
+async def test_client_request_response_stream_find_nodes_incomplete_response(
+    alice, bob, alice_client, bob_client, autojump_clock
+):
+    table = KademliaRoutingTable(bob.node_id, 256)
+    for i in range(1000):
+        enr = ENRFactory()
+        table.update(enr.node_id)
+        bob.enr_db.set_enr(enr)
+
+    for distance in range(256, 1, -1):
+        bucket = table.buckets[distance - 1]
+        if not len(bucket):
+            break
+
+        async with trio.open_nursery() as nursery:
+            async with bob.events.find_nodes_received.subscribe() as subscription:
+                expected_enrs = tuple(bob.enr_db.get_enr(node_id) for node_id in bucket)
+                enr_batches = partition_enrs(
+                    expected_enrs, max_payload_size=FOUND_NODES_MAX_PAYLOAD_SIZE
+                )
+                num_batches = len(enr_batches)
+
+                async def _send_response():
+                    find_nodes = await subscription.receive()
+                    message = AnyOutboundMessage(
+                        FoundNodesMessage(
+                            find_nodes.message.request_id, num_batches, enr_batches[0],
+                        ),
+                        alice.endpoint,
+                        alice.node_id,
+                    )
+                    await bob_client.dispatcher.send_message(message)
+
+                nursery.start_soon(_send_response)
+
+                with trio.fail_after(REQUEST_RESPONSE_TIMEOUT + 1):
+                    async with alice_client.stream_find_nodes(
+                        bob.node_id, bob.endpoint, distances=[distance]
+                    ) as resp_aiter:
+                        found_nodes_messages = tuple(
+                            [resp async for resp in resp_aiter]
+                        )
+
+                found_node_ids = {
+                    enr.node_id
+                    for message in found_nodes_messages
+                    for enr in message.message.enrs
+                }
+                found_node_totals = {
+                    message.message.total for message in found_nodes_messages
+                }
+                expected_node_ids = {enr.node_id for enr in expected_enrs}
+                assert found_node_ids.issubset(expected_node_ids)
+                assert len(found_nodes_messages) <= num_batches
+                assert found_node_totals == set((num_batches,))
+
+                nursery.cancel_scope.cancel()
+
+
+@pytest.mark.trio
+async def test_client_request_response_stream_find_nodes_invalid_total(
+    alice, bob, alice_client, bob_client
+):
+    async with trio.open_nursery() as nursery:
+        async with bob_client.dispatcher.subscribe(FindNodeMessage) as subscription:
+
+            async def _respond():
+                request = await subscription.receive()
+                message = request.to_response(
+                    FoundNodesMessage(request.request_id, 0, ())
+                )
+                await bob_client.dispatcher.send_message(message)
+
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(2):
+                with pytest.raises(ValidationError, match="total=0"):
+                    async with alice_client.stream_find_nodes(
+                        bob.node_id, bob.endpoint, distances=[123],
+                    ) as resp_aiter:
+                        tuple([resp async for resp in resp_aiter])
 
 
 @pytest.mark.trio

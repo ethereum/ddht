@@ -7,8 +7,9 @@ import pytest
 import trio
 
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
-from ddht.kademlia import at_log_distance, compute_log_distance
+from ddht.kademlia import at_log_distance, compute_log_distance, KademliaRoutingTable
 from ddht.v5_1.abc import TalkProtocolAPI
+from ddht.v5_1.constants import REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
 
@@ -136,8 +137,97 @@ async def test_network_find_nodes_api_validates_response_distances(
 
             nursery.start_soon(_respond)
             with trio.fail_after(2):
-                with pytest.raises(ValidationError):
+                with pytest.raises(
+                    ValidationError, match="Invalid response: distance="
+                ):
                     await alice_network.find_nodes(bob.node_id, 255)
+
+
+@pytest.mark.trio
+async def test_network_stream_find_nodes(alice, bob, alice_network, bob_client):
+    table = KademliaRoutingTable(bob.node_id, 256)
+    for i in range(1000):
+        enr = ENRFactory()
+        table.update(enr.node_id)
+        bob.enr_db.set_enr(enr)
+
+    for distance in range(256, 1, -1):
+        bucket = table.buckets[distance - 1]
+        if not len(bucket):
+            break
+
+        async with trio.open_nursery() as nursery:
+            async with bob.events.find_nodes_received.subscribe() as subscription:
+                expected_enrs = tuple(bob.enr_db.get_enr(node_id) for node_id in bucket)
+
+                async def _send_response():
+                    find_nodes = await subscription.receive()
+                    await bob_client.send_found_nodes(
+                        alice.node_id,
+                        alice.endpoint,
+                        enrs=expected_enrs,
+                        request_id=find_nodes.message.request_id,
+                    )
+
+                nursery.start_soon(_send_response)
+
+                found_nodes_messages = []
+                with trio.fail_after(2):
+                    async with alice_network.stream_find_nodes(
+                        bob.node_id, bob.endpoint, distances=[distance]
+                    ) as resp_aiter:
+                        found_nodes_messages = tuple(
+                            [resp async for resp in resp_aiter]
+                        )
+                found_node_ids = {
+                    enr.node_id
+                    for message in found_nodes_messages
+                    for enr in message.message.enrs
+                }
+                expected_node_ids = {enr.node_id for enr in expected_enrs}
+                assert found_node_ids == expected_node_ids
+
+                nursery.cancel_scope.cancel()
+
+
+@pytest.mark.trio
+@pytest.mark.parametrize("response_enr", ("own", "wrong"))
+async def test_network_stream_find_nodes_api_validates_response_distances(
+    alice, bob, bob_client, alice_network, response_enr
+):
+    if response_enr == "own":
+        enr_for_response = bob.enr
+    elif response_enr == "wrong":
+        for _ in range(200):
+            enr_for_response = ENRFactory()
+            if compute_log_distance(enr_for_response.node_id, bob.node_id) == 256:
+                break
+        else:
+            raise Exception("failed")
+    else:
+        raise Exception(f"unsupported param: {response_enr}")
+
+    async with bob.events.find_nodes_received.subscribe() as subscription:
+        async with trio.open_nursery() as nursery:
+
+            async def _respond():
+                request = await subscription.receive()
+                await bob_client.send_found_nodes(
+                    alice.node_id,
+                    alice.endpoint,
+                    enrs=(enr_for_response,),
+                    request_id=request.request_id,
+                )
+
+            nursery.start_soon(_respond)
+            with trio.fail_after(REQUEST_RESPONSE_TIMEOUT):
+                with pytest.raises(
+                    ValidationError, match="Invalid response: distance="
+                ):
+                    async with alice_network.stream_find_nodes(
+                        bob.node_id, bob.endpoint, distances=[255]
+                    ) as resp_aiter:
+                        tuple([resp async for resp in resp_aiter])
 
 
 @pytest.fixture

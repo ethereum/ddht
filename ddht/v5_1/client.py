@@ -1,7 +1,8 @@
 import logging
 import socket
-from typing import Collection, List, Optional, Sequence, Tuple
+from typing import AsyncIterator, Collection, List, Optional, Sequence, Tuple, Type
 
+from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRAPI, ENRManager, QueryableENRDatabaseAPI
 from eth_keys import keys
@@ -20,8 +21,9 @@ from ddht.endpoint import Endpoint
 from ddht.enr import partition_enrs
 from ddht.message_registry import MessageTypeRegistry
 from ddht.request_tracker import RequestTracker
+from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import ClientAPI, EventsAPI
-from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE
+from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.dispatcher import Dispatcher
 from ddht.v5_1.envelope import (
     EnvelopeDecoder,
@@ -31,6 +33,7 @@ from ddht.v5_1.envelope import (
 )
 from ddht.v5_1.events import Events
 from ddht.v5_1.messages import (
+    BaseMessage,
     FindNodeMessage,
     FoundNodesMessage,
     PingMessage,
@@ -418,6 +421,82 @@ class Client(Service, ClientAPI):
                     )
 
                 return responses
+
+    @asynccontextmanager
+    async def stream_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]]:
+        with self.request_tracker.reserve_request_id(node_id, request_id) as request_id:
+            request = AnyOutboundMessage(
+                FindNodeMessage(request_id, tuple(distances)), endpoint, node_id,
+            )
+
+            send_channel, receive_channel = trio.open_memory_channel[
+                InboundMessage[FoundNodesMessage]
+            ](256)
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(
+                    self._stream_find_nodes_response,
+                    request,
+                    request_id,
+                    FoundNodesMessage,
+                    send_channel,
+                )
+
+                try:
+                    async with receive_channel:
+                        try:
+                            yield receive_channel
+                        except trio.EndOfChannel as err:
+                            raise trio.TooSlowError from err
+                finally:
+                    nursery.cancel_scope.cancel()
+
+    async def _stream_find_nodes_response(
+        self,
+        request: AnyOutboundMessage,
+        request_id: Optional[bytes],
+        response_message_type: Type[BaseMessage],
+        send_channel: trio.abc.SendChannel[InboundMessage[FoundNodesMessage]],
+    ) -> None:
+        num_responses = 0
+
+        with trio.move_on_after(REQUEST_RESPONSE_TIMEOUT) as scope:
+            subscription_ctx = self.dispatcher.subscription_manager.subscribe(
+                response_message_type,
+                request.receiver_endpoint,
+                request.receiver_node_id,
+            )
+            async with subscription_ctx as subscription:
+                await self.dispatcher.send_message(request)
+
+                async with send_channel:
+                    async for response in subscription:
+                        if response.message.total == 0:
+                            raise ValidationError(
+                                f"Invalid `total` counter in response: total={response.message.total}"
+                            )
+
+                        if response.request_id != request_id:
+                            continue
+                        else:
+                            num_responses += 1
+                            await send_channel.send(response)
+
+                        if num_responses == response.message.total:
+                            break
+
+        if scope.cancelled_caught:
+            self.logger.debug(
+                "Stream find nodes request disconnected: request=%s message_type=%s",
+                request,
+                request_id,
+            )
 
     async def talk(
         self,
