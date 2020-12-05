@@ -138,6 +138,12 @@ class TesterAPI(ABC):
         ...
 
     @abstractmethod
+    def network_group(
+        self, num_networks: int, bootnodes: Collection[ENRAPI] = (),
+    ) -> AsyncContextManager[Tuple[NetworkAPI, ...]]:
+        ...
+
+    @abstractmethod
     def session_pair(
         self,
         initiator: Optional[NodeAPI] = None,

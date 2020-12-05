@@ -1,11 +1,11 @@
 from contextlib import AsyncExitStack
 import logging
 import sqlite3
-from typing import AsyncIterator, Dict, NamedTuple, Optional, Set, Tuple
+from typing import AsyncIterator, Collection, Dict, NamedTuple, Optional, Set, Tuple
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
-from eth_enr import OldSequenceNumber, QueryableENRDatabaseAPI, QueryableENRDB
+from eth_enr import ENRAPI, OldSequenceNumber, QueryableENRDatabaseAPI, QueryableENRDB
 from eth_keys import keys
 from eth_typing import NodeID
 import trio
@@ -18,7 +18,7 @@ from ddht.tools.driver.session import SessionPair
 from ddht.tools.factories.endpoint import EndpointFactory
 from ddht.tools.factories.keys import PrivateKeyFactory
 from ddht.tools.factories.v5_1 import SessionChannels
-from ddht.v5_1.abc import DispatcherAPI, EventsAPI, PoolAPI, SessionAPI
+from ddht.v5_1.abc import DispatcherAPI, EventsAPI, NetworkAPI, PoolAPI, SessionAPI
 from ddht.v5_1.dispatcher import Dispatcher
 from ddht.v5_1.envelope import InboundEnvelope, OutboundEnvelope
 from ddht.v5_1.pool import Pool
@@ -115,6 +115,27 @@ class Tester(TesterAPI):
         return Node(
             private_key=private_key, endpoint=endpoint, enr_db=enr_db, events=events
         )
+
+    @asynccontextmanager
+    async def network_group(
+        self, num_networks: int, bootnodes: Collection[ENRAPI] = (),
+    ) -> AsyncIterator[Tuple[NetworkAPI, ...]]:
+        async with AsyncExitStack() as stack:
+            networks = []
+            all_bootnodes = list(bootnodes)
+            for _ in range(num_networks):
+                node = self.node()
+                networks.append(
+                    await stack.enter_async_context(
+                        node.network(bootnodes=all_bootnodes)
+                    )
+                )
+                all_bootnodes.append(node.enr)
+
+            for network in networks:
+                await network.ready()
+
+            yield tuple(networks)
 
     def session_pair(
         self,
