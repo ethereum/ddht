@@ -230,11 +230,11 @@ async def common_recursive_find_nodes(
 
     async def _monitor_done(send_channel: trio.abc.SendChannel[ENRAPI]) -> None:
         async with send_channel:
-            while True:
-                # this `fail_after` is a failsafe to prevent deadlock situations
-                # which are possible with `Condition` objects.
-                with trio.fail_after(60):
-                    async with condition:
+            async with condition:
+                while True:
+                    # this `fail_after` is a failsafe to prevent deadlock situations
+                    # which are possible with `Condition` objects.
+                    with trio.fail_after(60):
                         node_ids = get_unqueried_node_ids()
 
                         if not node_ids and not in_flight:
