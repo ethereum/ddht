@@ -224,12 +224,13 @@ class RPCServer(Service):
             while True:
                 try:
                     request = await read_json(socket, buffer)
-                except DecodingError:
-                    # If the connection receives bad JSON, close the connection.
+                except (DecodingError, ConnectionResetError) as err:
+                    self.logger.debug("Closing socket due to error: %s", err)
+                    # Exit if the connection receives bad JSON or closes
                     return
 
                 if not isinstance(request, collections.abc.Mapping):
-                    logger.debug("Invalid payload: %s", type(request))
+                    self.logger.debug("Invalid payload: %s", type(request))
                     await write_error(socket, "Invalid Request: not a mapping")
                     continue
 
