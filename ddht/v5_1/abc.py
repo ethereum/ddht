@@ -3,7 +3,6 @@ import logging
 from typing import (
     Any,
     AsyncContextManager,
-    AsyncIterator,
     Collection,
     Optional,
     Protocol,
@@ -284,7 +283,7 @@ class ClientAPI(ServiceAPI):
         ...
 
     @abstractmethod
-    async def stream_find_nodes(
+    def stream_find_nodes(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
@@ -545,6 +544,17 @@ class NetworkAPI(ServiceAPI):
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
     ) -> Tuple[ENRAPI, ...]:
+        ...
+
+    @abstractmethod
+    def stream_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...
 
     @abstractmethod

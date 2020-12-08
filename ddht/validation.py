@@ -1,7 +1,7 @@
 import ipaddress
 from typing import Any, Collection, Iterable, List, Optional, Tuple
 
-from eth_enr import ENR
+from eth_enr import ENR, ENRAPI
 from eth_typing import HexStr, NodeID
 from eth_utils import (
     ValidationError,
@@ -15,6 +15,7 @@ from eth_utils import (
 )
 
 from ddht.endpoint import Endpoint
+from ddht.kademlia import compute_log_distance
 from ddht.rpc import RPCError
 
 
@@ -136,3 +137,20 @@ def validate_and_extract_destination(value: Any) -> Tuple[NodeID, Optional[Endpo
         raise RPCError(f"Unrecognized node identifier: {value}")
 
     return node_id, endpoint
+
+
+def validate_found_nodes_distances(
+    enrs: Collection[ENRAPI], node_id: NodeID, distances: Collection[int],
+) -> None:
+    for enr in enrs:
+        if enr.node_id == node_id:
+            if 0 not in distances:
+                raise ValidationError(
+                    f"Invalid response: distance=0  expected={distances}"
+                )
+        else:
+            distance = compute_log_distance(enr.node_id, node_id)
+            if distance not in distances:
+                raise ValidationError(
+                    f"Invalid response: distance={distance}  expected={distances}"
+                )

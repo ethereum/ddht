@@ -1,6 +1,15 @@
 import logging
 import socket
-from typing import AsyncIterator, Collection, List, Optional, Sequence, Tuple, Type
+from typing import (
+    AsyncContextManager,
+    AsyncIterator,
+    Collection,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+)
 
 from async_generator import asynccontextmanager
 from async_service import Service
@@ -21,7 +30,6 @@ from ddht.endpoint import Endpoint
 from ddht.enr import partition_enrs
 from ddht.message_registry import MessageTypeRegistry
 from ddht.request_tracker import RequestTracker
-from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import ClientAPI, EventsAPI
 from ddht.v5_1.constants import FOUND_NODES_MAX_PAYLOAD_SIZE, REQUEST_RESPONSE_TIMEOUT
 from ddht.v5_1.dispatcher import Dispatcher
@@ -47,6 +55,7 @@ from ddht.v5_1.messages import (
     v51_registry,
 )
 from ddht.v5_1.pool import Pool
+from ddht.validation import validate_found_nodes_distances
 
 
 class Client(Service, ClientAPI):
@@ -422,81 +431,19 @@ class Client(Service, ClientAPI):
 
                 return responses
 
-    @asynccontextmanager
-    async def stream_find_nodes(
+    def stream_find_nodes(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         distances: Collection[int],
         *,
         request_id: Optional[bytes] = None,
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]]:
-        with self.request_tracker.reserve_request_id(node_id, request_id) as request_id:
-            request = AnyOutboundMessage(
-                FindNodeMessage(request_id, tuple(distances)), endpoint, node_id,
-            )
-
-            send_channel, receive_channel = trio.open_memory_channel[
-                InboundMessage[FoundNodesMessage]
-            ](256)
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(
-                    self._stream_find_nodes_response,
-                    request,
-                    request_id,
-                    FoundNodesMessage,
-                    send_channel,
-                )
-
-                try:
-                    async with receive_channel:
-                        try:
-                            yield receive_channel
-                        except trio.EndOfChannel as err:
-                            raise trio.TooSlowError from err
-                finally:
-                    nursery.cancel_scope.cancel()
-
-    async def _stream_find_nodes_response(
-        self,
-        request: AnyOutboundMessage,
-        request_id: Optional[bytes],
-        response_message_type: Type[BaseMessage],
-        send_channel: trio.abc.SendChannel[InboundMessage[FoundNodesMessage]],
-    ) -> None:
-        num_responses = 0
-
-        with trio.move_on_after(REQUEST_RESPONSE_TIMEOUT) as scope:
-            subscription_ctx = self.dispatcher.subscription_manager.subscribe(
-                response_message_type,
-                request.receiver_endpoint,
-                request.receiver_node_id,
-            )
-            async with subscription_ctx as subscription:
-                await self.dispatcher.send_message(request)
-
-                async with send_channel:
-                    async for response in subscription:
-                        if response.message.total == 0:
-                            raise ValidationError(
-                                f"Invalid `total` counter in response: total={response.message.total}"
-                            )
-
-                        if response.request_id != request_id:
-                            continue
-                        else:
-                            num_responses += 1
-                            await send_channel.send(response)
-
-                        if num_responses == response.message.total:
-                            break
-
-        if scope.cancelled_caught:
-            self.logger.debug(
-                "Stream find nodes request disconnected: request=%s message_type=%s",
-                request,
-                request_id,
-            )
+    ) -> AsyncContextManager[
+        trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]
+    ]:
+        return common_client_stream_find_nodes(
+            self, node_id, endpoint, distances, request_id=request_id
+        )
 
     async def talk(
         self,
@@ -539,3 +486,111 @@ class Client(Service, ClientAPI):
         request_id: Optional[bytes] = None,
     ) -> InboundMessage[FoundNodesMessage]:
         raise NotImplementedError
+
+
+@asynccontextmanager
+async def common_client_stream_find_nodes(
+    client: Client,
+    node_id: NodeID,
+    endpoint: Endpoint,
+    distances: Collection[int],
+    *,
+    request_id: Optional[bytes] = None,
+) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]]:
+    async def _stream_find_nodes_response(
+        client: Client,
+        request: AnyOutboundMessage,
+        request_id: Optional[bytes],
+        response_message_type: Type[BaseMessage],
+        send_channel: trio.abc.SendChannel[InboundMessage[FoundNodesMessage]],
+    ) -> None:
+
+        head_response_total = 0
+        response_counter = 0
+
+        with trio.move_on_after(REQUEST_RESPONSE_TIMEOUT) as scope:
+            async with send_channel:
+                subscription_ctx = client.dispatcher.subscribe(
+                    response_message_type,
+                    request.receiver_endpoint,
+                    request.receiver_node_id,
+                )
+
+                async with subscription_ctx as subscription:
+                    async for response in subscription:
+                        if response.message.total == 0:
+                            raise ValidationError(
+                                "Invalid `total` counter in response: "
+                                f"total={response.message.total}"
+                            )
+
+                        if response.request_id != request_id:
+                            continue
+                        else:
+                            if response_counter == 0:
+                                head_response_total = response.message.total
+
+                            if head_response_total != response.message.total:
+                                raise ValidationError(
+                                    "Inconsistent message total. Received a FoundNodesMessage with "
+                                    f"a total of {response.message.total}, "
+                                    f"expected a total of {head_response_total}"
+                                )
+
+                            validate_found_nodes_distances(
+                                response.message.enrs,
+                                request.receiver_node_id,
+                                request.message.distances,
+                            )
+
+                            response_counter += 1
+                            try:
+                                await send_channel.send(response)
+                            except (trio.BrokenResourceError, trio.ClosedResourceError):
+                                break
+
+                        if response_counter == head_response_total:
+                            break
+
+        if scope.cancelled_caught:
+            client.logger.debug(
+                "Stream find nodes request disconnected: request=%s message_type=%s",
+                request,
+                request_id,
+            )
+            raise trio.TooSlowError
+
+    async with trio.open_nursery() as nursery:
+        with client.request_tracker.reserve_request_id(
+            node_id, request_id
+        ) as request_id:
+            request = AnyOutboundMessage(
+                FindNodeMessage(request_id, tuple(distances)), endpoint, node_id,
+            )
+
+            send_channel, receive_channel = trio.open_memory_channel[
+                InboundMessage[FoundNodesMessage]
+            ](4)
+            nursery.start_soon(
+                # mypy expects an Awaitable, interprets this as a Coroutine
+                _stream_find_nodes_response,  # type: ignore
+                client,
+                request,
+                request_id,
+                FoundNodesMessage,
+                send_channel,
+            )
+
+            nursery.start_soon(
+                client.dispatcher.send_message, request,
+            )
+
+            async with receive_channel:
+                try:
+                    yield receive_channel
+                except trio.EndOfChannel as err:
+                    raise trio.TooSlowError from err
+                except (trio.ClosedResourceError, trio.ClosedResourceError):
+                    pass
+
+            nursery.cancel_scope.cancel()

@@ -51,11 +51,11 @@ from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import (
     FindNodeMessage,
-    FoundNodesMessage,
     PingMessage,
     PongMessage,
     TalkRequestMessage,
 )
+from ddht.validation import validate_found_nodes_distances
 
 UNRESPONSIVE_CACHE = LRU(2048)
 
@@ -541,6 +541,64 @@ async def common_explore_network(
     )
 
 
+async def common_network_stream_find_nodes(
+    network: NetworkAPI,
+    node_id: NodeID,
+    endpoint: Endpoint,
+    distances: Collection[int],
+    *,
+    request_id: Optional[bytes] = None,
+) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
+    async def _stream_find_nodes_response(
+        network: NetworkAPI,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        request_id: Optional[bytes],
+        send_channel: trio.abc.SendChannel[ENRAPI],
+    ) -> None:
+        async with network.client.stream_find_nodes(
+            node_id, endpoint, distances=distances, request_id=request_id
+        ) as resp_aiter:
+            async with send_channel:
+                async for response in resp_aiter:
+                    enrs = response.message.enrs
+                    for enr in enrs:
+                        try:
+                            await send_channel.send(enr)
+                        except (trio.BrokenResourceError, trio.ClosedResourceError):
+                            break
+
+    if not distances:
+        raise TypeError("Must provide at least one distance")
+
+    if endpoint is None:
+        endpoint = await network.endpoint_for_node_id(node_id)
+
+    send_channel, receive_channel = trio.open_memory_channel[ENRAPI](256)
+
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(
+            # mypy expects an Awaitable, interprets this as a Coroutine
+            _stream_find_nodes_response,  # type: ignore
+            network,
+            node_id,
+            endpoint,
+            distances,
+            request_id,
+            send_channel,
+        )
+
+        try:
+            async with receive_channel:
+                try:
+                    yield receive_channel
+                except trio.EndOfChannel as err:
+                    raise trio.TooSlowError from err
+        finally:
+            nursery.cancel_scope.cancel()
+
+
 class Network(Service, NetworkAPI):
     logger = logging.getLogger("ddht.Network")
 
@@ -684,66 +742,21 @@ class Network(Service, NetworkAPI):
         # Validate that all responses are indeed at one of the
         # specified distances.
         for response in responses:
-            validate_found_nodes_distances(response, node_id, distances)
+            validate_found_nodes_distances(response.message.enrs, node_id, distances)
 
         return tuple(enr for response in responses for enr in response.message.enrs)
 
-    @asynccontextmanager
-    async def stream_find_nodes(
+    def stream_find_nodes(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         distances: Collection[int],
         *,
         request_id: Optional[bytes] = None,
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]]:
-        if not distances:
-            raise TypeError("Must provide at least one distance")
-
-        if endpoint is None:
-            endpoint = await self.endpoint_for_node_id(node_id)
-
-        send_channel, receive_channel = trio.open_memory_channel[
-            InboundMessage[FoundNodesMessage]
-        ](256)
-
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(
-                self._stream_find_nodes_response,
-                node_id,
-                endpoint,
-                distances,
-                request_id,
-                send_channel,
-            )
-
-            try:
-                async with receive_channel:
-                    try:
-                        yield receive_channel
-                    except trio.EndOfChannel as err:
-                        raise trio.TooSlowError from err
-            finally:
-                nursery.cancel_scope.cancel()
-
-    async def _stream_find_nodes_response(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        distances: Collection[int],
-        request_id: Optional[bytes],
-        send_channel: trio.abc.SendChannel[InboundMessage[FoundNodesMessage]],
-    ) -> None:
-        async with self.client.stream_find_nodes(
-            node_id, endpoint, distances=distances, request_id=request_id
-        ) as resp_aiter:
-            async with send_channel:
-                async for response in resp_aiter:
-                    # Validate that all responses are indeed at one of the
-                    # specified distances.
-                    validate_found_nodes_distances(response, node_id, distances)
-
-                    await send_channel.send(response)
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        return common_network_stream_find_nodes(
+            self, node_id, endpoint, distances, request_id=request_id
+        )
 
     async def talk(
         self,
@@ -1064,22 +1077,3 @@ class Network(Service, NetworkAPI):
             enr = await self.lookup_enr(node_id)
 
         return Endpoint.from_enr(enr)
-
-
-def validate_found_nodes_distances(
-    response: InboundMessage[FoundNodesMessage],
-    node_id: NodeID,
-    distances: Collection[int],
-) -> None:
-    for enr in response.message.enrs:
-        if enr.node_id == node_id:
-            if 0 not in distances:
-                raise ValidationError(
-                    f"Invalid response: distance=0  expected={distances}"
-                )
-        else:
-            distance = compute_log_distance(enr.node_id, node_id)
-            if distance not in distances:
-                raise ValidationError(
-                    f"Invalid response: distance={distance}  expected={distances}"
-                )
