@@ -739,15 +739,15 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 pass
 
         # Now repeatedly try to bond with each bootnode until one succeeds.
-        async with trio.open_nursery() as nursery:
-            while self.manager.is_running:
-                for enr in self._bootnodes:
-                    if enr.node_id == self.local_node_id:
-                        continue
-                    endpoint = Endpoint.from_enr(enr)
-                    nursery.start_soon(self._bond, enr.node_id, endpoint)
+        while self.manager.is_running:
+            with trio.move_on_after(10):
+                async with trio.open_nursery() as nursery:
+                    for enr in self._bootnodes:
+                        if enr.node_id == self.local_node_id:
+                            continue
+                        endpoint = Endpoint.from_enr(enr)
+                        nursery.start_soon(self._bond, enr.node_id, endpoint)
 
-                with trio.move_on_after(10):
                     await self._routing_table_ready.wait()
                     break
 
