@@ -57,7 +57,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
     async def network(
         self,
         network: Optional[NetworkAPI] = None,
-        bootnodes: Optional[Collection[ENRAPI]] = None,
+        bootnodes: Collection[ENRAPI] = (),
         max_advertisement_count: int = 32,
     ) -> AsyncIterator[AlexandriaNetworkAPI]:
         network_context: AsyncContextManager[NetworkAPI]
@@ -72,7 +72,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
             async with network_context as network:
                 alexandria_network = AlexandriaNetwork(
                     network=network,
-                    bootnodes=(),
+                    bootnodes=bootnodes,
                     content_storage=self.content_storage,
                     advertisement_db=self.advertisement_db,
                     max_advertisement_count=max_advertisement_count,

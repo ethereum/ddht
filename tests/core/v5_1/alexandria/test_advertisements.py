@@ -2,7 +2,7 @@ from eth_keys import keys
 from eth_keys.exceptions import BadSignature
 from eth_utils import keccak
 from eth_utils.toolz import sliding_window
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
 import ssz
@@ -91,6 +91,7 @@ def test_advertise_message_encoded_size(content_keys):
     )
 
 
+@settings(deadline=500)
 @given(content_keys=st.lists(content_key_st))
 def test_advertisement_partitioning(content_keys):
     advertisements = tuple(
