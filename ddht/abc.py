@@ -15,6 +15,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Sized,
     Tuple,
     Type,
     TypedDict,
@@ -315,7 +316,7 @@ class ApplicationAPI(ServiceAPI):
 TResource = TypeVar("TResource", bound=Hashable)
 
 
-class ResourceQueueAPI(Container[TResource]):
+class ResourceQueueAPI(Sized, Container[TResource]):
     resources: Set[TResource]
 
     @abstractmethod
