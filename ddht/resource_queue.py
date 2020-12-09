@@ -10,10 +10,6 @@ class RemoveResource(Exception):
     pass
 
 
-class EmptyResourceQueue(Exception):
-    pass
-
-
 class ResourceQueue(ResourceQueueAPI[TResource]):
     """
     Allow some set of "worker" processes to share the underlying resources,
