@@ -1,6 +1,7 @@
 from contextlib import AsyncExitStack
 
 from eth_enr.tools.factories import ENRFactory
+from eth_utils import ValidationError
 import pytest
 import trio
 
@@ -143,7 +144,7 @@ async def test_alexandria_network_advertise_single_message(
         async with trio.open_nursery() as nursery:
             nursery.start_soon(_respond)
 
-            with trio.fail_after(1):
+            with trio.fail_after(2):
                 ack_payloads = await alice_alexandria_network.advertise(
                     bob.node_id, advertisements=advertisements,
                 )
@@ -153,6 +154,21 @@ async def test_alexandria_network_advertise_single_message(
 
             assert isinstance(ack_payload, AckPayload)
             assert ack_payload.advertisement_radius == 12345
+
+
+@pytest.mark.trio
+async def test_alexandria_network_advertise_invalid_signature(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisement = AdvertisementFactory(
+        signature_v=1, signature_r=1357924680, signature_s=2468013579,
+    )
+    assert not advertisement.is_valid
+
+    with pytest.raises(ValidationError, match="invalid"):
+        await alice_alexandria_network.advertise(
+            bob.node_id, advertisements=(advertisement,),
+        )
 
 
 @pytest.mark.parametrize(

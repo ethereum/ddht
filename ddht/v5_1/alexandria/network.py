@@ -22,6 +22,7 @@ from ddht.v5_1.alexandria.abc import (
     AlexandriaNetworkAPI,
     ContentStorageAPI,
 )
+from ddht.v5_1.alexandria.advertisement_manager import AdvertisementManager
 from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
@@ -77,6 +78,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.advertisement_provider = AdvertisementProvider(
             client=self.client, advertisement_db=self.advertisement_db,
         )
+        self.advertisement_manager = AdvertisementManager(
+            network=self, advertisement_db=advertisement_db,
+        )
 
         self.radius_tracker = RadiusTracker(self)
 
@@ -108,8 +112,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def run(self) -> None:
         self.manager.run_daemon_child_service(self.client)
+        self.manager.run_daemon_child_service(self.advertisement_manager)
         self.manager.run_daemon_child_service(self.content_provider)
         self.manager.run_daemon_child_service(self.radius_tracker)
+
+        await self.advertisement_manager.ready()
+        await self.content_provider.ready()
+        await self.radius_tracker.ready()
 
         # Long running processes
         self.manager.run_daemon_task(self._periodically_report_routing_table)
@@ -153,9 +162,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         except trio.TooSlowError:
             self.logger.debug("Bonding with %s timed out during ping", node_id.hex())
             return False
+        except KeyError:
+            self.logger.debug(
+                "Unable to lookup endpoint information for node: %s", node_id.hex()
+            )
+            return False
 
         try:
-            enr = await self.network.lookup_enr(
+            enr = await self.lookup_enr(
                 node_id, enr_seq=pong.enr_seq, endpoint=endpoint
             )
         except trio.TooSlowError:
@@ -175,6 +189,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def _bond(self, node_id: NodeID, endpoint: Optional[Endpoint] = None) -> None:
         await self.bond(node_id, endpoint=endpoint)
+
+    async def lookup_enr(
+        self, node_id: NodeID, *, enr_seq: int = 0, endpoint: Optional[Endpoint] = None
+    ) -> ENRAPI:
+        return await self.network.lookup_enr(
+            node_id, enr_seq=enr_seq, endpoint=endpoint
+        )
 
     async def ping(
         self,
@@ -473,6 +494,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         advertisements: Collection[Advertisement],
         endpoint: Optional[Endpoint] = None,
     ) -> Tuple[AckPayload, ...]:
+        if not all(ad.is_valid for ad in advertisements):
+            raise ValidationError("Cannot send invalid advertisements")
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
         responses = await self.client.advertise(
@@ -560,6 +583,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             async def _source_nodes_for_broadcast() -> None:
                 async with self.explore(advertisement.content_id) as enr_aiter:
                     async for enr in enr_aiter:
+                        if enr.node_id == self.local_node_id:
+                            continue
+
                         if len(acked_nodes) >= redundancy_factor:
                             break
 
@@ -606,7 +632,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     advertisement_radius=self.local_advertisement_radius,
                     request_id=request.request_id,
                 )
-                enr = await self.network.lookup_enr(
+                enr = await self.lookup_enr(
                     request.sender_node_id,
                     enr_seq=request.message.payload.enr_seq,
                     endpoint=request.sender_endpoint,
