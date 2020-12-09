@@ -17,7 +17,12 @@ from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_typing import Hash32, NodeID
 import trio
 
-from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
+from ddht.abc import (
+    EventAPI,
+    RequestTrackerAPI,
+    RoutingTableAPI,
+    SubscriptionManagerAPI,
+)
 from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
@@ -150,6 +155,8 @@ class AdvertisementDatabaseAPI(ABC):
 
 
 class AdvertisementManagerAPI(ServiceAPI):
+    new_advertisement: EventAPI[Advertisement]
+
     @abstractmethod
     async def ready(self) -> None:
         ...
