@@ -36,20 +36,7 @@ from ddht.v5_1.alexandria.resource_queue import ResourceQueue
 from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
-from ddht.v5_1.network import common_recursive_find_nodes
-
-NEIGHBORHOOD_DISTANCES = (
-    # First bucket is combined (128 + 64 + 32) since these will rarely be
-    # occupied.
-    tuple(range(1, 224)),
-    # Next few buckets drop in size by about half each time.
-    tuple(range(224, 240)),
-    tuple(range(240, 248)),
-    (248, 249, 250, 251),
-    (252, 253, 254),
-    # This last one is 3/4 of the network
-    (255, 256),
-)
+from ddht.v5_1.network import common_explore_network, common_recursive_find_nodes
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
@@ -229,6 +216,11 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, target: NodeID
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         return common_recursive_find_nodes(self, target)
+
+    def explore(
+        self, target: NodeID, concurrency: int = 3,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        return common_explore_network(self, target, concurrency=concurrency)
 
     async def get_content_proof(
         self,

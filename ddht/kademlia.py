@@ -1,5 +1,4 @@
 import collections
-import functools
 import ipaddress
 import itertools
 import logging
@@ -11,6 +10,7 @@ from typing import (
     Any,
     Collection,
     Deque,
+    Iterable,
     Iterator,
     List,
     Optional,
@@ -107,6 +107,10 @@ def compute_log_distance(left_node_id: NodeID, right_node_id: NodeID) -> int:
         raise ValueError("Cannot compute log distance between identical nodes")
     distance = compute_distance(left_node_id, right_node_id)
     return distance.bit_length()
+
+
+def iter_closest(target: NodeID, nodes: Iterable[NodeID]) -> Iterator[NodeID]:
+    yield from sorted(nodes, key=lambda node_id: compute_distance(target, node_id))
 
 
 def at_log_distance(target: NodeID, distance: int) -> NodeID:
@@ -320,10 +324,7 @@ class KademliaRoutingTable(RoutingTableAPI):
     def iter_nodes_around(self, reference_node_id: NodeID) -> Iterator[NodeID]:
         """Iterate over all nodes in the routing table ordered by distance to a given reference."""
         all_node_ids = itertools.chain(*self.buckets)
-        distance_to_reference = functools.partial(compute_distance, reference_node_id)
-        sorted_node_ids = sorted(all_node_ids, key=distance_to_reference)
-        for node_id in sorted_node_ids:
-            yield node_id
+        yield from iter_closest(reference_node_id, all_node_ids)
 
     def iter_all_random(self) -> Iterator[NodeID]:
         """

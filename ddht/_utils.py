@@ -263,3 +263,15 @@ async def adaptive_timeout(
 
         # cancel any remaining tasks.
         nursery.cancel_scope.cancel()
+
+
+TElement = TypeVar("TElement")
+TItem = TypeVar("TItem")
+
+
+def caboose(seq: Iterable[TItem], el: TElement) -> Iterable[Union[TElement, TItem]]:
+    """
+    Return an iterable of `seq` with `el` added to the end
+    """
+    yield from seq
+    yield el

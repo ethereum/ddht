@@ -432,6 +432,15 @@ class NetworkProtocol(Protocol):
     def enr_db(self) -> QueryableENRDatabaseAPI:
         ...
 
+    async def bond(
+        self,
+        node_id: NodeID,
+        *,
+        endpoint: Optional[Endpoint] = None,
+        max_cache_age: int = 60,
+    ) -> bool:
+        ...
+
     async def find_nodes(
         self,
         node_id: NodeID,
@@ -545,6 +554,12 @@ class NetworkAPI(ServiceAPI):
     @abstractmethod
     def recursive_find_nodes(
         self, target: NodeID
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        ...
+
+    @abstractmethod
+    def explore(
+        self, target: NodeID, concurrency: int = 3,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...
 

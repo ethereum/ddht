@@ -1,6 +1,4 @@
-import collections
 from contextlib import AsyncExitStack
-import secrets
 
 from eth_enr import ENRManager, OldSequenceNumber
 from eth_enr.tools.factories import ENRFactory
@@ -9,7 +7,7 @@ import pytest
 import trio
 
 from ddht.exceptions import DuplicateProtocol, EmptyFindNodesResponse
-from ddht.kademlia import compute_log_distance
+from ddht.kademlia import at_log_distance, compute_log_distance
 from ddht.v5_1.abc import TalkProtocolAPI
 from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import FoundNodesMessage, TalkRequestMessage
@@ -257,22 +255,16 @@ async def test_network_lookup_fallback_to_recursive_find_nodes(
 
 
 @pytest.mark.trio
-async def test_network_recursive_find_nodes(tester, alice, bob):
+async def test_network_recursive_find_nodes(tester, alice):
     async with AsyncExitStack() as stack:
-        await stack.enter_async_context(bob.network())
-        bootnodes = collections.deque((bob.enr,), maxlen=4)
-        nodes = [bob, alice]
-        for _ in range(10):
-            node = tester.node()
-            nodes.append(node)
-            await stack.enter_async_context(node.network(bootnodes=bootnodes))
-            bootnodes.append(node.enr)
+        networks = await stack.enter_async_context(tester.network_group(8))
 
         # give the the network some time to interconnect.
         with trio.fail_after(20):
             for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
+        bootnodes = tuple(network.enr_manager.enr for network in networks)
         alice_network = await stack.enter_async_context(
             alice.network(bootnodes=bootnodes)
         )
@@ -282,10 +274,10 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
             for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
-        target_node_id = secrets.token_bytes(32)
+        target_node_id = at_log_distance(alice.node_id, 256)
         node_ids_by_distance = tuple(
             sorted(
-                tuple(node.enr.node_id for node in nodes),
+                tuple(network.local_node_id for network in networks),
                 key=lambda node_id: compute_log_distance(target_node_id, node_id),
             )
         )
@@ -295,7 +287,48 @@ async def test_network_recursive_find_nodes(tester, alice, bob):
             with trio.fail_after(60):
                 found_enrs = tuple([enr async for enr in enr_aiter])
 
+        found_node_ids = set(enr.node_id for enr in found_enrs)
+        assert len(found_node_ids) == len(found_enrs)
+
+        # Ensure that one of the three closest node ids was in the returned node ids
+        assert best_node_ids_by_distance.intersection(found_node_ids)
+
+
+@pytest.mark.trio
+async def test_network_explore(tester, alice):
+    async with AsyncExitStack() as stack:
+        networks = await stack.enter_async_context(tester.network_group(8))
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(20):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        bootnodes = tuple(network.enr_manager.enr for network in networks)
+        alice_network = await stack.enter_async_context(
+            alice.network(bootnodes=bootnodes)
+        )
+
+        # give alice a little time to connect to the network as well
+        with trio.fail_after(20):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        target_node_id = at_log_distance(alice.node_id, 256)
+        node_ids_by_distance = tuple(
+            sorted(
+                tuple(network.local_node_id for network in networks),
+                key=lambda node_id: compute_log_distance(target_node_id, node_id),
+            )
+        )
+        best_node_ids_by_distance = set(node_ids_by_distance[:3])
+
+        async with alice_network.explore(target_node_id) as enr_aiter:
+            with trio.fail_after(60):
+                found_enrs = tuple([enr async for enr in enr_aiter])
+
         found_node_ids = tuple(enr.node_id for enr in found_enrs)
+        assert len(found_node_ids) == len(networks) + 1
 
         # Ensure that one of the three closest node ids was in the returned node ids
         assert best_node_ids_by_distance.intersection(found_node_ids)
