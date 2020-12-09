@@ -302,7 +302,8 @@ async def test_advertisement_manager_handle_new_valid_remote_advertisement(
     assert not alice_alexandria_network.advertisement_db.exists(advertisement)
 
     with trio.fail_after(2):
-        await ad_manager.handle_advertisement(advertisement)
+        async with ad_manager.new_advertisement.subscribe_and_wait():
+            await ad_manager.handle_advertisement(advertisement)
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
@@ -324,15 +325,19 @@ async def test_advertisement_manager_handle_existing_valid_local_advertisement(
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
-    with trio.fail_after(2):
-        await ad_manager.handle_advertisement(advertisement)
+    async with ad_manager.new_advertisement.subscribe() as subscription:
+        with trio.fail_after(2):
+            await ad_manager.handle_advertisement(advertisement)
+        with pytest.raises(trio.TooSlowError):
+            with trio.fail_after(2):
+                await subscription.receive()
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
 
 @pytest.mark.trio
 async def test_advertisement_manager_handle_existing_valid_remote_advertisement(
-    alice, bob, alice_alexandria_network, bob_alexandria_network,
+    alice, bob, alice_alexandria_network, bob_alexandria_network, autojump_clock,
 ):
     content = ContentFactory(2048)
     proof = compute_proof(content, sedes=content_sedes)
@@ -347,8 +352,12 @@ async def test_advertisement_manager_handle_existing_valid_remote_advertisement(
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
-    with trio.fail_after(2):
-        await ad_manager.handle_advertisement(advertisement)
+    async with ad_manager.new_advertisement.subscribe() as subscription:
+        with trio.fail_after(2):
+            await ad_manager.handle_advertisement(advertisement)
+        with pytest.raises(trio.TooSlowError):
+            with trio.fail_after(2):
+                await subscription.receive()
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
@@ -371,6 +380,9 @@ async def test_advertisement_manager_does_not_ack_if_advertisements_already_know
     bob_alexandria_network.advertisement_db.add(advertisement)
 
     with pytest.raises(trio.TooSlowError):
-        await alice_alexandria_client.advertise(
-            bob.node_id, bob.endpoint, advertisements=(advertisement,),
-        )
+        with trio.fail_after(10):
+            async with bob_alexandria_network.advertisement_manager.new_advertisement.subscribe_and_wait():  # noqa: E501
+                with pytest.raises(trio.TooSlowError):
+                    await alice_alexandria_client.advertise(
+                        bob.node_id, bob.endpoint, advertisements=(advertisement,),
+                    )

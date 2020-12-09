@@ -8,6 +8,7 @@ from ssz.constants import CHUNK_SIZE
 import trio
 
 from ddht.base_message import InboundMessage
+from ddht.event import Event
 from ddht.v5_1.alexandria.abc import (
     AdvertisementDatabaseAPI,
     AdvertisementManagerAPI,
@@ -29,6 +30,8 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
         self._network = network
         self._advertisement_db = advertisement_db
         self._ready = trio.Event()
+
+        self.new_advertisement = Event("new-advertisement")
 
     async def run(self) -> None:
         self.manager.run_daemon_task(self._handle_advertisement_requests)
@@ -198,6 +201,7 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
         else:
             self._advertisement_db.add(advertisement)
             await self._network.broadcast(advertisement)
+            await self.new_advertisement.trigger(advertisement)
             return True
 
     async def _handle_request(self, request: InboundMessage[AdvertiseMessage]) -> None:
