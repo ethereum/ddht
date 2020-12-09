@@ -91,6 +91,11 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self._find_nodes_handler_ready = trio.Event()
 
     async def ready(self) -> None:
+        await self.advertisement_manager.ready()
+        await self.advertisement_provider.ready()
+        await self.content_provider.ready()
+        await self.radius_tracker.ready()
+
         await self._ping_handler_ready.wait()
         await self._find_nodes_handler_ready.wait()
 
@@ -111,14 +116,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         return self.network.enr_db
 
     async def run(self) -> None:
+        # Child services
         self.manager.run_daemon_child_service(self.client)
         self.manager.run_daemon_child_service(self.advertisement_manager)
+        self.manager.run_daemon_child_service(self.advertisement_provider)
         self.manager.run_daemon_child_service(self.content_provider)
         self.manager.run_daemon_child_service(self.radius_tracker)
-
-        await self.advertisement_manager.ready()
-        await self.content_provider.ready()
-        await self.radius_tracker.ready()
 
         # Long running processes
         self.manager.run_daemon_task(self._periodically_report_routing_table)
