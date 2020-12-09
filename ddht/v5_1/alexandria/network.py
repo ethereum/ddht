@@ -22,6 +22,7 @@ from ddht.v5_1.alexandria.abc import (
     AlexandriaNetworkAPI,
     ContentStorageAPI,
 )
+from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.content import compute_content_distance
@@ -71,6 +72,11 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
 
         self.advertisement_db = advertisement_db
+        self.advertisement_provider = AdvertisementProvider(
+            client=self.client, advertisement_db=self.advertisement_db,
+        )
+
+        self.radius_tracker = RadiusTracker(self)
 
         self._last_pong_at = LRU(2048)
         self._routing_table_ready = trio.Event()
