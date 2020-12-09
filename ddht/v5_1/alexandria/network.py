@@ -15,6 +15,7 @@ from ddht._utils import every, weighted_choice
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
+from ddht.resource_queue import ResourceQueue
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import (
@@ -35,7 +36,6 @@ from ddht.v5_1.alexandria.partials.chunking import slice_segments_to_max_chunk_c
 from ddht.v5_1.alexandria.partials.proof import Proof, compute_proof, validate_proof
 from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.alexandria.radius_tracker import RadiusTracker
-from ddht.v5_1.alexandria.resource_queue import ResourceQueue
 from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE

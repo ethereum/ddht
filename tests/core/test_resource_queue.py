@@ -3,7 +3,7 @@ import random
 import pytest
 import trio
 
-from ddht.v5_1.alexandria.resource_queue import ResourceQueue
+from ddht.resource_queue import ResourceQueue
 
 
 async def _yield(num: int = 10, base: int = 0):

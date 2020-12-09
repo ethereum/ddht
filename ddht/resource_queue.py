@@ -1,16 +1,20 @@
-from typing import Any, AsyncIterator, Collection, Container, Hashable, Set, TypeVar
+from typing import Any, AsyncIterator, Collection, Set
 
 from async_generator import asynccontextmanager
 import trio
 
-TResource = TypeVar("TResource", bound=Hashable)
+from ddht.abc import ResourceQueueAPI, TResource
 
 
 class RemoveResource(Exception):
     pass
 
 
-class ResourceQueue(Container[TResource]):
+class EmptyResourceQueue(Exception):
+    pass
+
+
+class ResourceQueue(ResourceQueueAPI[TResource]):
     """
     Allow some set of "worker" processes to share the underlying resources,
     ensuring that any given resource is only in use by a single worker at any
