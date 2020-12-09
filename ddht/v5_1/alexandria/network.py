@@ -516,11 +516,31 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         responses = await self.client.locate(
             node_id, content_key=content_key, endpoint=endpoint, request_id=request_id,
         )
-        return tuple(
+        advertisements = tuple(
             advertisement
             for response in responses
             for advertisement in response.message.payload.locations
         )
+        if not all(advertisement.is_valid for advertisement in advertisements):
+            raise ValidationError(
+                f"Response contains invalid advertisements: "
+                f"advertisements={advertisements}"
+            )
+        unexpected_content_keys = tuple(
+            sorted(
+                set(
+                    advertisement.content_key
+                    for advertisement in advertisements
+                    if advertisement.content_key != content_key
+                )
+            )
+        )
+        if unexpected_content_keys:
+            raise ValidationError(
+                f"Response contains unerquested content keys: "
+                f"content_keys={unexpected_content_keys}"
+            )
+        return advertisements
 
     async def broadcast(
         self, advertisement: Advertisement, redundancy_factor: int = 3
