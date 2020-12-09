@@ -464,6 +464,5 @@ async def test_alexandria_network_broadcast_api(
             with trio.fail_after(30):
                 result = await alice_alexandria_network.broadcast(advertisement)
                 assert len(result) > 0
-                assert len(result) <= 3
 
             nursery.cancel_scope.cancel()
