@@ -29,15 +29,16 @@ async def test_content_provider_serves_short_content(
             await content_provider.ready()
 
             with trio.fail_after(2):
-                result = await alice_alexandria_network.get_content_from_nodes(
-                    nodes=((bob.node_id, bob.endpoint),),
-                    hash_tree_root=proof.get_hash_tree_root(),
-                    content_key=content_key,
-                    concurrency=1,
+                content_retrieval_ctx = alice_alexandria_network.retrieve_content(
+                    content_key, proof.get_hash_tree_root(),
                 )
-                validate_proof(result)
-                result_data = result.get_proven_data()
-                assert result_data[0 : len(content)] == content
+                async with content_retrieval_ctx as content_retrieval:
+                    await content_retrieval.node_queue.add(bob.node_id)
+                    result = await content_retrieval.wait_content_proof()
+
+            validate_proof(result)
+            result_data = result.get_proven_data()
+            assert result_data[0 : len(content)] == content
 
             response = await subscription.receive()
             assert response.message.payload.is_proof is False
@@ -61,15 +62,16 @@ async def test_content_provider_serves_large_content(
             await content_provider.ready()
 
             with trio.fail_after(2):
-                result = await alice_alexandria_network.get_content_from_nodes(
-                    nodes=((bob.node_id, bob.endpoint),),
-                    hash_tree_root=proof.get_hash_tree_root(),
-                    content_key=content_key,
-                    concurrency=1,
+                content_retrieval_ctx = alice_alexandria_network.retrieve_content(
+                    content_key, proof.get_hash_tree_root(),
                 )
-                validate_proof(result)
-                result_data = result.get_proven_data()
-                assert result_data[0 : len(content)] == content
+                async with content_retrieval_ctx as content_retrieval:
+                    await content_retrieval.node_queue.add(bob.node_id)
+                    result = await content_retrieval.wait_content_proof()
+
+            validate_proof(result)
+            result_data = result.get_proven_data()
+            assert result_data[0 : len(content)] == content
 
             response = await subscription.receive()
             assert response.message.payload.is_proof is True

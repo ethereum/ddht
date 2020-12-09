@@ -20,6 +20,7 @@ import trio
 from ddht.abc import (
     EventAPI,
     RequestTrackerAPI,
+    ResourceQueueAPI,
     RoutingTableAPI,
     SubscriptionManagerAPI,
 )
@@ -37,6 +38,7 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     TAlexandriaMessage,
 )
+from ddht.v5_1.alexandria.partials.chunking import MissingSegment
 from ddht.v5_1.alexandria.partials.proof import Proof
 from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
@@ -371,6 +373,19 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
 
+class ContentRetrievalAPI(ServiceAPI):
+    content_key: ContentKey
+    content_id: ContentID
+    hash_tree_root: Hash32
+
+    node_queue: ResourceQueueAPI[NodeID]
+    segment_queue: ResourceQueueAPI[MissingSegment]
+
+    @abstractmethod
+    async def wait_content_proof(self) -> Proof:
+        ...
+
+
 class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     client: AlexandriaClientAPI
     routing_table: RoutingTableAPI
@@ -473,14 +488,9 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def get_content_from_nodes(
-        self,
-        nodes: Collection[Tuple[NodeID, Optional[Endpoint]]],
-        *,
-        hash_tree_root: Hash32,
-        content_key: ContentKey,
-        concurrency: int = 4,
-    ) -> Proof:
+    def retrieve_content(
+        self, content_key: ContentKey, hash_tree_root: Hash32
+    ) -> AsyncContextManager[ContentRetrievalAPI]:
         ...
 
     @abstractmethod
