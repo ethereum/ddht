@@ -43,6 +43,9 @@ class AdvertisementFactory(factory.Factory):  # type: ignore
 
     @classmethod
     def expired(cls, **kwargs: Any) -> "Advertisement":
-        assert "expires_at" not in kwargs
         expires_at = datetime.datetime.utcnow().replace(microsecond=0) - ONE_HOUR
         return cls(**kwargs, expires_at=expires_at)
+
+    @classmethod
+    def invalid(cls, **kwargs: Any) -> "Advertisement":
+        return cls(**kwargs, signature_v=1, signature_r=12345, signature_s=24689)
