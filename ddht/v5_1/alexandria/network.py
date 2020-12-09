@@ -1,5 +1,5 @@
 import logging
-from typing import AsyncContextManager, Collection, List, Optional, Tuple
+from typing import AsyncContextManager, Collection, List, Optional, Set, Tuple, Union
 
 from async_service import Service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
@@ -24,6 +24,7 @@ from ddht.v5_1.alexandria.abc import (
 )
 from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
 from ddht.v5_1.alexandria.advertisements import Advertisement
+from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.content import compute_content_distance
 from ddht.v5_1.alexandria.content_provider import ContentProvider
@@ -35,7 +36,7 @@ from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.alexandria.radius_tracker import RadiusTracker
 from ddht.v5_1.alexandria.resource_queue import ResourceQueue
 from ddht.v5_1.alexandria.sedes import content_sedes
-from ddht.v5_1.alexandria.typing import ContentKey
+from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.network import common_explore_network, common_recursive_find_nodes
 
@@ -61,6 +62,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.client = AlexandriaClient(network)
 
         self.radius_tracker = RadiusTracker(self)
+        self.broadcast_log = BroadcastLog()
 
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
@@ -219,14 +221,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
 
     def recursive_find_nodes(
-        self, target: NodeID
+        self, target: Union[NodeID, ContentID],
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
-        return common_recursive_find_nodes(self, target)
+        return common_recursive_find_nodes(self, NodeID(target))
 
     def explore(
-        self, target: NodeID, concurrency: int = 3,
+        self, target: Union[NodeID, ContentID], concurrency: int = 3,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
-        return common_explore_network(self, target, concurrency=concurrency)
+        return common_explore_network(self, NodeID(target), concurrency=concurrency)
 
     async def get_content_proof(
         self,
@@ -496,6 +498,83 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             for response in responses
             for advertisement in response.message.payload.locations
         )
+
+    async def broadcast(
+        self, advertisement: Advertisement, redundancy_factor: int = 3
+    ) -> Tuple[NodeID, ...]:
+        self.logger.debug("Broadcasting: advertisement=%s", advertisement)
+        acked_nodes: Set[NodeID] = set()
+
+        # Use the redundancy_factor also as the concurrency limit
+        lock = trio.Semaphore(redundancy_factor)
+        condition = trio.Condition()
+
+        async def _do_advertise(node_id: NodeID) -> None:
+            nonlocal acked_nodes
+
+            async with lock:
+                if len(acked_nodes) >= redundancy_factor:
+                    return
+
+                # verify we haven't recently sent this node the same advertisement
+                if self.broadcast_log.was_logged(node_id, advertisement):
+                    return
+
+                # verify the node should be interested in the advertisement based
+                # on their advertisement radius.
+                advertisement_radius = await self.radius_tracker.get_advertisement_radius(
+                    node_id,
+                )
+                distance_to_content = compute_content_distance(
+                    node_id, advertisement.content_id
+                )
+
+                if distance_to_content > advertisement_radius:
+                    return
+
+                # attempt to send the advertisement to the node.
+                try:
+                    await self.advertise(node_id, advertisements=(advertisement,))
+                except trio.TooSlowError:
+                    self.logger.debug(
+                        "Broadcast timeout: node_id=%s  advertisement=%s",
+                        node_id.hex(),
+                        advertisement,
+                    )
+                    return
+                else:
+                    self.logger.debug(
+                        "Broadcast successful: node_id=%s  advertisement=%s",
+                        node_id.hex(),
+                        advertisement,
+                    )
+                    # log the broadcast
+                    self.broadcast_log.log(node_id, advertisement)
+                finally:
+                    async with condition:
+                        acked_nodes.add(node_id)
+                        condition.notify_all()
+
+        async with trio.open_nursery() as nursery:
+
+            async def _source_nodes_for_broadcast() -> None:
+                async with self.explore(advertisement.content_id) as enr_aiter:
+                    async for enr in enr_aiter:
+                        if len(acked_nodes) >= redundancy_factor:
+                            break
+
+                        nursery.start_soon(_do_advertise, enr.node_id)
+
+            nursery.start_soon(_source_nodes_for_broadcast)
+
+            # exit as soon as there are either no more child tasks or we have
+            # successfully broadcast to enough nodes.
+            while nursery.child_tasks and len(acked_nodes) < redundancy_factor:
+                with trio.move_on_after(1):
+                    async with condition:
+                        await condition.wait()
+
+        return tuple(acked_nodes)
 
     #
     # Long Running Processes

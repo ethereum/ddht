@@ -31,6 +31,11 @@ class AlexandriaNodeAPI(ABC):
     content_storage: ContentStorageAPI
     advertisement_db: AdvertisementDatabaseAPI
 
+    @property
+    @abstractmethod
+    def enr(self) -> ENRAPI:
+        ...
+
     @abstractmethod
     def client(
         self, network: Optional[NetworkAPI] = None
@@ -128,7 +133,21 @@ class SessionPairAPI(ABC):
         ...
 
 
+class AlexandriaTesterAPI(ABC):
+    @abstractmethod
+    def node(self) -> AlexandriaNodeAPI:
+        ...
+
+    @abstractmethod
+    def network_group(
+        self, num_networks: int, bootnodes: Collection[ENRAPI] = (),
+    ) -> AsyncContextManager[Tuple[AlexandriaNetworkAPI, ...]]:
+        ...
+
+
 class TesterAPI(ABC):
+    alexandria: AlexandriaTesterAPI
+
     @abstractmethod
     def register_pool(self, pool: PoolAPI, channels: SessionChannels) -> None:
         ...

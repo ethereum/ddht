@@ -9,6 +9,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    Union,
 )
 
 from async_service import ServiceAPI
@@ -352,6 +353,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     max_advertisement_count: int
 
     radius_tracker: RadiusTrackerAPI
+    broadcast_log: BroadcastLogAPI
 
     advertisement_db: AdvertisementDatabaseAPI
     advertisement_provider: AdvertisementProviderAPI
@@ -472,12 +474,18 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     @abstractmethod
     def recursive_find_nodes(
-        self, target: NodeID
+        self, target: Union[NodeID, ContentID],
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...
 
     @abstractmethod
     def explore(
-        self, target: NodeID, concurrency: int = 3,
+        self, target: Union[NodeID, ContentID], concurrency: int = 3,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        ...
+
+    @abstractmethod
+    async def broadcast(
+        self, advertisement: Advertisement, redundancy_factor: int = 3
+    ) -> Tuple[NodeID, ...]:
         ...

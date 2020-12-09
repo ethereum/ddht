@@ -1,5 +1,6 @@
+from contextlib import AsyncExitStack
 import sqlite3
-from typing import AsyncContextManager, AsyncIterator, Collection, Optional
+from typing import AsyncContextManager, AsyncIterator, Collection, Optional, Tuple
 
 from async_generator import asynccontextmanager
 from async_service import background_trio_service
@@ -7,7 +8,12 @@ from eth_enr import ENRAPI
 
 from ddht._utils import asyncnullcontext
 from ddht.tools.driver._utils import NamedLock
-from ddht.tools.driver.abc import AlexandriaNodeAPI, NodeAPI
+from ddht.tools.driver.abc import (
+    AlexandriaNodeAPI,
+    AlexandriaTesterAPI,
+    NodeAPI,
+    TesterAPI,
+)
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI, AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.advertisement_db import AdvertisementDatabase
@@ -24,6 +30,10 @@ class AlexandriaNode(AlexandriaNodeAPI):
         self.content_storage = MemoryContentStorage()
         self.advertisement_db = AdvertisementDatabase(sqlite3.connect(":memory:"),)
         self._lock = NamedLock()
+
+    @property
+    def enr(self) -> ENRAPI:
+        return self.node.enr
 
     @asynccontextmanager
     async def client(
@@ -68,3 +78,28 @@ class AlexandriaNode(AlexandriaNodeAPI):
                 async with background_trio_service(alexandria_network):
                     await alexandria_network.ready()
                     yield alexandria_network
+
+
+class AlexandriaTester(AlexandriaTesterAPI):
+    def __init__(self, tester: TesterAPI) -> None:
+        self._tester = tester
+
+    def node(self) -> AlexandriaNodeAPI:
+        return self._tester.node().alexandria
+
+    @asynccontextmanager
+    async def network_group(
+        self, num_networks: int, bootnodes: Collection[ENRAPI] = (),
+    ) -> AsyncIterator[Tuple[AlexandriaNetworkAPI, ...]]:
+        all_bootnodes = list(bootnodes)
+        networks = []
+        async with AsyncExitStack() as stack:
+            for _ in range(num_networks):
+                node = self.node()
+                network = await stack.enter_async_context(
+                    node.network(bootnodes=all_bootnodes)
+                )
+                all_bootnodes.append(node.enr)
+                networks.append(network)
+
+            yield tuple(networks)

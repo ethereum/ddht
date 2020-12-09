@@ -13,6 +13,7 @@ import trio
 from ddht._utils import humanize_node_id
 from ddht.endpoint import Endpoint
 from ddht.tools.driver.abc import NodeAPI, SessionPairAPI, TesterAPI
+from ddht.tools.driver.alexandria import AlexandriaTester
 from ddht.tools.driver.node import Node
 from ddht.tools.driver.session import SessionPair
 from ddht.tools.factories.endpoint import EndpointFactory
@@ -78,6 +79,8 @@ class Tester(TesterAPI):
         self._pools = {}
         self._managed_dispatchers = {}
         self._running_dispatchers = set()
+
+        self.alexandria = AlexandriaTester(self)
 
     def register_pool(self, pool: PoolAPI, channels: SessionChannels) -> None:
         if pool.local_node_id in self._pools:
