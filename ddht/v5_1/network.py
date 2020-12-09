@@ -532,7 +532,7 @@ async def common_explore_network(
     elapsed = trio.current_time() - start_at
 
     network.logger.debug(
-        "Explore for %s finished in %f seconds: seen=%d  queried=%d  unresponsive=%d",
+        "Explore for %s finished in %f seconds: seen=%d  queried=%d",
         target.hex(),
         elapsed,
         len(seen),
