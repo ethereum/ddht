@@ -5,12 +5,16 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    Collection,
+    Container,
     ContextManager,
     Deque,
     Generic,
+    Hashable,
     Iterator,
     List,
     Optional,
+    Set,
     Tuple,
     Type,
     TypedDict,
@@ -305,4 +309,28 @@ class RequestTrackerAPI(ABC):
 class ApplicationAPI(ServiceAPI):
     @abstractmethod
     def __init__(self, args: argparse.Namespace, boot_info: BootInfo) -> None:
+        ...
+
+
+TResource = TypeVar("TResource", bound=Hashable)
+
+
+class ResourceQueueAPI(Container[TResource]):
+    resources: Set[TResource]
+
+    @abstractmethod
+    def __init__(
+        self, resources: Collection[TResource], max_resource_count: int = None,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    async def add(self, resource: TResource) -> None:
+        ...
+
+    @abstractmethod
+    def remove(self, resource: TResource) -> None:
+        ...
+
+    def reserve(self) -> AsyncContextManager[TResource]:
         ...
