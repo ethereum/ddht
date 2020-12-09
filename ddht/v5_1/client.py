@@ -138,14 +138,12 @@ class Client(Service, ClientAPI):
         return self.pool.local_node_id
 
     async def run(self) -> None:
-        self.manager.run_daemon_child_service(self.envelope_decoder)
-
-        self.manager.run_daemon_task(self._run_envelope_encoder)
+        self.manager.run_daemon_task(self._run_envelope_encoder_and_decoder)
         self.manager.run_daemon_task(self._do_listen, self.listen_on)
 
         await self.manager.wait_finished()
 
-    async def _run_envelope_encoder(self) -> None:
+    async def _run_envelope_encoder_and_decoder(self) -> None:
         """
         Ensure that in the task hierarchy the envelope encode will be shut down
         *after* the dispatcher.
@@ -156,6 +154,7 @@ class Client(Service, ClientAPI):
                 |
                 -------Dispatcher
         """
+        self.manager.run_daemon_child_service(self.envelope_decoder)
         self.manager.run_daemon_child_service(self.envelope_encoder)
         self.manager.run_daemon_task(self._run_dispatcher)
 
