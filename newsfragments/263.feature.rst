@@ -1,0 +1,1 @@
+Add support for stream_find_nodes to Network and Client api.

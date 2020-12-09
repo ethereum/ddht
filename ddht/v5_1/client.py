@@ -498,9 +498,6 @@ async def common_client_stream_find_nodes(
     request_id: Optional[bytes] = None,
 ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]]:
     async def _stream_find_nodes_response(
-        client: Client,
-        request: AnyOutboundMessage,
-        request_id: Optional[bytes],
         response_message_type: Type[BaseMessage],
         send_channel: trio.abc.SendChannel[InboundMessage[FoundNodesMessage]],
     ) -> None:
@@ -510,23 +507,25 @@ async def common_client_stream_find_nodes(
 
         with trio.move_on_after(REQUEST_RESPONSE_TIMEOUT) as scope:
             async with send_channel:
-                subscription_ctx = client.dispatcher.subscribe(
-                    response_message_type,
-                    request.receiver_endpoint,
-                    request.receiver_node_id,
-                )
+                with client.request_tracker.reserve_request_id(
+                    node_id, request_id
+                ) as reserved_request_id:
+                    request = AnyOutboundMessage(
+                        FindNodeMessage(reserved_request_id, tuple(distances)),
+                        endpoint,
+                        node_id,
+                    )
 
-                async with subscription_ctx as subscription:
-                    async for response in subscription:
-                        if response.message.total == 0:
-                            raise ValidationError(
-                                "Invalid `total` counter in response: "
-                                f"total={response.message.total}"
-                            )
+                    async with client.dispatcher.subscribe_request(
+                        request, response_message_type
+                    ) as subscription:
+                        async for response in subscription:
+                            if response.message.total == 0:
+                                raise ValidationError(
+                                    "Invalid `total` counter in response: "
+                                    f"total={response.message.total}"
+                                )
 
-                        if response.request_id != request_id:
-                            continue
-                        else:
                             if response_counter == 0:
                                 head_response_total = response.message.total
 
@@ -549,48 +548,31 @@ async def common_client_stream_find_nodes(
                             except (trio.BrokenResourceError, trio.ClosedResourceError):
                                 break
 
-                        if response_counter == head_response_total:
-                            break
+                            if response_counter == head_response_total:
+                                break
 
         if scope.cancelled_caught:
             client.logger.debug(
                 "Stream find nodes request disconnected: request=%s message_type=%s",
                 request,
-                request_id,
+                reserved_request_id,
             )
             raise trio.TooSlowError
 
     async with trio.open_nursery() as nursery:
-        with client.request_tracker.reserve_request_id(
-            node_id, request_id
-        ) as request_id:
-            request = AnyOutboundMessage(
-                FindNodeMessage(request_id, tuple(distances)), endpoint, node_id,
-            )
+        send_channel, receive_channel = trio.open_memory_channel[
+            InboundMessage[FoundNodesMessage]
+        ](4)
+        nursery.start_soon(
+            _stream_find_nodes_response, FoundNodesMessage, send_channel,
+        )
 
-            send_channel, receive_channel = trio.open_memory_channel[
-                InboundMessage[FoundNodesMessage]
-            ](4)
-            nursery.start_soon(
-                # mypy expects an Awaitable, interprets this as a Coroutine
-                _stream_find_nodes_response,  # type: ignore
-                client,
-                request,
-                request_id,
-                FoundNodesMessage,
-                send_channel,
-            )
+        async with receive_channel:
+            try:
+                yield receive_channel
+            except trio.EndOfChannel as err:
+                raise trio.TooSlowError from err
+            except (trio.ClosedResourceError, trio.ClosedResourceError):
+                pass
 
-            nursery.start_soon(
-                client.dispatcher.send_message, request,
-            )
-
-            async with receive_channel:
-                try:
-                    yield receive_channel
-                except trio.EndOfChannel as err:
-                    raise trio.TooSlowError from err
-                except (trio.ClosedResourceError, trio.ClosedResourceError):
-                    pass
-
-            nursery.cancel_scope.cancel()
+        nursery.cancel_scope.cancel()

@@ -541,6 +541,7 @@ async def common_explore_network(
     )
 
 
+@asynccontextmanager
 async def common_network_stream_find_nodes(
     network: NetworkAPI,
     node_id: NodeID,
@@ -549,12 +550,13 @@ async def common_network_stream_find_nodes(
     *,
     request_id: Optional[bytes] = None,
 ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
+    if not distances:
+        raise TypeError("Must provide at least one distance")
+
+    if endpoint is None:
+        endpoint = await network.endpoint_for_node_id(node_id)
+
     async def _stream_find_nodes_response(
-        network: NetworkAPI,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        distances: Collection[int],
-        request_id: Optional[bytes],
         send_channel: trio.abc.SendChannel[ENRAPI],
     ) -> None:
         async with network.client.stream_find_nodes(
@@ -569,24 +571,11 @@ async def common_network_stream_find_nodes(
                         except (trio.BrokenResourceError, trio.ClosedResourceError):
                             break
 
-    if not distances:
-        raise TypeError("Must provide at least one distance")
-
-    if endpoint is None:
-        endpoint = await network.endpoint_for_node_id(node_id)
-
     send_channel, receive_channel = trio.open_memory_channel[ENRAPI](256)
 
     async with trio.open_nursery() as nursery:
         nursery.start_soon(
-            # mypy expects an Awaitable, interprets this as a Coroutine
-            _stream_find_nodes_response,  # type: ignore
-            network,
-            node_id,
-            endpoint,
-            distances,
-            request_id,
-            send_channel,
+            _stream_find_nodes_response, send_channel,
         )
 
         try:

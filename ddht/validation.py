@@ -140,16 +140,16 @@ def validate_and_extract_destination(value: Any) -> Tuple[NodeID, Optional[Endpo
 
 
 def validate_found_nodes_distances(
-    enrs: Collection[ENRAPI], node_id: NodeID, distances: Collection[int],
+    enrs: Collection[ENRAPI], local_node_id: NodeID, distances: Collection[int],
 ) -> None:
     for enr in enrs:
-        if enr.node_id == node_id:
+        if enr.node_id == local_node_id:
             if 0 not in distances:
                 raise ValidationError(
                     f"Invalid response: distance=0  expected={distances}"
                 )
         else:
-            distance = compute_log_distance(enr.node_id, node_id)
+            distance = compute_log_distance(enr.node_id, local_node_id)
             if distance not in distances:
                 raise ValidationError(
                     f"Invalid response: distance={distance}  expected={distances}"
