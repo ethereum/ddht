@@ -50,7 +50,8 @@ from ddht.v5_1.alexandria.radius_tracker import RadiusTracker
 from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
-from ddht.v5_1.network import common_explore_network, common_recursive_find_nodes
+from ddht.v5_1.explorer import Explorer
+from ddht.v5_1.network import common_recursive_find_nodes
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
@@ -260,10 +261,16 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         return common_recursive_find_nodes(self, NodeID(target))
 
-    def explore(
-        self, target: Union[NodeID, ContentID], concurrency: int = 3,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
-        return common_explore_network(self, NodeID(target), concurrency=concurrency)
+    @asynccontextmanager
+    async def explore(
+        self, target: NodeID, concurrency: int = 3,
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
+        explorer = Explorer(self, target, concurrency)
+        self.manager.run_child_service(explorer)
+        await explorer.ready()
+
+        async with explorer.stream() as receive_channel:
+            yield receive_channel
 
     async def get_content_proof(
         self,

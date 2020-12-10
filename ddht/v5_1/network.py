@@ -5,7 +5,6 @@ from typing import (
     AsyncIterator,
     Collection,
     Dict,
-    Iterator,
     List,
     Optional,
     Set,
@@ -18,11 +17,11 @@ from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
 from eth_utils import ValidationError
-from eth_utils.toolz import cons, first, partition_all, sliding_window, take
+from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
 
-from ddht._utils import adaptive_timeout, caboose, every, reduce_enrs, weighted_choice
+from ddht._utils import adaptive_timeout, every, reduce_enrs, weighted_choice
 from ddht.base_message import InboundMessage
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
@@ -49,6 +48,7 @@ from ddht.v5_1.abc import (
 )
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.exceptions import ProtocolNotSupported
+from ddht.v5_1.explorer import Explorer
 from ddht.v5_1.messages import (
     FindNodeMessage,
     PingMessage,
@@ -269,275 +269,6 @@ async def common_recursive_find_nodes(
         len(received_node_ids),
         len(queried_node_ids),
         len(unresponsive_node_ids),
-    )
-
-
-@asynccontextmanager
-async def common_explore_network(
-    network: NetworkProtocol, target: NodeID, *, concurrency: int = 3,
-) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
-    """
-    Return an async iterator (trio.abc.ReceiveChannel) which will find *all*
-    nodes in the network, prioritizing the search towards nodes closest to
-    `target`.
-
-    The algorithm builds on `recursive_find_nodes` to quickly find the node in
-    the network that is closest to the target.
-
-    Then we work through the known nodes in order of proximity to the `target`.
-    For each `node_id` we check the distance between it and its closest
-    neighbors to determine the maximum bucket index we should query.  Since
-    each knows the most about the neighborhood of the network it resides in, we
-    only want to query the buckets up to and including the ones that include
-    the closest neighbors.  We issue FIND_NODES queries until we encounter
-    empty buckets.
-
-    This function strikes a balance between focusing exploration on the
-    `target` part of the network, and quickly returning results.  The initial
-    results returned by this function might not be close to the target, but it
-    should very quickly narrow in towards the target, after which it will
-    slowly work away from the target.
-    """
-    network.logger.debug("Exploring: target=%s", target.hex())
-    start_at = trio.current_time()
-
-    # track the full set of node ids that we have seen.
-    seen: Set[NodeID] = set()
-
-    # tracks node ids that are actively being queried.
-    in_flight: Set[NodeID] = set()
-
-    # tracks node ids that have been queried
-    queried: Set[NodeID] = {network.local_node_id}
-
-    # The `trio.Condition` here is used to guard the `seen` list to ensure that
-    # we don't have race conditions while updating the set.  It is also used to
-    # pause the workers when there is no work available, as well as detecting
-    # that we are "done"
-    condition = trio.Condition()
-
-    # Using a relatively small buffer size here ensures that we are applying
-    # back-pressure against the workers.  If the consumer is only consuming a
-    # few nodes, we don't need to continue issuing requests.
-    send_channel, receive_channel = trio.open_memory_channel[ENRAPI](16)
-
-    def _get_nodes_for_exploration() -> Iterator[Tuple[NodeID, int]]:
-        candidates = iter_closest_nodes(target, network.routing_table, seen)
-        candidate_triplets = sliding_window(3, caboose(cons(None, candidates), None))
-
-        for left_id, node_id, right_id in candidate_triplets:
-            # Filter out nodes that have already been queried
-            if node_id in queried:
-                continue
-            elif node_id in in_flight:
-                continue
-
-            # By looking at the two closest *sibling* nodes we can determine
-            # how much of their routing table we need to query.  We consider
-            # the maximum logarithmic distance to either neighbor which
-            # guarantees that we look up the region of the network that this
-            # node knows the most about, but avoid querying buckets for which
-            # other nodes are going to have a more complete view.
-            if left_id is None:
-                left_distance = 256
-            else:
-                left_distance = compute_log_distance(node_id, left_id)
-
-            if right_id is None:
-                right_distance = 256
-            else:
-                right_distance = compute_log_distance(node_id, right_id)
-
-            # We use the maximum distance to ensure that we cover every part of
-            # the address space.
-            yield node_id, max(left_distance, right_distance)
-
-    async def _bond_then_send(
-        enr: ENRAPI, send_channel: trio.abc.SendChannel[ENRAPI]
-    ) -> None:
-        """
-        Ensure that we only yield nodes that have passed a liveliness check.
-        """
-        if enr.node_id == network.local_node_id:
-            did_bond = True
-        else:
-            did_bond = await network.bond(enr.node_id)
-
-        if did_bond:
-            try:
-                await send_channel.send(enr)
-            except (trio.BrokenResourceError, trio.ClosedResourceError):
-                # In the event that the consumer of `recursive_find_nodes`
-                # exits early before the lookup has completed we can end up
-                # operating on a closed channel.
-                pass
-
-    async def _explore(
-        node_id: NodeID, max_distance: int, send_channel: trio.abc.SendChannel[ENRAPI]
-    ) -> None:
-        """
-        Explore the neighborhood around the given `node_id` out to the
-        specified `max_distance`
-        """
-        async with trio.open_nursery() as nursery:
-            for distances in partition_all(2, range(max_distance, 0, -1)):
-                try:
-                    found_enrs = await network.find_nodes(node_id, *distances)
-                except (trio.TooSlowError, MissingEndpointFields, ValidationError):
-                    return
-                else:
-                    # once we encounter a pair of buckets that elicits an empty
-                    # response we assume that all subsequent buckets will also
-                    # be empty.
-                    if not found_enrs:
-                        network.logger.debug(
-                            "explore-finish: node_id=%s  covered=%d-%d",
-                            node_id.hex(),
-                            max_distance,
-                            distances[0],
-                        )
-                        break
-
-                for enr in found_enrs:
-                    try:
-                        network.enr_db.set_enr(enr)
-                    except OldSequenceNumber:
-                        pass
-
-                # check if we have found any new records.  If so, queue them and
-                # wake up the new workers.  This is guarded by the `condition`
-                # object to ensure we maintain a consistent view of the `seen`
-                # nodes.
-                async with condition:
-                    new_enrs = tuple(
-                        enr for enr in found_enrs if enr.node_id not in seen
-                    )
-                    assert len(set(enr.node_id for enr in new_enrs)) == len(new_enrs)
-
-                    if new_enrs:
-                        seen.update(enr.node_id for enr in new_enrs)
-                        condition.notify_all()
-
-                # use the `NetworkProtocol.bond` to perform a liveliness check
-                for enr in new_enrs:
-                    nursery.start_soon(_bond_then_send, enr, send_channel)
-
-    async def _worker(
-        worker_id: int, send_channel: trio.abc.SendChannel[ENRAPI]
-    ) -> None:
-        """
-        Work through the unqueried nodes to explore each of their neighborhoods
-        in the network.
-        """
-        for round in itertools.count():
-            async with condition:
-                try:
-                    node_id, radius = first(_get_nodes_for_exploration())
-                except StopIteration:
-                    await condition.wait()
-                    continue
-                else:
-                    queried.add(node_id)
-                    in_flight.add(node_id)
-
-                # Some of the node ids may have come from our routing table.
-                # These won't be present in the `received_node_ids` so we
-                # detect this here and send them over the channel.
-                if node_id not in seen:
-                    enr = network.enr_db.get_enr(node_id)
-                    seen.add(node_id)
-
-                    try:
-                        await send_channel.send(enr)
-                    except (trio.BrokenResourceError, trio.ClosedResourceError):
-                        # In the event that the consumer of `recursive_find_nodes`
-                        # exits early before the lookup has completed we can end up
-                        # operating on a closed channel.
-                        return
-
-            await _explore(node_id, radius, send_channel)
-
-            # we need to trigger the condition here so that our "done" check
-            # will wake up and once we query our last node and see that there
-            # are no more nodes in flight or left to query.
-            async with condition:
-                in_flight.remove(node_id)
-                condition.notify_all()
-
-    async def _source_nodes_from_rfn(
-        send_channel: trio.abc.SendChannel[ENRAPI], done: trio.Event
-    ) -> None:
-        """
-        We use RFN to quickly find the nodes closest to the target.
-        """
-        async with network.recursive_find_nodes(target) as enr_aiter:
-            async for enr in enr_aiter:
-                async with condition:
-                    if enr.node_id not in seen:
-                        seen.add(enr.node_id)
-                        condition.notify_all()
-                        await send_channel.send(enr)
-
-        network.logger.info("finished sourcing nodes from RFN")
-        done.set()
-
-    async def _monitor_done(
-        send_channel: trio.abc.SendChannel[ENRAPI], rfn_done: trio.Event
-    ) -> None:
-        """
-        Monitor for the *done* condition:
-
-        - RFN finished
-        - no unqueried nodes
-        - no in-flight nodes
-        """
-        async with send_channel:
-            # First wait for the RFN to be complete.
-            await rfn_done.wait()
-
-            while True:
-                # TODO: stop-gap to ensure we don't deadlock
-                with trio.fail_after(60):
-                    async with condition:
-                        network.logger.debug(
-                            "explore: seen=%d  pending=%d  in_flight=%d  queried=%d",
-                            len(seen),
-                            len(seen - in_flight - queried),
-                            len(in_flight),
-                            len(queried),
-                        )
-
-                        try:
-                            first(_get_nodes_for_exploration())
-                        except StopIteration:
-                            if not in_flight:
-                                break
-
-                        await condition.wait()
-
-    rfn_done = trio.Event()
-
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(_monitor_done, send_channel, rfn_done)
-
-        nursery.start_soon(_source_nodes_from_rfn, send_channel, rfn_done)
-
-        for worker_id in range(concurrency):
-            nursery.start_soon(_worker, worker_id, send_channel)
-
-        async with receive_channel:
-            yield receive_channel
-
-        nursery.cancel_scope.cancel()
-
-    elapsed = trio.current_time() - start_at
-
-    network.logger.debug(
-        "Explore for %s finished in %f seconds: seen=%d  queried=%d",
-        target.hex(),
-        elapsed,
-        len(seen),
-        len(queried),
     )
 
 
@@ -815,10 +546,16 @@ class Network(Service, NetworkAPI):
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         return common_recursive_find_nodes(self, target)
 
-    def explore(
+    @asynccontextmanager
+    async def explore(
         self, target: NodeID, concurrency: int = 3,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
-        return common_explore_network(self, target, concurrency=concurrency)
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
+        explorer = Explorer(self, target, concurrency)
+        self.manager.run_child_service(explorer)
+        await explorer.ready()
+
+        async with explorer.stream() as receive_channel:
+            yield receive_channel
 
     #
     # Long Running Processes
