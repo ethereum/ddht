@@ -73,6 +73,9 @@ class ResourceQueue(ResourceQueueAPI[TResource]):
     def __contains__(self, value: Any) -> bool:
         return value in self.resources
 
+    def __len__(self) -> int:
+        return len(self.resources)
+
     def remove(self, resource: TResource) -> None:
         self.resources.remove(resource)
 

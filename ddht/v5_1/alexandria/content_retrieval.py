@@ -138,10 +138,11 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
                             (content_length - still_missing) * 100 / content_length
                         )
                         self.logger.info(
-                            "combined proof: content_key=%s  proof=%s  progress=%.2f%%",
+                            "combined proof: content_key=%s  proof=%s  progress=%.2f%%  nodes=%d",
                             self.content_key.hex(),
                             proof,
                             percent_complete,
+                            len(self.node_queue),
                         )
                         if proof.is_complete:
                             break
