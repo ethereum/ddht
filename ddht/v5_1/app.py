@@ -15,6 +15,7 @@ import trio
 from ddht._utils import generate_node_key_file, read_node_key_file
 from ddht.app import BaseApplication
 from ddht.boot_info import BootInfo
+from ddht.canary import Canary
 from ddht.constants import DEFAULT_LISTEN, IP_V4_ADDRESS_ENR_KEY
 from ddht.endpoint import Endpoint
 from ddht.rpc import RPCServer
@@ -67,6 +68,8 @@ class Application(BaseApplication):
             enr_manager.update((IP_V4_ADDRESS_ENR_KEY, external_ip.packed))
 
     async def run(self) -> None:
+        self.manager.run_daemon_child_service(Canary())
+
         identity_scheme_registry = default_identity_scheme_registry
 
         message_type_registry = v51_registry
