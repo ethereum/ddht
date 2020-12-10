@@ -385,17 +385,15 @@ class Dispatcher(Service, DispatcherAPI):
                 response_message_type,
                 send_channel,
             )
-            try:
-                async with receive_channel:
-                    try:
-                        yield receive_channel
-                    # Wrap EOC error with TSE to make the timeouts obvious
-                    except trio.EndOfChannel as err:
-                        raise trio.TooSlowError(
-                            f"Timout waiting for response: request_id={request_id.hex()}"
-                        ) from err
-            finally:
-                nursery.cancel_scope.cancel()
+            async with receive_channel:
+                try:
+                    yield receive_channel
+                # Wrap EOC error with TSE to make the timeouts obvious
+                except trio.EndOfChannel as err:
+                    raise trio.TooSlowError(
+                        f"Timout waiting for response: request_id={request_id.hex()}"
+                    ) from err
+            nursery.cancel_scope.cancel()
 
     async def _manage_request_response(
         self,

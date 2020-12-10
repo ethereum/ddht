@@ -283,6 +283,19 @@ class ClientAPI(ServiceAPI):
         ...
 
     @abstractmethod
+    def stream_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncContextManager[
+        trio.abc.ReceiveChannel[InboundMessage[FoundNodesMessage]]
+    ]:
+        ...
+
+    @abstractmethod
     async def send_found_nodes(
         self,
         node_id: NodeID,
@@ -531,6 +544,17 @@ class NetworkAPI(ServiceAPI):
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
     ) -> Tuple[ENRAPI, ...]:
+        ...
+
+    @abstractmethod
+    def stream_find_nodes(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        distances: Collection[int],
+        *,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
         ...
 
     @abstractmethod
