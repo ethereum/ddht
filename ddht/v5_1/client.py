@@ -502,9 +502,6 @@ async def common_client_stream_find_nodes(
         send_channel: trio.abc.SendChannel[InboundMessage[FoundNodesMessage]],
     ) -> None:
 
-        head_response_total = 0
-        response_counter = 0
-
         with trio.move_on_after(REQUEST_RESPONSE_TIMEOUT) as scope:
             async with send_channel:
                 with client.request_tracker.reserve_request_id(
@@ -519,37 +516,20 @@ async def common_client_stream_find_nodes(
                     async with client.dispatcher.subscribe_request(
                         request, response_message_type
                     ) as subscription:
-                        async for response in subscription:
-                            if response.message.total == 0:
-                                raise ValidationError(
-                                    "Invalid `total` counter in response: "
-                                    f"total={response.message.total}"
-                                )
+                        head_response = await subscription.receive()
+                        expected_total = head_response.message.total
+                        validate_found_nodes_response(
+                            head_response.message, request, expected_total,
+                        )
+                        await send_channel.send(head_response)
 
-                            if response_counter == 0:
-                                head_response_total = response.message.total
-
-                            if head_response_total != response.message.total:
-                                raise ValidationError(
-                                    "Inconsistent message total. Received a FoundNodesMessage with "
-                                    f"a total of {response.message.total}, "
-                                    f"expected a total of {head_response_total}"
-                                )
-
-                            validate_found_nodes_distances(
-                                response.message.enrs,
-                                request.receiver_node_id,
-                                request.message.distances,
+                        for _ in range(expected_total - 1):
+                            response = await subscription.receive()
+                            validate_found_nodes_response(
+                                response.message, request, expected_total
                             )
 
-                            response_counter += 1
-                            try:
-                                await send_channel.send(response)
-                            except (trio.BrokenResourceError, trio.ClosedResourceError):
-                                break
-
-                            if response_counter == head_response_total:
-                                break
+                            await send_channel.send(response)
 
         if scope.cancelled_caught:
             client.logger.debug(
@@ -576,3 +556,22 @@ async def common_client_stream_find_nodes(
                 pass
 
         nursery.cancel_scope.cancel()
+
+
+def validate_found_nodes_response(
+    message: FoundNodesMessage, request: AnyOutboundMessage, expected_total: int
+) -> None:
+    if message.total == 0:
+        raise ValidationError(
+            f"Invalid `total` counter in response: total={message.total}"
+        )
+
+    if expected_total != message.total:
+        raise ValidationError(
+            "Inconsistent message total. Received a FoundNodesMessage with "
+            f"a total of {message.total}, expected a total of {expected_total}"
+        )
+
+    validate_found_nodes_distances(
+        message.enrs, request.receiver_node_id, request.message.distances
+    )

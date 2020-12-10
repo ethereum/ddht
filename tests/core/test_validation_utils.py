@@ -1,7 +1,6 @@
-import pytest
-
 from eth_enr.tools.factories import ENRFactory
 from eth_utils import ValidationError
+import pytest
 
 from ddht.kademlia import compute_log_distance
 from ddht.validation import validate_found_nodes_distances
