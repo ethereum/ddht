@@ -471,36 +471,38 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         content_id = content_key_to_content_id(content_key)
 
         async def _feed_candidate_nodes(
-            send_channel: trio.abc.SendChannel[NodeID],
+            work_send_channel: trio.abc.SendChannel[NodeID],
         ) -> None:
-            async with self.explore(content_id) as enr_aiter:
-                async for enr in enr_aiter:
-                    if enr.node_id == self.local_node_id:
-                        continue
-                    await send_channel.send(enr.node_id)
+            async with work_send_channel:
+                async with self.explore(content_id) as enr_aiter:
+                    async for enr in enr_aiter:
+                        if enr.node_id == self.local_node_id:
+                            continue
+                        await work_send_channel.send(enr.node_id)
 
         async def _worker(
             worker_id: int,
             work_receive_channel: trio.abc.ReceiveChannel[NodeID],
             ad_send_channel: trio.abc.SendChannel[Advertisement],
         ) -> None:
-            async for node_id in work_receive_channel:
-                distance_to_content = compute_content_distance(node_id, content_id)
-                advertisement_radius = await self.radius_tracker.get_advertisement_radius(
-                    node_id
-                )
-                if distance_to_content > advertisement_radius:
-                    continue
+            async with ad_send_channel:
+                async for node_id in work_receive_channel:
+                    distance_to_content = compute_content_distance(node_id, content_id)
+                    advertisement_radius = await self.radius_tracker.get_advertisement_radius(
+                        node_id
+                    )
+                    if distance_to_content > advertisement_radius:
+                        continue
 
-                stream_locate_ctx = self.stream_locate(
-                    node_id, content_key=content_key,
-                )
-                async with stream_locate_ctx as advertisement_aiter:
-                    async for advertisement in advertisement_aiter:
-                        if hash_tree_root is not None:
-                            if advertisement.hash_tree_root != hash_tree_root:
-                                continue
-                        await ad_send_channel.send(advertisement)
+                    stream_locate_ctx = self.stream_locate(
+                        node_id, content_key=content_key,
+                    )
+                    async with stream_locate_ctx as advertisement_aiter:
+                        async for advertisement in advertisement_aiter:
+                            if hash_tree_root is not None:
+                                if advertisement.hash_tree_root != hash_tree_root:
+                                    continue
+                            await ad_send_channel.send(advertisement)
 
         work_send_channel, work_receive_channel = trio.open_memory_channel[NodeID](
             concurrency
@@ -514,8 +516,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
             for worker_id in range(concurrency):
                 nursery.start_soon(
-                    _worker, worker_id, work_receive_channel, ad_send_channel
+                    _worker, worker_id, work_receive_channel, ad_send_channel.clone()
                 )
+            await ad_send_channel.aclose()
 
             async with ad_receive_channel:
                 yield ad_receive_channel

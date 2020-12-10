@@ -433,12 +433,12 @@ async def test_network_explore(tester, alice):
 
 
 @pytest.mark.trio
-async def test_alexandria_network_find_content(
+async def test_alexandria_network_stream_locations(
     tester, alice,
 ):
     content_key = b"test-key"
     async with AsyncExitStack() as stack:
-        networks = await stack.enter_async_context(tester.alexandria.network_group(10))
+        networks = await stack.enter_async_context(tester.alexandria.network_group(6))
 
         # put advertisements into the database
         advertisements = tuple(
@@ -446,7 +446,7 @@ async def test_alexandria_network_find_content(
                 content_key=content_key,
                 hash_tree_root=b"unicornsrainbowscupcakessparkles",
             )
-            for _ in range(10)
+            for _ in range(6)
         )
 
         for advertisement, network in zip(advertisements, networks):
@@ -466,8 +466,8 @@ async def test_alexandria_network_find_content(
             for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
-        advertisement_aiter_ctx = alice_alexandria_network.find_content(
-            content_key, max_advertisements=5,
+        advertisement_aiter_ctx = alice_alexandria_network.stream_locations(
+            content_key,
         )
         with trio.fail_after(60):
             async with advertisement_aiter_ctx as advertisement_aiter:
@@ -475,18 +475,18 @@ async def test_alexandria_network_find_content(
                     [advertisement async for advertisement in advertisement_aiter]
                 )
 
-        assert len(found_advertisements) == 5
+        assert len(found_advertisements) >= 5
         for advertisement in found_advertisements:
             assert advertisement in advertisements
 
 
 @pytest.mark.trio
-async def test_alexandria_network_find_content_early_exit(
+async def test_alexandria_network_stream_locations_early_exit(
     tester, alice,
 ):
     content_key = b"test-key"
     async with AsyncExitStack() as stack:
-        networks = await stack.enter_async_context(tester.alexandria.network_group(10))
+        networks = await stack.enter_async_context(tester.alexandria.network_group(6))
 
         # put advertisements into the database
         advertisements = tuple(
@@ -494,7 +494,7 @@ async def test_alexandria_network_find_content_early_exit(
                 content_key=content_key,
                 hash_tree_root=b"unicornsrainbowscupcakessparkles",
             )
-            for _ in range(10)
+            for _ in range(6)
         )
 
         for advertisement, network in zip(advertisements, networks):
@@ -514,8 +514,8 @@ async def test_alexandria_network_find_content_early_exit(
             for _ in range(1000):
                 await trio.lowlevel.checkpoint()
 
-        advertisement_aiter_ctx = alice_alexandria_network.find_content(
-            content_key, max_advertisements=8,
+        advertisement_aiter_ctx = alice_alexandria_network.stream_locations(
+            content_key,
         )
         with trio.fail_after(60):
             found_advertisements = []
@@ -523,10 +523,10 @@ async def test_alexandria_network_find_content_early_exit(
             async with advertisement_aiter_ctx as advertisement_aiter:
                 async for advertisement in advertisement_aiter:
                     found_advertisements.append(advertisement)
-                    if len(found_advertisements) >= 4:
+                    if len(found_advertisements) >= 2:
                         break
 
-        assert len(found_advertisements) == 4
+        assert len(found_advertisements) == 2
         for advertisement in found_advertisements:
             assert advertisement in advertisements
 
