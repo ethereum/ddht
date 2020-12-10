@@ -37,7 +37,10 @@ from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 from ddht.v5_1.alexandria.client import AlexandriaClient
-from ddht.v5_1.alexandria.content import compute_content_distance
+from ddht.v5_1.alexandria.content import (
+    compute_content_distance,
+    content_key_to_content_id,
+)
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
@@ -342,36 +345,141 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
     ) -> Tuple[Advertisement, ...]:
-        if endpoint is None:
-            endpoint = await self.network.endpoint_for_node_id(node_id)
-        responses = await self.client.locate(
+        stream_locate_ctx = self.stream_locate(
             node_id, content_key=content_key, endpoint=endpoint, request_id=request_id,
         )
-        advertisements = tuple(
-            advertisement
-            for response in responses
-            for advertisement in response.message.payload.locations
-        )
-        if not all(advertisement.is_valid for advertisement in advertisements):
-            raise ValidationError(
-                f"Response contains invalid advertisements: "
-                f"advertisements={advertisements}"
+        async with stream_locate_ctx as advertisement_aiter:
+            return tuple([advertisement async for advertisement in advertisement_aiter])
+
+    @asynccontextmanager
+    async def stream_locate(
+        self,
+        node_id: NodeID,
+        *,
+        content_key: ContentKey,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[Advertisement]]:
+        async def _feed_advertisements(
+            send_channel: trio.abc.SendChannel[Advertisement],
+        ) -> None:
+            nonlocal endpoint
+
+            if endpoint is None:
+                endpoint = await self.network.endpoint_for_node_id(node_id)
+
+            stream_locate_ctx = self.client.stream_locate(
+                node_id,
+                content_key=content_key,
+                endpoint=endpoint,
+                request_id=request_id,
             )
-        unexpected_content_keys = tuple(
-            sorted(
-                set(
-                    advertisement.content_key
-                    for advertisement in advertisements
-                    if advertisement.content_key != content_key
+            async with send_channel:
+                async with stream_locate_ctx as response_aiter:
+                    seen_totals = set()
+
+                    async for response in response_aiter:
+                        seen_totals.add(response.message.payload.total)
+
+                        if response.message.payload.total == 0:
+                            raise ValidationError("Invalid message total: total=0")
+                        elif len(seen_totals) != 1:
+                            raise ValidationError(
+                                f"Inconsisten message totals: {sorted(tuple(seen_totals))}"
+                            )
+
+                        advertisements = response.message.payload.locations
+
+                        if not all(
+                            advertisement.is_valid for advertisement in advertisements
+                        ):
+                            raise ValidationError(
+                                f"Response contains invalid advertisements: "
+                                f"advertisements={advertisements}"
+                            )
+
+                        unexpected_content_keys = tuple(
+                            sorted(
+                                set(
+                                    advertisement.content_key
+                                    for advertisement in advertisements
+                                    if advertisement.content_key != content_key
+                                )
+                            )
+                        )
+                        if unexpected_content_keys:
+                            raise ValidationError(
+                                f"Response contains unerquested content keys: "
+                                f"content_keys={unexpected_content_keys}"
+                            )
+
+                        for advertisement in response.message.payload.locations:
+                            await send_channel.send(advertisement)
+
+        send_channel, receive_channel = trio.open_memory_channel[Advertisement](32)
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_feed_advertisements, send_channel)
+
+            async with receive_channel:
+                yield receive_channel
+
+            nursery.cancel_scope.cancel()
+
+    @asynccontextmanager
+    async def stream_locations(
+        self, content_key: ContentKey, hash_tree_root: Hash32, *, concurrency: int = 3,
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[Advertisement]]:
+        content_id = content_key_to_content_id(content_key)
+
+        async def _feed_candidate_nodes(
+            send_channel: trio.abc.SendChannel[NodeID],
+        ) -> None:
+            async with self.explore(content_id) as enr_aiter:
+                async for enr in enr_aiter:
+                    if enr.node_id == self.local_node_id:
+                        continue
+                    await send_channel.send(enr.node_id)
+
+        async def _worker(
+            worker_id: int,
+            work_receive_channel: trio.abc.ReceiveChannel[NodeID],
+            ad_send_channel: trio.abc.SendChannel[Advertisement],
+        ) -> None:
+            async for node_id in work_receive_channel:
+                distance_to_content = compute_content_distance(node_id, content_id)
+                advertisement_radius = await self.radius_tracker.get_advertisement_radius(
+                    node_id
                 )
-            )
+                if distance_to_content > advertisement_radius:
+                    continue
+
+                stream_locate_ctx = self.stream_locate(
+                    node_id, content_key=content_key, hash_tree_root=hash_tree_root,
+                )
+                async with stream_locate_ctx as advertisement_aiter:
+                    async for advertisement in advertisement_aiter:
+                        await ad_send_channel.send(advertisement)
+
+        work_send_channel, work_receive_channel = trio.open_memory_channel[NodeID](
+            concurrency
         )
-        if unexpected_content_keys:
-            raise ValidationError(
-                f"Response contains unerquested content keys: "
-                f"content_keys={unexpected_content_keys}"
-            )
-        return advertisements
+        ad_send_channel, ad_receive_channel = trio.open_memory_channel[Advertisement](
+            32
+        )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_feed_candidate_nodes, work_send_channel)
+
+            for worker_id in range(concurrency):
+                nursery.start_soon(
+                    _worker, worker_id, work_receive_channel, ad_send_channel
+                )
+
+            async with ad_receive_channel:
+                yield ad_receive_channel
+
+            nursery.cancel_scope.cancel()
 
     async def broadcast(
         self, advertisement: Advertisement, redundancy_factor: int = 3

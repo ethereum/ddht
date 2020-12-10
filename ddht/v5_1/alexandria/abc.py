@@ -372,6 +372,17 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> Tuple[InboundMessage[LocationsMessage], ...]:
         ...
 
+    @abstractmethod
+    def stream_locate(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_key: ContentKey,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]]:
+        ...
+
 
 class ContentRetrievalAPI(ServiceAPI):
     content_key: ContentKey
@@ -512,6 +523,23 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
     ) -> Tuple[Advertisement, ...]:
+        ...
+
+    @abstractmethod
+    def stream_locate(
+        self,
+        node_id: NodeID,
+        *,
+        content_key: ContentKey,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[Advertisement]]:
+        ...
+
+    @abstractmethod
+    def stream_locations(
+        self, content_key: ContentKey, *, hash_tree_root: Optional[Hash32] = None,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[Advertisement]]:
         ...
 
     @abstractmethod

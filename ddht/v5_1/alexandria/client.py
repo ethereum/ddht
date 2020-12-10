@@ -539,30 +539,49 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         content_key: ContentKey,
         request_id: Optional[bytes] = None,
     ) -> Tuple[InboundMessage[LocationsMessage], ...]:
+        stream_locate_ctx = self.stream_locate(
+            node_id, endpoint, content_key=content_key, request_id=request_id,
+        )
+        async with stream_locate_ctx as response_aiter:
+            return tuple([response async for response in response_aiter])
+
+    @asynccontextmanager
+    async def stream_locate(
+        self,
+        node_id: NodeID,
+        endpoint: Endpoint,
+        *,
+        content_key: ContentKey,
+        request_id: Optional[bytes] = None,
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]]:
         request = LocateMessage(LocatePayload(content_key))
 
-        subscription: trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]
-        # unclear why `subscribe_request` isn't properly carrying the type information
-        async with self.subscribe_request(  # type: ignore
-            node_id, endpoint, request, LocationsMessage, request_id=request_id,
-        ) as subscription:
-            head_response = await subscription.receive()
-            total = head_response.message.payload.total
-            responses: Tuple[InboundMessage[LocationsMessage], ...]
-            if total == 1:
-                responses = (head_response,)
-            elif total > 1:
-                tail_responses: List[InboundMessage[LocationsMessage]] = []
-                for _ in range(total - 1):
-                    tail_responses.append(await subscription.receive())
-                responses = (head_response,) + tuple(tail_responses)
-            else:
-                # TODO: this code path needs to be excercised and
-                # probably replaced with some sort of
-                # `SessionTerminated` exception.
-                raise Exception("Invalid `total` counter in response")
+        async def _feed_responses(
+            send_channel: trio.abc.SendChannel[InboundMessage[LocationsMessage]],
+        ) -> None:
+            subscription: trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]
+            # unclear why `subscribe_request` isn't properly carrying the type information
+            async with self.subscribe_request(  # type: ignore
+                node_id, endpoint, request, LocationsMessage, request_id=request_id,
+            ) as subscription:
+                async with send_channel:
+                    head_response = await subscription.receive()
+                    await send_channel.send(head_response)
+                    total = head_response.message.payload.total
+                    for _ in range(total - 1):
+                        response = await subscription.receive()
+                        await send_channel.send(response)
 
-            return responses
+        send_channel, receive_channel = trio.open_memory_channel[
+            InboundMessage[LocationsMessage]
+        ](4)
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_feed_responses, send_channel)
+
+            async with receive_channel:
+                yield receive_channel
+
+            nursery.cancel_scope.cancel()
 
     #
     # Long Running Processes to manage subscriptions
