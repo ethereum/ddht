@@ -6,10 +6,15 @@ import pytest
 import trio
 
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
-from ddht.kademlia import KademliaRoutingTable, compute_distance, compute_log_distance
+from ddht.kademlia import (
+    KademliaRoutingTable,
+    at_log_distance,
+    compute_distance,
+    compute_log_distance,
+)
 from ddht.tools.factories.alexandria import AdvertisementFactory
 from ddht.tools.factories.content import ContentFactory
-from ddht.v5_1.alexandria.advertisements import partition_advertisements
+from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
 from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.content import compute_content_distance
 from ddht.v5_1.alexandria.messages import (
@@ -383,3 +388,189 @@ async def test_alexandria_network_broadcast_api(
                 assert len(result) > 0
 
             nursery.cancel_scope.cancel()
+
+
+@pytest.mark.trio
+async def test_network_explore(tester, alice):
+    async with AsyncExitStack() as stack:
+        networks = await stack.enter_async_context(tester.alexandria.network_group(8))
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(20):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        bootnodes = tuple(network.enr_manager.enr for network in networks)
+        alice_network = await stack.enter_async_context(
+            alice.alexandria.network(bootnodes=bootnodes)
+        )
+
+        # give alice a little time to connect to the network as well
+        with trio.fail_after(20):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        assert len(set(alice_network.routing_table.iter_all_random())) == 8
+
+        target_node_id = at_log_distance(alice.node_id, 256)
+        node_ids_by_distance = tuple(
+            sorted(
+                tuple(network.local_node_id for network in networks),
+                key=lambda node_id: compute_log_distance(target_node_id, node_id),
+            )
+        )
+        best_node_ids_by_distance = set(node_ids_by_distance[:3])
+
+        async with alice_network.explore(target_node_id) as enr_aiter:
+            with trio.fail_after(60):
+                found_enrs = tuple([enr async for enr in enr_aiter])
+
+        found_node_ids = tuple(enr.node_id for enr in found_enrs)
+        assert len(found_node_ids) == len(networks) + 1
+
+        # Ensure that one of the three closest node ids was in the returned node ids
+        assert best_node_ids_by_distance.intersection(found_node_ids)
+
+
+@pytest.mark.trio
+async def test_alexandria_network_find_content(
+    tester, alice,
+):
+    content_key = b"test-key"
+    async with AsyncExitStack() as stack:
+        networks = await stack.enter_async_context(tester.alexandria.network_group(10))
+
+        # put advertisements into the database
+        advertisements = tuple(
+            AdvertisementFactory(
+                content_key=content_key,
+                hash_tree_root=b"unicornsrainbowscupcakessparkles",
+            )
+            for _ in range(10)
+        )
+
+        for advertisement, network in zip(advertisements, networks):
+            network.advertisement_db.add(advertisement)
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(30):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        bootnodes = tuple(network.enr_manager.enr for network in networks)
+        alice_alexandria_network = await stack.enter_async_context(
+            alice.alexandria.network(bootnodes=bootnodes)
+        )
+
+        with trio.fail_after(30):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        advertisement_aiter_ctx = alice_alexandria_network.find_content(
+            content_key, max_advertisements=5,
+        )
+        with trio.fail_after(60):
+            async with advertisement_aiter_ctx as advertisement_aiter:
+                found_advertisements = tuple(
+                    [advertisement async for advertisement in advertisement_aiter]
+                )
+
+        assert len(found_advertisements) == 5
+        for advertisement in found_advertisements:
+            assert advertisement in advertisements
+
+
+@pytest.mark.trio
+async def test_alexandria_network_find_content_early_exit(
+    tester, alice,
+):
+    content_key = b"test-key"
+    async with AsyncExitStack() as stack:
+        networks = await stack.enter_async_context(tester.alexandria.network_group(10))
+
+        # put advertisements into the database
+        advertisements = tuple(
+            AdvertisementFactory(
+                content_key=content_key,
+                hash_tree_root=b"unicornsrainbowscupcakessparkles",
+            )
+            for _ in range(10)
+        )
+
+        for advertisement, network in zip(advertisements, networks):
+            network.advertisement_db.add(advertisement)
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(30):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        bootnodes = tuple(network.enr_manager.enr for network in networks)
+        alice_alexandria_network = await stack.enter_async_context(
+            alice.alexandria.network(bootnodes=bootnodes)
+        )
+
+        with trio.fail_after(30):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        advertisement_aiter_ctx = alice_alexandria_network.find_content(
+            content_key, max_advertisements=8,
+        )
+        with trio.fail_after(60):
+            found_advertisements = []
+
+            async with advertisement_aiter_ctx as advertisement_aiter:
+                async for advertisement in advertisement_aiter:
+                    found_advertisements.append(advertisement)
+                    if len(found_advertisements) >= 4:
+                        break
+
+        assert len(found_advertisements) == 4
+        for advertisement in found_advertisements:
+            assert advertisement in advertisements
+
+
+@pytest.mark.trio
+async def test_alexandria_network_get_content(
+    tester, alice,
+):
+    content = ContentFactory(4096)
+    proof = compute_proof(content, sedes=content_sedes)
+    hash_tree_root = proof.get_hash_tree_root()
+    content_key = b"test-key"
+
+    async with AsyncExitStack() as stack:
+        networks = await stack.enter_async_context(tester.alexandria.network_group(4))
+
+        for network in networks:
+            advertisement = Advertisement.create(
+                content_key=content_key,
+                hash_tree_root=hash_tree_root,
+                private_key=network.client.local_private_key,
+            )
+            network.advertisement_db.add(advertisement)
+            network.content_storage.set_content(content_key, content)
+
+        # give the the network some time to interconnect.
+        with trio.fail_after(30):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        bootnodes = tuple(network.enr_manager.enr for network in networks[:2])
+        alice_alexandria_network = await stack.enter_async_context(
+            alice.alexandria.network(bootnodes=bootnodes)
+        )
+
+        # give alice some time to interconnect too
+        with trio.fail_after(30):
+            for _ in range(1000):
+                await trio.lowlevel.checkpoint()
+
+        with trio.fail_after(60):
+            result = await alice_alexandria_network.get_content(
+                content_key, hash_tree_root
+            )
+
+        assert result == proof
+        assert result.get_content() == content

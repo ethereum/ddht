@@ -753,6 +753,12 @@ class Proof:
         segments = self.get_proven_data_segments()
         return DataPartial(self.get_content_length(), segments)
 
+    def get_content(self) -> bytes:
+        if not self.is_complete:
+            raise ValueError("Proof does not contain full content")
+        proven_data = self.get_proven_data()
+        return proven_data[: self.get_content_length()]
+
     @to_tuple
     def get_proven_data_segments(self) -> Iterable[DataSegment]:
         length = self.get_content_length()

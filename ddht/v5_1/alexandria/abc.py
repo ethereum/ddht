@@ -505,6 +505,12 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
+    async def get_content(
+        self, content_key: ContentKey, hash_tree_root: Hash32, *, concurrency: int = 3,
+    ) -> Proof:
+        ...
+
+    @abstractmethod
     async def advertise(
         self,
         node_id: NodeID,
@@ -538,7 +544,11 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     @abstractmethod
     def stream_locations(
-        self, content_key: ContentKey, *, hash_tree_root: Optional[Hash32] = None,
+        self,
+        content_key: ContentKey,
+        *,
+        hash_tree_root: Optional[Hash32] = None,
+        concurrency: int = 3,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[Advertisement]]:
         ...
 
