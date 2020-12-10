@@ -18,6 +18,7 @@ from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRManagerAPI, IdentitySchemeAPI, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
+from eth_utils import humanize_seconds
 import trio
 
 from ddht.abc import (
@@ -478,10 +479,10 @@ class ExploreStats(NamedTuple):
 
     def __str__(self) -> str:
         return (
-            f"total={self.seen}  pending={self.pending}  "
+            f"seen={self.seen}  pending={self.pending}  "
             f"in_flight={self.in_flight}  queried={self.queried}  "
             f"unresponsive={self.unresponsive}  unreachable={self.unreachable}  "
-            f"invalid={self.invalid}  elapsed={self.elapsed}"
+            f"invalid={self.invalid}  elapsed={humanize_seconds(int(self.elapsed))}"
         )
 
     @property

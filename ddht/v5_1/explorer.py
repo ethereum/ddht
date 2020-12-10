@@ -100,8 +100,11 @@ class Explorer(Service, ExplorerAPI):
             yield self._receive_channel
             self.manager.cancel()
 
+    def _get_ordered_candidates(self) -> Iterator[NodeID]:
+        return iter_closest(self.target, self.seen)
+
     def _get_nodes_for_exploration(self) -> Iterator[Tuple[NodeID, int]]:
-        candidates = iter_closest(self.target, self.seen)
+        candidates = self._get_ordered_candidates()
         candidate_triplets = sliding_window(3, caboose(cons(None, candidates), None))
 
         for left_id, node_id, right_id in candidate_triplets:
@@ -289,7 +292,6 @@ class Explorer(Service, ExplorerAPI):
                         self.seen.add(enr.node_id)
                         self._condition.notify_all()
                         await self._send_channel.send(enr)
-                        self._exploration_seeded.set()
 
         self.logger.info("%s: finished seeding nodes for exploration", self)
         self._exploration_seeded.set()

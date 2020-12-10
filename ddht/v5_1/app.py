@@ -57,7 +57,7 @@ class Application(BaseApplication):
     async def _update_enr_ip_from_upnp(
         self, enr_manager: ENRManager, upnp_service: UPnPService
     ) -> None:
-        await upnp_service.get_manager().wait_started()
+        await upnp_service.ready()
 
         with trio.move_on_after(10):
             _, external_ip = await upnp_service.get_ip_addresses()
