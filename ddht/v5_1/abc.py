@@ -4,9 +4,11 @@ from typing import (
     Any,
     AsyncContextManager,
     Collection,
+    NamedTuple,
     Optional,
     Protocol,
     Sequence,
+    Set,
     Tuple,
     Type,
 )
@@ -446,11 +448,7 @@ class NetworkProtocol(Protocol):
         ...
 
     async def bond(
-        self,
-        node_id: NodeID,
-        *,
-        endpoint: Optional[Endpoint] = None,
-        max_cache_age: int = 60,
+        self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None,
     ) -> bool:
         ...
 
@@ -466,6 +464,48 @@ class NetworkProtocol(Protocol):
     def recursive_find_nodes(
         self, target: NodeID
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        ...
+
+
+class ExploreStats(NamedTuple):
+    in_flight: int
+    seen: int
+    queried: int
+    unresponsive: int
+    unreachable: int
+    invalid: int
+    elapsed: float
+
+    def __str__(self) -> str:
+        return (
+            f"total={self.seen}  pending={self.pending}  "
+            f"in_flight={self.in_flight}  queried={self.queried}  "
+            f"unresponsive={self.unresponsive}  unreachable={self.unreachable}  "
+            f"invalid={self.invalid}  elapsed={self.elapsed}"
+        )
+
+    @property
+    def pending(self) -> int:
+        return self.seen - self.queried
+
+
+class ExplorerAPI(ServiceAPI):
+    in_flight: Set[NodeID]
+    queried: Set[NodeID]
+    seen: Set[NodeID]
+    unresponsive: Set[NodeID]
+    unreachable: Set[NodeID]
+    invalid: Set[NodeID]
+
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+    @abstractmethod
+    def stream(self) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        ...
+
+    def get_stats(self) -> ExploreStats:
         ...
 
 
