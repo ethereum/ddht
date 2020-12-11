@@ -244,7 +244,7 @@ class Dispatcher(Service, DispatcherAPI):
         """
         async with self._events.session_handshake_complete.subscribe() as subscription:
             async for session in subscription:
-                self.logger.info(
+                self.logger.debug(
                     "Session established: %s@%s (%s) id=%s",
                     humanize_node_id(session.remote_node_id),
                     session.remote_endpoint,

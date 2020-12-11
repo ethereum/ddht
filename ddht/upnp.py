@@ -26,6 +26,10 @@ class UPnPService(Service):
         self.port = port
         self._has_ip_addresses = trio.Event()
         self._ip_changed = trio.Condition()
+        self._ready = trio.Event()
+
+    async def ready(self) -> None:
+        await self._ready.wait()
 
     @external_trio_api
     async def get_ip_addresses(self) -> Tuple[AnyIPAddress, AnyIPAddress]:
@@ -48,6 +52,7 @@ class UPnPService(Service):
         while self.manager.is_running:
             async for _ in every(UPNP_PORTMAP_DURATION):
                 with trio.move_on_after(UPNP_DISCOVER_TIMEOUT_SECONDS) as scope:
+                    self._ready.set()
                     try:
                         internal_ip, external_ip = await trio.to_thread.run_sync(
                             setup_port_map, self.port, UPNP_PORTMAP_DURATION,
