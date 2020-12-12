@@ -108,6 +108,7 @@ class Tester(TesterAPI):
         endpoint: Optional[Endpoint] = None,
         enr_db: Optional[QueryableENRDatabaseAPI] = None,
         events: Optional[EventsAPI] = None,
+        name: Optional[str] = None,
     ) -> Node:
         if private_key is None:
             private_key = PrivateKeyFactory()
@@ -115,19 +116,21 @@ class Tester(TesterAPI):
             endpoint = EndpointFactory.localhost()
         if enr_db is None:
             enr_db = QueryableENRDB(sqlite3.connect(":memory:"))
-        return Node(
+        node = Node(
             private_key=private_key, endpoint=endpoint, enr_db=enr_db, events=events
         )
+        self.logger.info("Tester[Node]: name=%s  node_id=%s", name, node.node_id.hex())
+        return node
 
     @asynccontextmanager
     async def network_group(
-        self, num_networks: int, bootnodes: Collection[ENRAPI] = (),
+        self, num_networks: int, bootnodes: Collection[ENRAPI] = (), name: str = "anon",
     ) -> AsyncIterator[Tuple[NetworkAPI, ...]]:
         async with AsyncExitStack() as stack:
             networks = []
             all_bootnodes = list(bootnodes)
-            for _ in range(num_networks):
-                node = self.node()
+            for idx in range(num_networks):
+                node = self.node(name=f"{name}-{idx}")
                 networks.append(
                     await stack.enter_async_context(
                         node.network(bootnodes=all_bootnodes)
