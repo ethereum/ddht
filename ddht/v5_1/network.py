@@ -774,7 +774,6 @@ class Network(Service, NetworkAPI):
                     else:
                         raise Exception("Should be unreachable")
 
-                self.logger.info("SERVING: %s -> %d", distances, len(response_enrs))
                 await self.client.send_found_nodes(
                     request.sender_node_id,
                     request.sender_endpoint,

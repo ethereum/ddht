@@ -103,8 +103,20 @@ class AlexandriaApplication(BaseApplication):
 
         self.logger.info("Starting Alexandria...")
         self.logger.info("Root Directory         : %s", xdg_alexandria_root)
-        self.logger.info("ContentStorage[Commons]: %s", commons_storage_display)
-        self.logger.info("ContentStorage[Pinned] : %s", pinned_storage_display)
-        self.logger.info("AdvertisementDB        : %s", advertisement_db_path)
+        self.logger.info(
+            "ContentStorage[Commons]: storage=%s  items=%d",
+            commons_storage_display,
+            len(commons_content_storage),
+        )
+        self.logger.info(
+            "ContentStorage[Pinned] : storage=%s  items=%d",
+            pinned_storage_display,
+            len(pinned_content_storage),
+        )
+        self.logger.info(
+            "AdvertisementDB        : storage=%s  total=%d",
+            advertisement_db_path,
+            advertisement_db.count(),
+        )
 
         await self.manager.wait_finished()
