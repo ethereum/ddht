@@ -20,7 +20,7 @@ async def test_content_provider_serves_short_content(
     content_storage.set_content(content_key, content)
     proof = compute_proof(content, sedes=content_sedes)
 
-    content_provider = ContentProvider(bob_alexandria_client, content_storage)
+    content_provider = ContentProvider(bob_alexandria_client, (content_storage,))
     async with background_trio_service(content_provider):
         async with alice_alexandria_network.client.subscribe(
             ContentMessage
@@ -53,7 +53,7 @@ async def test_content_provider_serves_large_content(
     content_storage = MemoryContentStorage({content_key: content})
     proof = compute_proof(content, sedes=content_sedes)
 
-    content_provider = ContentProvider(bob_alexandria_client, content_storage)
+    content_provider = ContentProvider(bob_alexandria_client, (content_storage,))
     async with background_trio_service(content_provider):
         async with alice_alexandria_network.client.subscribe(
             ContentMessage
@@ -87,7 +87,7 @@ async def test_content_provider_restricts_max_chunks(
     proof = compute_proof(content, sedes=content_sedes)
 
     content_provider = ContentProvider(
-        bob_alexandria_client, content_storage, max_chunks_per_request=16
+        bob_alexandria_client, (content_storage,), max_chunks_per_request=16
     )
     async with background_trio_service(content_provider):
         # this ensures that the subscription is in place.

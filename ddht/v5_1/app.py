@@ -126,13 +126,15 @@ class Application(BaseApplication):
             rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
             self.manager.run_daemon_child_service(rpc_server)
 
+        self.logger.info("Starting DDHT...")
         self.logger.info("Protocol-Version: %s", self._boot_info.protocol_version.value)
-        self.logger.info("DDHT base dir: %s", self._boot_info.base_dir)
-        self.logger.info("Starting discovery service...")
-        self.logger.info("Listening on %s", listen_on)
-        self.logger.info("Local Node ID: %s", encode_hex(enr_manager.enr.node_id))
+        self.logger.info("DDHT base dir   : %s", self._boot_info.base_dir)
+        self.logger.info("Listening on    : %s", listen_on)
+        self.logger.info("Local Node ID   : %s", encode_hex(enr_manager.enr.node_id))
         self.logger.info(
-            "Local ENR: seq=%d enr=%s", enr_manager.enr.sequence_number, enr_manager.enr
+            "Local ENR       : seq=%d enr=%s",
+            enr_manager.enr.sequence_number,
+            enr_manager.enr,
         )
 
         self.manager.run_daemon_child_service(self.network)

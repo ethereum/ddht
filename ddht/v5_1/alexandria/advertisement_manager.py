@@ -112,9 +112,16 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
             )
 
         try:
-            content = self._network.content_storage.get_content(
-                advertisement.content_key
-            )
+            try:
+                # First query "pinned" storage
+                content = self._network.pinned_content_storage.get_content(
+                    advertisement.content_key
+                )
+            except ContentNotFound:
+                # Fall back to "commons" storage
+                content = self._network.commons_content_storage.get_content(
+                    advertisement.content_key
+                )
         except ContentNotFound as err:
             raise ValidationError(
                 f"Content not found: advertisement={advertisement}"

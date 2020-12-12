@@ -239,7 +239,7 @@ async def test_advertisement_manager_validate_local_content_not_found(
     ad_manager = alice_alexandria_network.advertisement_manager
     advertisement = AdvertisementFactory(private_key=alice.private_key)
 
-    content_storage = alice_alexandria_network.content_storage
+    content_storage = alice_alexandria_network.commons_content_storage
     assert not content_storage.has_content(advertisement.content_key)
 
     with pytest.raises(ValidationError, match="not found"):
@@ -253,7 +253,7 @@ async def test_advertisement_manager_validate_local_hash_tree_root_mismatch(
     ad_manager = alice_alexandria_network.advertisement_manager
     advertisement = AdvertisementFactory(private_key=alice.private_key)
 
-    content_storage = alice_alexandria_network.content_storage
+    content_storage = alice_alexandria_network.commons_content_storage
     content_storage.set_content(advertisement.content_key, ContentFactory())
 
     with pytest.raises(ValidationError, match="Mismatched roots"):
@@ -273,13 +273,13 @@ async def test_advertisement_manager_handle_new_valid_local_advertisement(
     advertisement = AdvertisementFactory(
         private_key=alice.private_key, hash_tree_root=proof.get_hash_tree_root(),
     )
-    alice_alexandria_network.content_storage.set_content(
+    alice_alexandria_network.commons_content_storage.set_content(
         advertisement.content_key, content,
     )
 
     assert not alice_alexandria_network.advertisement_db.exists(advertisement)
 
-    with trio.fail_after(2):
+    with trio.fail_after(5):
         await ad_manager.handle_advertisement(advertisement)
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
@@ -295,13 +295,13 @@ async def test_advertisement_manager_handle_new_valid_remote_advertisement(
     advertisement = AdvertisementFactory(
         private_key=bob.private_key, hash_tree_root=proof.get_hash_tree_root(),
     )
-    bob_alexandria_network.content_storage.set_content(
+    bob_alexandria_network.commons_content_storage.set_content(
         advertisement.content_key, content,
     )
 
     assert not alice_alexandria_network.advertisement_db.exists(advertisement)
 
-    with trio.fail_after(2):
+    with trio.fail_after(5):
         async with ad_manager.new_advertisement.subscribe_and_wait():
             await ad_manager.handle_advertisement(advertisement)
 
@@ -318,7 +318,7 @@ async def test_advertisement_manager_handle_existing_valid_local_advertisement(
     advertisement = AdvertisementFactory(
         private_key=alice.private_key, hash_tree_root=proof.get_hash_tree_root(),
     )
-    alice_alexandria_network.content_storage.set_content(
+    alice_alexandria_network.commons_content_storage.set_content(
         advertisement.content_key, content,
     )
     alice_alexandria_network.advertisement_db.add(advertisement)
@@ -326,10 +326,10 @@ async def test_advertisement_manager_handle_existing_valid_local_advertisement(
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
     async with ad_manager.new_advertisement.subscribe() as subscription:
-        with trio.fail_after(2):
+        with trio.fail_after(5):
             await ad_manager.handle_advertisement(advertisement)
         with pytest.raises(trio.TooSlowError):
-            with trio.fail_after(2):
+            with trio.fail_after(5):
                 await subscription.receive()
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
@@ -345,7 +345,7 @@ async def test_advertisement_manager_handle_existing_valid_remote_advertisement(
     advertisement = AdvertisementFactory(
         private_key=bob.private_key, hash_tree_root=proof.get_hash_tree_root(),
     )
-    bob_alexandria_network.content_storage.set_content(
+    bob_alexandria_network.commons_content_storage.set_content(
         advertisement.content_key, content,
     )
     alice_alexandria_network.advertisement_db.add(advertisement)
@@ -353,10 +353,10 @@ async def test_advertisement_manager_handle_existing_valid_remote_advertisement(
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
 
     async with ad_manager.new_advertisement.subscribe() as subscription:
-        with trio.fail_after(2):
+        with trio.fail_after(5):
             await ad_manager.handle_advertisement(advertisement)
         with pytest.raises(trio.TooSlowError):
-            with trio.fail_after(2):
+            with trio.fail_after(5):
                 await subscription.receive()
 
     assert alice_alexandria_network.advertisement_db.exists(advertisement)
@@ -374,7 +374,7 @@ async def test_advertisement_manager_does_not_ack_if_advertisements_already_know
     advertisement = AdvertisementFactory(
         private_key=bob.private_key, hash_tree_root=proof.get_hash_tree_root(),
     )
-    bob_alexandria_network.content_storage.set_content(
+    bob_alexandria_network.commons_content_storage.set_content(
         advertisement.content_key, content,
     )
     bob_alexandria_network.advertisement_db.add(advertisement)

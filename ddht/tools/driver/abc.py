@@ -28,7 +28,8 @@ from ddht.v5_1.packets import AnyPacket
 
 
 class AlexandriaNodeAPI(ABC):
-    content_storage: ContentStorageAPI
+    commons_content_storage: ContentStorageAPI
+    pinned_content_storage: ContentStorageAPI
     advertisement_db: AdvertisementDatabaseAPI
 
     @property

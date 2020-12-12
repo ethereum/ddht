@@ -550,7 +550,7 @@ async def test_alexandria_network_get_content(
                 private_key=network.client.local_private_key,
             )
             network.advertisement_db.add(advertisement)
-            network.content_storage.set_content(content_key, content)
+            network.pinned_content_storage.set_content(content_key, content)
 
         # give the the network some time to interconnect.
         with trio.fail_after(30):
