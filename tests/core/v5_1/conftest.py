@@ -14,7 +14,7 @@ def tester():
 #
 @pytest.fixture
 async def alice(tester, bob):
-    node = tester.node()
+    node = tester.node(name="alice")
     try:
         node.enr_db.set_enr(bob.enr)
     except OldSequenceNumber:
@@ -24,12 +24,12 @@ async def alice(tester, bob):
 
 @pytest.fixture
 async def bob(tester):
-    return tester.node()
+    return tester.node(name="bob")
 
 
 @pytest.fixture
 async def carol(tester):
-    return tester.node()
+    return tester.node(name="carol")
 
 
 @pytest.fixture
