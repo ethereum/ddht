@@ -29,7 +29,7 @@ jsonrpc_parser = parser.add_argument_group("jsonrpc")
 ddht_parser.add_argument("--private-key", help="Hex encoded 32 byte private key")
 ddht_parser.add_argument(
     "--protocol-version",
-    default=ProtocolVersion.v5,
+    default=ProtocolVersion.v5_1,
     type=ProtocolVersion,
     choices=ProtocolVersion,
     help="Protocol version which should be used",
@@ -39,7 +39,13 @@ base_dir_parser = ddht_parser.add_mutually_exclusive_group()
 
 base_dir_parser.add_argument("--base-dir", type=pathlib.Path)
 base_dir_parser.add_argument(
-    "--ephemeral", action="store_true",
+    "--ephemeral",
+    action="store_true",
+    help=(
+        "Run the application in *ephemeral* mode which generates a random "
+        "single use private key and uses a temporary directory which will be "
+        "removed when the application shuts down."
+    ),
 )
 
 #

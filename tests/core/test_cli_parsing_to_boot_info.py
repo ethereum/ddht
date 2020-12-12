@@ -6,7 +6,7 @@ import pytest
 
 from ddht.boot_info import BootInfo
 from ddht.constants import ProtocolVersion
-from ddht.tools.factories.boot_info import BOOTNODES_V5_1, BootInfoFactory
+from ddht.tools.factories.boot_info import BOOTNODES_V5, BootInfoFactory
 from ddht.tools.factories.discovery import ENRFactory
 
 KEY_RAW = b"unicornsrainbowsunicornsrainbows"
@@ -44,11 +44,11 @@ ENR_B = ENRFactory()
         ),
         (("--disable-upnp",), (dict(is_upnp_enabled=False)),),
         # protocol version
-        (("--protocol-version", "v5"), {}),
         (
-            ("--protocol-version", "v5.1"),
-            dict(protocol_version=ProtocolVersion.v5_1, bootnodes=BOOTNODES_V5_1),
+            ("--protocol-version", "v5"),
+            dict(protocol_version=ProtocolVersion.v5, bootnodes=BOOTNODES_V5),
         ),
+        (("--protocol-version", "v5.1"), {}),
     ),
 )
 def test_cli_args_to_boot_info(args, factory_kwargs):
