@@ -1,5 +1,4 @@
 import itertools
-import logging
 from typing import (
     AsyncContextManager,
     AsyncIterator,
@@ -16,7 +15,7 @@ from async_service import Service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils import ValidationError
+from eth_utils import ValidationError, get_extended_debug_logger
 from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
@@ -84,7 +83,7 @@ async def common_recursive_find_nodes(
     mitigate the overall slowdown caused by a few unresponsive nodes since the
     other queries can be issues concurrently.
     """
-    network.logger.debug("Recursive find nodes: %s", target.hex())
+    network.logger.debug2("Recursive find nodes: %s", target.hex())
     start_at = trio.current_time()
 
     # The set of NodeID values we have already queried.
@@ -320,12 +319,12 @@ async def common_network_stream_find_nodes(
 
 
 class Network(Service, NetworkAPI):
-    logger = logging.getLogger("ddht.Network")
-
     _bootnodes: Tuple[ENRAPI, ...]
     _talk_protocols: Dict[bytes, TalkProtocolAPI]
 
     def __init__(self, client: ClientAPI, bootnodes: Collection[ENRAPI],) -> None:
+        self.logger = get_extended_debug_logger("ddht.Network")
+
         self.client = client
 
         self._bootnodes = tuple(bootnodes)
@@ -387,7 +386,7 @@ class Network(Service, NetworkAPI):
     async def bond(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> bool:
-        self.logger.debug(
+        self.logger.debug2(
             "Bonding with %s", node_id.hex(),
         )
 

@@ -1,25 +1,25 @@
-import logging
 from typing import AsyncIterator, Set
 
 from async_generator import asynccontextmanager
+from eth_utils import get_extended_debug_logger
 import trio
 
 from ddht.abc import EventAPI, TEventPayload
 
 
 class Event(EventAPI[TEventPayload]):
-    logger = logging.getLogger("ddht.events.Event")
 
     _channels: Set[trio.abc.SendChannel[TEventPayload]]
 
     def __init__(self, name: str, buffer_size: int = 256) -> None:
+        self.logger = get_extended_debug_logger("ddht.Event")
         self.name = name
         self._buffer_size = buffer_size
         self._lock = trio.Lock()
         self._channels = set()
 
     async def trigger(self, payload: TEventPayload) -> None:
-        self.logger.debug("%s: triggered: %s", self.name, payload)
+        self.logger.debug2("%s: triggered: %s", self.name, payload)
         if not self._channels:
             return
         async with self._lock:
@@ -30,7 +30,7 @@ class Event(EventAPI[TEventPayload]):
                     pass
 
     def trigger_nowait(self, payload: TEventPayload) -> None:
-        self.logger.debug("%s: triggered: %s", self.name, payload)
+        self.logger.debug2("%s: triggered: %s", self.name, payload)
         for send_channel in self._channels:
             try:
                 send_channel.send_nowait(payload)  # type: ignore
