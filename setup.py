@@ -77,8 +77,6 @@ setup(
         "eth-typing>=2.2.2,<3",
         "eth-utils>=1.8.4,<2",
         "lru-dict>=1.1.6,<2.0",
-        "plyvel>=1.2.0,<1.3",
-        "py-evm==0.3.0a19",
         # TODO: unpin once the dependency problems are resolved
         "rlp==2.0.0a1",
         "trio>=0.16.0,<0.17",

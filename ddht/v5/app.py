@@ -1,5 +1,6 @@
-from eth.db.backends.level import LevelDB
-from eth_enr import ENRDB, ENRManager, default_identity_scheme_registry
+import sqlite3
+
+from eth_enr import ENRManager, QueryableENRDB, default_identity_scheme_registry
 from eth_enr.exceptions import OldSequenceNumber
 from eth_keys import keys
 from eth_utils import encode_hex
@@ -20,7 +21,7 @@ from ddht.v5.client import Client
 from ddht.v5.endpoint_tracker import EndpointTracker, EndpointVote
 from ddht.v5.routing_table_manager import RoutingTableManager
 
-ENR_DATABASE_DIR_NAME = "enr-db"
+ENR_DATABASE_FILENAME = "enrdb.sqlite3"
 
 
 def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
@@ -38,9 +39,10 @@ class Application(BaseApplication):
     async def run(self) -> None:
         identity_scheme_registry = default_identity_scheme_registry
 
-        enr_database_dir = self._boot_info.base_dir / ENR_DATABASE_DIR_NAME
-        enr_database_dir.mkdir(exist_ok=True)
-        enr_db = ENRDB(LevelDB(enr_database_dir), identity_scheme_registry)
+        enr_database_file = self._boot_info.base_dir / ENR_DATABASE_FILENAME
+        enr_db = QueryableENRDB(
+            sqlite3.connect(enr_database_file), identity_scheme_registry
+        )
         self.enr_db = enr_db
 
         local_private_key = get_local_private_key(self._boot_info)
