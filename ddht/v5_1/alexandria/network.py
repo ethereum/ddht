@@ -509,9 +509,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             async with ad_send_channel:
                 async for node_id in work_receive_channel:
                     distance_to_content = compute_content_distance(node_id, content_id)
-                    advertisement_radius = await self.radius_tracker.get_advertisement_radius(
-                        node_id
-                    )
+                    try:
+                        advertisement_radius = await self.radius_tracker.get_advertisement_radius(
+                            node_id
+                        )
+                    except trio.TooSlowError:
+                        continue
+
                     if distance_to_content > advertisement_radius:
                         continue
 
@@ -557,14 +561,18 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, advertisement: Advertisement, redundancy_factor: int = 3
     ) -> Tuple[NodeID, ...]:
         self.logger.debug("Broadcasting: advertisement=%s", advertisement)
+        start_at = trio.current_time()
         acked_nodes: Set[NodeID] = set()
 
         # Use the redundancy_factor also as the concurrency limit
         lock = trio.Semaphore(redundancy_factor)
         condition = trio.Condition()
 
+        num_tried = 0
+
         async def _do_advertise(node_id: NodeID) -> None:
             nonlocal acked_nodes
+            nonlocal num_tried
 
             async with lock:
                 if len(acked_nodes) >= redundancy_factor:
@@ -576,15 +584,21 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
                 # verify the node should be interested in the advertisement based
                 # on their advertisement radius.
-                advertisement_radius = await self.radius_tracker.get_advertisement_radius(
-                    node_id,
-                )
+                try:
+                    advertisement_radius = await self.radius_tracker.get_advertisement_radius(
+                        node_id,
+                    )
+                except trio.TooSlowError:
+                    return
+
                 distance_to_content = compute_content_distance(
                     node_id, advertisement.content_id
                 )
 
                 if distance_to_content > advertisement_radius:
                     return
+
+                num_tried += 1
 
                 # attempt to send the advertisement to the node.
                 try:
@@ -630,6 +644,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 with trio.move_on_after(1):
                     async with condition:
                         await condition.wait()
+
+        elapsed = trio.current_time() - start_at
+        self.logger.debug(
+            "Broadcast: acked=%d  tried=%d  elapsed=%0.2f",
+            len(acked_nodes),
+            num_tried,
+            elapsed,
+        )
 
         return tuple(acked_nodes)
 
