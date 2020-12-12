@@ -25,13 +25,13 @@ async def test_content_manager_enumerates_and_broadcasts_content(
     # 5 that don't already have advertisements to test lazy creation
     contents = tuple(
         (b"\xfftest-content-" + bytes([idx]), ContentFactory(256 + 25)[idx : idx + 256])
-        for idx in range(15)
+        for idx in range(12)
     )
 
     advertisement_db = alice.alexandria.advertisement_db
     pinned_storage = alice.alexandria.pinned_content_storage
 
-    for content_key, content in contents[0:16:3]:
+    for content_key, content in contents[0:13:3]:
         hash_tree_root = ssz.get_hash_tree_root(content, sedes=content_sedes)
         advertisement = Advertisement.create(
             content_key=content_key,
@@ -90,7 +90,7 @@ async def test_content_manager_enumerates_and_broadcasts_content(
                     request_id=request.request_id,
                 )
 
-                if len(received_advertisements) >= 15:
+                if len(received_advertisements) >= 12:
                     done.set()
                     break
 
@@ -102,19 +102,19 @@ async def test_content_manager_enumerates_and_broadcasts_content(
             async with alice.alexandria.network() as alice_alexandria_network:
                 await alice_alexandria_network.bond(bob.node_id)
 
-                with trio.fail_after(60):
+                with trio.fail_after(90):
                     await done.wait()
 
             nursery.cancel_scope.cancel()
 
-    # 1. All 15 pieces of content should have been advertised
+    # 1. All 12 pieces of content should have been advertised
     received_keys = {
         advertisement.content_key for advertisement in received_advertisements
     }
-    assert len(received_keys) == 15
+    assert len(received_keys) == 12
     assert received_keys == set(content_keys)
 
-    # 2. The 10 contents that didn't have advertisements should have been lazily created.
+    # 2. The 2 contents that didn't have advertisements should have been lazily created.
     assert all(
         advertisement_db.exists(advertisement)
         for advertisement in received_advertisements

@@ -41,6 +41,7 @@ from ddht.v5_1.alexandria.content import (
     compute_content_distance,
     content_key_to_content_id,
 )
+from ddht.v5_1.alexandria.content_collector import ContentCollector
 from ddht.v5_1.alexandria.content_manager import ContentManager
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
@@ -86,6 +87,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         self.commons_content_storage = commons_content_storage
         self.commons_content_manager = ContentManager(self, commons_content_storage)
+        self.commons_content_collector = ContentCollector(
+            self, self.commons_content_manager
+        )
 
         self.pinned_content_storage = pinned_content_storage
         self.pinned_content_manager = ContentManager(self, pinned_content_storage)
@@ -119,6 +123,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         await self.advertisement_manager.ready()
         await self.advertisement_provider.ready()
         await self.content_provider.ready()
+        await self.commons_content_collector.ready()
         await self.radius_tracker.ready()
 
         await self._ping_handler_ready.wait()
@@ -156,6 +161,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.manager.run_daemon_child_service(self.advertisement_provider)
         self.manager.run_daemon_child_service(self.content_provider)
         self.manager.run_daemon_child_service(self.commons_content_manager)
+        self.manager.run_daemon_child_service(self.commons_content_collector)
         self.manager.run_daemon_child_service(self.pinned_content_manager)
         self.manager.run_daemon_child_service(self.radius_tracker)
 

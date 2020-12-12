@@ -91,16 +91,14 @@ def get_cache(block_number: int) -> bytes:
 
     # Get the cache if already generated, marking it as recently used
     if epoch_index in cache_by_epoch:
-        c = cache_by_epoch.pop(epoch_index)  # pop and append at end
-        cache_by_epoch[epoch_index] = c
-        return c
+        return cache_by_epoch[epoch_index]
 
     # Generate the cache if it was not already in memory
     # Simulate requesting mkcache by block number: multiply index by epoch length
     c = mkcache_bytes(epoch_index * EPOCH_LENGTH)
     cache_by_epoch[epoch_index] = c
 
-    return c
+    return c  # type: ignore
 
 
 def check_pow(
