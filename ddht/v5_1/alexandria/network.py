@@ -142,6 +142,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def run(self) -> None:
         # Long running processes
+        self.manager.run_daemon_task(self._periodically_report_status)
         self.manager.run_daemon_task(self._periodically_report_routing_table)
         self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
         self.manager.run_daemon_task(self._track_last_pong)
@@ -626,6 +627,16 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     #
     # Long Running Processes
     #
+    async def _periodically_report_status(self) -> None:
+        async for _ in every(5, initial_delay=5):
+            self.logger.info(
+                "status: commons=%d  pinned=%d  advertisements=%d  radius=%d",
+                len(self.commons_content_storage),
+                len(self.pinned_content_storage),
+                self.advertisement_db.count(),
+                self.local_advertisement_radius.bit_length(),
+            )
+
     async def _periodically_report_routing_table(self) -> None:
         async for _ in every(30, initial_delay=30):
             non_empty_buckets = tuple(
