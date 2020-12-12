@@ -10,7 +10,7 @@ from typing import (
 )
 
 from async_generator import asynccontextmanager
-from async_service import Service
+from async_service import Service, background_trio_service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import Hash32, NodeID
@@ -287,11 +287,11 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, target: NodeID, concurrency: int = 3,
     ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
         explorer = Explorer(self, target, concurrency)
-        self.manager.run_child_service(explorer)
-        await explorer.ready()
+        async with background_trio_service(explorer):
+            await explorer.ready()
 
-        async with explorer.stream() as receive_channel:
-            yield receive_channel
+            async with explorer.stream() as receive_channel:
+                yield receive_channel
 
     async def get_content_proof(
         self,
@@ -521,12 +521,15 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     stream_locate_ctx = self.stream_locate(
                         node_id, content_key=content_key,
                     )
-                    async with stream_locate_ctx as advertisement_aiter:
-                        async for advertisement in advertisement_aiter:
-                            if hash_tree_root is not None:
-                                if advertisement.hash_tree_root != hash_tree_root:
-                                    continue
-                            await ad_send_channel.send(advertisement)
+                    try:
+                        async with stream_locate_ctx as advertisement_aiter:
+                            async for advertisement in advertisement_aiter:
+                                if hash_tree_root is not None:
+                                    if advertisement.hash_tree_root != hash_tree_root:
+                                        continue
+                                await ad_send_channel.send(advertisement)
+                    except trio.TooSlowError:
+                        continue
 
         work_send_channel, work_receive_channel = trio.open_memory_channel[NodeID](
             concurrency

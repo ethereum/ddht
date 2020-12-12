@@ -196,7 +196,7 @@ class ContentManager(Service, ContentManagerAPI):
         advertisement = self._get_or_create_advertisement(content_key, hash_tree_root)
         await self._network.broadcast(advertisement)
 
-        self.logger.info(
+        self.logger.debug(
             "Processed content: content_key=%s  content=%s",
             content_key.hex(),
             content.hex(),
