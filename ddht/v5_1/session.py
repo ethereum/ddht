@@ -1,7 +1,6 @@
 from abc import abstractmethod
 import enum
 import itertools
-import logging
 import secrets
 from typing import Any, Optional, Tuple, Type, cast
 import uuid
@@ -9,7 +8,7 @@ import uuid
 from eth_enr import ENRAPI, ENRDatabaseAPI, IdentitySchemeAPI, OldSequenceNumber
 from eth_keys import keys
 from eth_typing import NodeID
-from eth_utils import ValidationError
+from eth_utils import ExtendedDebugLogger, ValidationError, get_extended_debug_logger
 import trio
 
 from ddht._utils import humanize_node_id
@@ -46,9 +45,9 @@ class BaseSession(SessionAPI):
     _remote_node_id: NodeID
     _keys: SessionKeys
 
-    logger = logging.getLogger("ddht.session.Session")
-
     _handshake_scheme_registry: HandshakeSchemeRegistryAPI = v51_handshake_scheme_registry
+
+    logger: ExtendedDebugLogger
 
     def __init__(
         self,
@@ -61,6 +60,8 @@ class BaseSession(SessionAPI):
         message_type_registry: MessageTypeRegistry = v51_registry,
         events: Optional[EventsAPI] = None,
     ) -> None:
+        self.logger = get_extended_debug_logger("ddht.Session")
+
         self.id = uuid.uuid4()
 
         self.created_at = trio.current_time()
@@ -248,13 +249,13 @@ class SessionInitiator(BaseSession):
         return self._enr_db.get_enr(self.remote_node_id)
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
-        self.logger.debug("%s: handling outbound message: %s", self, message)
+        self.logger.debug2("%s: handling outbound message: %s", self, message)
 
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._events.packet_sent.trigger((self, envelope))
             await self._outbound_envelope_send_channel.send(envelope)
-            self.logger.debug("%s: Sent message: %s", self, message)
+            self.logger.debug2("%s: Sent message: %s", self, message)
         elif self.is_during_handshake:
             try:
                 self._outbound_message_buffer_send_channel.send_nowait(message)
@@ -277,7 +278,7 @@ class SessionInitiator(BaseSession):
             raise Exception("Invariant: All states handled")
 
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> bool:
-        self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+        self.logger.debug2("%s: handling inbound envelope: %s", self, envelope)
         await self._events.packet_received.trigger((self, envelope))
 
         if self.is_after_handshake:
@@ -483,13 +484,13 @@ class SessionRecipient(BaseSession):
         return self._remote_node_id
 
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
-        self.logger.debug("%s: handling outbound message: %s", self, message)
+        self.logger.debug2("%s: handling outbound message: %s", self, message)
 
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._events.packet_sent.trigger((self, envelope))
             await self._outbound_envelope_send_channel.send(envelope)
-            self.logger.debug("%s: Sent message: %s", self, message)
+            self.logger.debug2("%s: Sent message: %s", self, message)
         elif self.is_during_handshake:
             try:
                 self._outbound_message_buffer_send_channel.send_nowait(message)
@@ -507,7 +508,7 @@ class SessionRecipient(BaseSession):
             raise Exception("Invariant: All states handled")
 
     async def handle_inbound_envelope(self, envelope: InboundEnvelope) -> bool:
-        self.logger.debug("%s: handling inbound envelope: %s", self, envelope)
+        self.logger.debug2("%s: handling inbound envelope: %s", self, envelope)
         await self._events.packet_received.trigger((self, envelope))
 
         if self.is_after_handshake:

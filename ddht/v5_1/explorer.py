@@ -1,13 +1,12 @@
 import contextlib
 import itertools
-import logging
 from typing import AsyncIterator, Iterator, Tuple
 
 from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRAPI, OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils import ValidationError
+from eth_utils import ValidationError, get_extended_debug_logger
 from eth_utils.toolz import cons, first, partition_all, sliding_window
 import trio
 
@@ -43,11 +42,11 @@ class Explorer(Service, ExplorerAPI):
     slowly work away from the target.
     """
 
-    logger = logging.getLogger("ddht.Explorer")
-
     def __init__(
         self, network: NetworkProtocol, target: NodeID, concurrency: int = 3
     ) -> None:
+        self.logger = get_extended_debug_logger("ddht.Explorer")
+
         self._network = network
         self.target = target
         self._concurrency = concurrency
@@ -165,7 +164,7 @@ class Explorer(Service, ExplorerAPI):
         self.manager.cancel()
 
     async def _periodically_log_stats(self) -> None:
-        async for _ in every(5):
+        async for _ in every(5, 5):
             self._network.logger.debug("%s[stats]: %s", self, self.get_stats())
 
     async def _bond_then_send(self, enr: ENRAPI,) -> None:
@@ -293,5 +292,5 @@ class Explorer(Service, ExplorerAPI):
                         self._condition.notify_all()
                         await self._send_channel.send(enr)
 
-        self.logger.debug("%s: finished seeding nodes for exploration", self)
+        self.logger.debug2("%s: finished seeding nodes for exploration", self)
         self._exploration_seeded.set()

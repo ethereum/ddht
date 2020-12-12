@@ -1,11 +1,11 @@
 import functools
-import logging
 from typing import AsyncContextManager, AsyncIterator, Optional, Set, Tuple, Type
 
 from async_generator import asynccontextmanager
 from async_service import Service
 from eth_enr import ENRDatabaseAPI
 from eth_typing import NodeID
+from eth_utils import get_extended_debug_logger
 import trio
 
 from ddht._utils import humanize_node_id
@@ -97,8 +97,6 @@ def _get_event_for_inbound_message(
 
 
 class Dispatcher(Service, DispatcherAPI):
-    logger = logging.getLogger("ddht.Dispatcher")
-
     _reserved_request_ids: Set[Tuple[NodeID, bytes]]
     _active_request_ids: Set[Tuple[NodeID, bytes]]
 
@@ -110,6 +108,8 @@ class Dispatcher(Service, DispatcherAPI):
         enr_db: ENRDatabaseAPI,
         events: EventsAPI = None,
     ) -> None:
+        self.logger = get_extended_debug_logger("ddht.Dispatcher")
+
         self._pool = pool
         self._enr_db = enr_db
 
@@ -168,7 +168,7 @@ class Dispatcher(Service, DispatcherAPI):
                         self.manager.cancel()
                         return
                     else:
-                        self.logger.debug(
+                        self.logger.debug2(
                             "inbound envelope %s dispatched to %s", envelope, session,
                         )
                 if was_handled is False:
@@ -211,7 +211,7 @@ class Dispatcher(Service, DispatcherAPI):
                         )
                         self.manager.cancel()
                     else:
-                        self.logger.debug(
+                        self.logger.debug2(
                             "outbound message %s dispatched to %s", message, session
                         )
 
@@ -372,7 +372,7 @@ class Dispatcher(Service, DispatcherAPI):
     ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[TBaseMessage]]]:
         request_id = request.message.request_id
 
-        self.logger.debug(
+        self.logger.debug2(
             "Sending request: %s with request id %s", request, request_id.hex(),
         )
 
@@ -410,7 +410,7 @@ class Dispatcher(Service, DispatcherAPI):
                 request.receiver_node_id,
             )
             async with subscription_ctx as subscription:
-                self.logger.debug(
+                self.logger.debug2(
                     "Sending request with request id %s", request_id.hex(),
                 )
                 # Send the request

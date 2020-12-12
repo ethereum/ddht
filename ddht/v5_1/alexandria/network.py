@@ -1,4 +1,3 @@
-import logging
 from typing import (
     AsyncContextManager,
     AsyncIterator,
@@ -15,7 +14,7 @@ from async_service import Service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import Hash32, NodeID
-from eth_utils import ValidationError
+from eth_utils import ValidationError, get_extended_debug_logger
 from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
@@ -57,8 +56,6 @@ from ddht.v5_1.network import common_recursive_find_nodes
 
 
 class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
-    logger = logging.getLogger("ddht.Alexandria")
-
     # Delegate to the AlexandriaClient for determining `protocol_id`
     protocol_id = AlexandriaClient.protocol_id
 
@@ -71,6 +68,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         advertisement_db: AdvertisementDatabaseAPI,
         max_advertisement_count: int = 65536,
     ) -> None:
+        self.logger = get_extended_debug_logger("ddht.Alexandria")
+
         self._bootnodes = tuple(bootnodes)
 
         self.max_advertisement_count = max_advertisement_count
@@ -184,7 +183,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     async def bond(
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> bool:
-        self.logger.debug(
+        self.logger.debug2(
             "Bonding with %s", node_id.hex(),
         )
 

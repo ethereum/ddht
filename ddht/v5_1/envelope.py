@@ -1,9 +1,8 @@
-import logging
 from typing import NamedTuple
 
 from async_service import Service
 from eth_typing import NodeID
-from eth_utils import ValidationError
+from eth_utils import ValidationError, get_extended_debug_logger
 import trio
 from trio.abc import ReceiveChannel, SendChannel
 
@@ -44,14 +43,14 @@ class OutboundEnvelope(NamedTuple):
 class EnvelopeDecoder(Service):
     """Decodes inbound datagrams to packet objects."""
 
-    logger = logging.getLogger("ddht.EnvelopeDecoder")
-
     def __init__(
         self,
         inbound_datagram_receive_channel: ReceiveChannel[InboundDatagram],
         inbound_envelope_send_channel: SendChannel[InboundEnvelope],
         local_node_id: NodeID,
     ) -> None:
+        self.logger = get_extended_debug_logger("ddht.EnvelopeDecoder")
+
         self._inbound_datagram_receive_channel = inbound_datagram_receive_channel
         self._inbound_envelope_send_channel = inbound_envelope_send_channel
         self._local_node_id = local_node_id
@@ -63,7 +62,7 @@ class EnvelopeDecoder(Service):
                 async for datagram, endpoint in self._inbound_datagram_receive_channel:
                     try:
                         packet = decode_packet(datagram, self._local_node_id)
-                        self.logger.debug(
+                        self.logger.debug2(
                             "Successfully decoded %s from %s",
                             packet.__class__.__name__,
                             endpoint,
@@ -90,13 +89,13 @@ class EnvelopeDecoder(Service):
 class EnvelopeEncoder(Service):
     """Encodes outbound packets to datagrams."""
 
-    logger = logging.getLogger("ddht.EnvelopeEncoder")
-
     def __init__(
         self,
         outbound_envelope_receive_channel: ReceiveChannel[OutboundEnvelope],
         outbound_datagram_send_channel: SendChannel[OutboundDatagram],
     ) -> None:
+        self.logger = get_extended_debug_logger("ddht.EnvelopeEncoder")
+
         self._outbound_envelope_receive_channel = outbound_envelope_receive_channel
         self._outbound_datagram_send_channel = outbound_datagram_send_channel
 
@@ -107,7 +106,7 @@ class EnvelopeEncoder(Service):
                     outbound_datagram = OutboundDatagram(
                         packet.to_wire_bytes(), endpoint
                     )
-                    self.logger.debug(
+                    self.logger.debug2(
                         "Encoded %s for %s", packet.__class__.__name__, endpoint,
                     )
                     try:

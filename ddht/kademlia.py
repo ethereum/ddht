@@ -1,7 +1,6 @@
 import collections
 import ipaddress
 import itertools
-import logging
 import math
 import random
 import secrets
@@ -21,7 +20,7 @@ from typing import (
 )
 
 from eth_typing import NodeID
-from eth_utils import big_endian_to_int, encode_hex
+from eth_utils import big_endian_to_int, encode_hex, get_extended_debug_logger
 
 from ddht.abc import AddressAPI, RoutingTableAPI, TAddress
 from ddht.constants import NUM_ROUTING_TABLE_BUCKETS
@@ -130,7 +129,7 @@ def at_log_distance(target: NodeID, distance: int) -> NodeID:
 
 class KademliaRoutingTable(RoutingTableAPI):
     def __init__(self, center_node_id: NodeID, bucket_size: int) -> None:
-        self.logger = logging.getLogger("ddht.kademlia.KademliaRoutingTable")
+        self.logger = get_extended_debug_logger("ddht.KademliaRoutingTable")
         self.center_node_id = center_node_id
         self.bucket_size = bucket_size
 
@@ -186,26 +185,26 @@ class KademliaRoutingTable(RoutingTableAPI):
         is_node_in_bucket = node_id in bucket
 
         if not is_node_in_bucket and not is_bucket_full:
-            self.logger.debug(
+            self.logger.debug2(
                 "Adding %s to bucket %d", encode_hex(node_id), bucket_index
             )
             self.update_bucket_unchecked(node_id)
             eviction_candidate = None
         elif is_node_in_bucket:
-            self.logger.debug(
+            self.logger.debug2(
                 "Updating %s in bucket %d", encode_hex(node_id), bucket_index
             )
             self.update_bucket_unchecked(node_id)
             eviction_candidate = None
         elif not is_node_in_bucket and is_bucket_full:
             if node_id not in replacement_cache:
-                self.logger.debug(
+                self.logger.debug2(
                     "Adding %s to replacement cache of bucket %d",
                     encode_hex(node_id),
                     bucket_index,
                 )
             else:
-                self.logger.debug(
+                self.logger.debug2(
                     "Updating %s in replacement cache of bucket %d",
                     encode_hex(node_id),
                     bucket_index,
@@ -258,7 +257,7 @@ class KademliaRoutingTable(RoutingTableAPI):
             bucket.remove(node_id)
             if replacement_cache:
                 replacement_node_id = replacement_cache.popleft()
-                self.logger.debug(
+                self.logger.debug2(
                     "Replacing %s from bucket %d with %s from replacement cache",
                     encode_hex(node_id),
                     bucket_index,
@@ -266,14 +265,14 @@ class KademliaRoutingTable(RoutingTableAPI):
                 )
                 bucket.append(replacement_node_id)
             else:
-                self.logger.debug(
+                self.logger.debug2(
                     "Removing %s from bucket %d without replacement",
                     encode_hex(node_id),
                     bucket_index,
                 )
 
         if in_replacement_cache:
-            self.logger.debug(
+            self.logger.debug2(
                 "Removing %s from replacement cache of bucket %d",
                 encode_hex(node_id),
                 bucket_index,
@@ -281,7 +280,7 @@ class KademliaRoutingTable(RoutingTableAPI):
             replacement_cache.remove(node_id)
 
         if not in_bucket and not in_replacement_cache:
-            self.logger.debug(
+            self.logger.debug2(
                 "Not removing %s as it is neither present in bucket-%d nor the replacement cache",
                 encode_hex(node_id),
                 bucket_index,

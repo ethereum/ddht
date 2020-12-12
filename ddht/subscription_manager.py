@@ -1,9 +1,9 @@
 import collections
-import logging
 from typing import Any, AsyncIterator, DefaultDict, NamedTuple, Optional, Set, Type
 
 from async_generator import asynccontextmanager
 from eth_typing import NodeID
+from eth_utils import get_extended_debug_logger
 import trio
 
 from ddht.abc import SubscriptionManagerAPI
@@ -18,18 +18,18 @@ class _Subcription(NamedTuple):
 
 
 class SubscriptionManager(SubscriptionManagerAPI[TMessage]):
-    logger = logging.getLogger("ddht.SubscriptionManager")
-
     _subscriptions: DefaultDict[Type[Any], Set[_Subcription]]
 
     def __init__(self) -> None:
+        self.logger = get_extended_debug_logger("ddht.SubscriptionManager")
+
         self._subscriptions = collections.defaultdict(set)
 
     def feed_subscriptions(self, message: AnyInboundMessage) -> None:
         message_type = type(message.message)
 
         subscriptions = tuple(self._subscriptions[message_type])
-        self.logger.debug(
+        self.logger.debug2(
             "Handling %d subscriptions for message: %s", len(subscriptions), message,
         )
         for subscription in subscriptions:
@@ -64,7 +64,7 @@ class SubscriptionManager(SubscriptionManagerAPI[TMessage]):
         subscription = _Subcription(send_channel, endpoint, node_id)
         self._subscriptions[message_type].add(subscription)
 
-        self.logger.debug("Subscription setup for: %s", message_type)
+        self.logger.debug2("Subscription setup for: %s", message_type)
 
         try:
             async with receive_channel:

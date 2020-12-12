@@ -18,7 +18,7 @@ from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRManagerAPI, IdentitySchemeAPI, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
-from eth_utils import humanize_seconds
+from eth_utils import ExtendedDebugLogger, humanize_seconds
 import trio
 
 from ddht.abc import (
@@ -437,7 +437,7 @@ class TalkProtocolAPI(ABC):
 
 
 class NetworkProtocol(Protocol):
-    logger: logging.Logger
+    logger: ExtendedDebugLogger
     routing_table: RoutingTableAPI
 
     @property
