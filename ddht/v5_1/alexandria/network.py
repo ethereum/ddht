@@ -576,9 +576,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     )
                     # log the broadcast
                     self.broadcast_log.log(node_id, advertisement)
+                    acked_nodes.add(node_id)
                 finally:
                     async with condition:
-                        acked_nodes.add(node_id)
                         condition.notify_all()
 
         async with trio.open_nursery() as nursery:
