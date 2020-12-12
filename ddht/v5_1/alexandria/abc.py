@@ -167,6 +167,14 @@ class AdvertisementDatabaseAPI(ABC):
         ...
 
 
+class ContentManagerAPI(ServiceAPI):
+    content_storage: ContentStorageAPI
+
+    @abstractmethod
+    async def process_content(self, content_key: ContentKey, content: bytes) -> None:
+        ...
+
+
 class AdvertisementManagerAPI(ServiceAPI):
     new_advertisement: EventAPI[Advertisement]
 

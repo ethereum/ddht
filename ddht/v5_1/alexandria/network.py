@@ -41,6 +41,7 @@ from ddht.v5_1.alexandria.content import (
     compute_content_distance,
     content_key_to_content_id,
 )
+from ddht.v5_1.alexandria.content_manager import ContentManager
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
 from ddht.v5_1.alexandria.content_validator import ContentValidator
@@ -65,8 +66,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self,
         network: NetworkAPI,
         bootnodes: Collection[ENRAPI],
-        pinned_content_storage: ContentStorageAPI,
         commons_content_storage: ContentStorageAPI,
+        pinned_content_storage: ContentStorageAPI,
         advertisement_db: AdvertisementDatabaseAPI,
         max_advertisement_count: int = 65536,
     ) -> None:
@@ -84,12 +85,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
 
         self.commons_content_storage = commons_content_storage
+        self.commons_content_manager = ContentManager(self, commons_content_storage)
 
         self.pinned_content_storage = pinned_content_storage
+        self.pinned_content_manager = ContentManager(self, pinned_content_storage)
 
         self.content_provider = ContentProvider(
             client=self.client,
-            content_storages=(pinned_content_storage, commons_content_storage),
+            content_storages=(commons_content_storage, pinned_content_storage),
         )
         self.content_validator = ContentValidator(self)
 
@@ -138,13 +141,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         return self.network.enr_db
 
     async def run(self) -> None:
-        # Child services
-        self.manager.run_daemon_child_service(self.client)
-        self.manager.run_daemon_child_service(self.advertisement_manager)
-        self.manager.run_daemon_child_service(self.advertisement_provider)
-        self.manager.run_daemon_child_service(self.content_provider)
-        self.manager.run_daemon_child_service(self.radius_tracker)
-
         # Long running processes
         self.manager.run_daemon_task(self._periodically_report_routing_table)
         self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
@@ -152,6 +148,15 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.manager.run_daemon_task(self._manage_routing_table)
         self.manager.run_daemon_task(self._pong_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
+
+        # Child services
+        self.manager.run_daemon_child_service(self.client)
+        self.manager.run_daemon_child_service(self.advertisement_manager)
+        self.manager.run_daemon_child_service(self.advertisement_provider)
+        self.manager.run_daemon_child_service(self.content_provider)
+        self.manager.run_daemon_child_service(self.commons_content_manager)
+        self.manager.run_daemon_child_service(self.pinned_content_manager)
+        self.manager.run_daemon_child_service(self.radius_tracker)
 
         await self.manager.wait_finished()
 
@@ -309,16 +314,19 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 data=response.payload.payload, sedes=content_sedes,
             )
         else:
+            # TODO: computationally expensive
             proof = compute_proof(
                 content=response.payload.payload, sedes=content_sedes,
             )
 
+        # TODO: computationally expensive
         if not proof.get_hash_tree_root() == hash_tree_root:
             raise ValidationError(
                 f"Received proof has incorrect `hash_tree_root`: "
                 f"{proof.get_hash_tree_root().hex()}"
             )
 
+        # TODO: computationally expensive
         validate_proof(proof)
         return proof
 
