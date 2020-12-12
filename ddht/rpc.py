@@ -4,10 +4,11 @@ import io
 import json
 import logging
 import pathlib
-from typing import Any, Dict, Generic, Mapping, Tuple, TypeVar, cast
+from typing import Any, Dict, Generic, List, Mapping, Tuple, TypeVar, cast
 
 from async_service import Service
-from eth_utils import ValidationError
+from eth_utils import ValidationError, is_list_like
+from eth_utils.toolz import merge
 import trio
 
 from ddht.abc import RPCHandlerAPI, RPCRequest, RPCResponse
@@ -15,6 +16,20 @@ from ddht.exceptions import DecodingError
 from ddht.typing import JSON
 
 NEW_LINE = "\n"
+
+
+def extract_params(request: RPCRequest) -> List[Any]:
+    try:
+        params = request["params"]
+    except KeyError:
+        raise RPCError("Request missing `params` key")
+
+    if not is_list_like(params):
+        raise RPCError(
+            f"Params must be list-like: params-type={type(params)} params={params}"
+        )
+
+    return params
 
 
 def strip_non_json_prefix(raw_request: str) -> Tuple[str, str]:
@@ -175,6 +190,9 @@ class RPCServer(Service):
         self.ipc_path = ipc_path
         self._handlers = handlers
         self._serving = trio.Event()
+
+    def add_handers(self, handlers: Dict[str, RPCHandlerAPI]) -> None:
+        self._handlers = merge(self._handlers, handlers)
 
     async def wait_serving(self) -> None:
         await self._serving.wait()

@@ -13,6 +13,7 @@ from ddht.v5_1.alexandria.content_storage import (
     MemoryContentStorage,
 )
 from ddht.v5_1.alexandria.network import AlexandriaNetwork
+from ddht.v5_1.alexandria.rpc_handlers import get_alexandria_rpc_handlers
 from ddht.v5_1.alexandria.xdg import get_xdg_alexandria_root
 from ddht.v5_1.app import Application
 
@@ -146,5 +147,12 @@ class AlexandriaApplication(BaseApplication):
             remote_advertisement_db.count(),
             max_advertisement_count,
         )
+
+        await alexandria_network.ready()
+
+        if self._boot_info.is_rpc_enabled:
+            self.base_protocol_app.rpc_server.add_handers(
+                get_alexandria_rpc_handlers(alexandria_network)
+            )
 
         await self.manager.wait_finished()
