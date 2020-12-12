@@ -27,10 +27,14 @@ class ContentManager(Service, ContentManagerAPI):
     logger = logging.getLogger("ddht.ContentManager")
 
     def __init__(
-        self, network: AlexandriaNetworkAPI, content_storage: ContentStorageAPI
+        self,
+        network: AlexandriaNetworkAPI,
+        content_storage: ContentStorageAPI,
+        concurrency: int = 3,
     ) -> None:
         self._network = network
         self.content_storage = content_storage
+        self._concurrency = concurrency
 
     @property
     def _advertisement_manager(self) -> AdvertisementManagerAPI:
@@ -45,8 +49,29 @@ class ContentManager(Service, ContentManagerAPI):
 
         await self.manager.wait_finished()
 
+    async def _broadcast_worker(
+        self, receive_channel: trio.abc.ReceiveChannel[ContentKey]
+    ) -> None:
+        while self.manager.is_running:
+            content_key = await receive_channel.receive()
+            content = self.content_storage.get_content(content_key)
+
+            # TODO: computationally expensive
+            hash_tree_root = ssz.get_hash_tree_root(content, sedes=content_sedes)
+            advertisement = self._get_or_create_advertisement(
+                content_key=content_key, hash_tree_root=hash_tree_root,
+            )
+            await self._network.broadcast(advertisement)
+
     async def _periodically_advertise_content(self) -> None:
         await self._network.routing_table_ready()
+
+        send_channel, receive_channel = trio.open_memory_channel[ContentKey](
+            self._concurrency
+        )
+
+        for _ in range(self._concurrency):
+            self.manager.run_daemon_task(self._broadcast_worker, receive_channel)
 
         async for _ in every(30 * 60):
             start_at = trio.current_time()
@@ -55,6 +80,10 @@ class ContentManager(Service, ContentManagerAPI):
             if not total_keys:
                 continue
 
+            self.logger.info(
+                "content-processing-starting: total=%d", total_keys,
+            )
+
             processed_keys = 0
 
             last_key: Optional[ContentKey] = None
@@ -62,7 +91,10 @@ class ContentManager(Service, ContentManagerAPI):
             while self.manager.is_running:
                 elapsed = trio.current_time() - start_at
                 content_keys = tuple(
-                    take(4, self.content_storage.enumerate_keys(start_key=last_key))
+                    take(
+                        self._concurrency,
+                        self.content_storage.enumerate_keys(start_key=last_key),
+                    )
                 )
 
                 # TODO: We need to adjust the
@@ -76,23 +108,14 @@ class ContentManager(Service, ContentManagerAPI):
                     break
 
                 for content_key in content_keys:
-                    content = self.content_storage.get_content(content_key)
-
-                    # TODO: computationally expensive
-                    hash_tree_root = ssz.get_hash_tree_root(
-                        content, sedes=content_sedes
-                    )
-                    advertisement = self._get_or_create_advertisement(
-                        content_key=content_key, hash_tree_root=hash_tree_root,
-                    )
-                    await self._network.broadcast(advertisement)
+                    await send_channel.send(content_key)
 
                 last_key = content_keys[-1]
                 processed_keys += len(content_keys)
                 progress = processed_keys / total_keys
 
                 self.logger.debug(
-                    "processing-local-content: progress=%0.1f  processed=%d  "
+                    "content-processing: progress=%0.1f  processed=%d  "
                     "total=%d  at=%s  elapsed=%s",
                     progress,
                     processed_keys,
@@ -102,7 +125,7 @@ class ContentManager(Service, ContentManagerAPI):
                 )
 
             self.logger.info(
-                "processing-local-content-final: processed=%d/%d  elapsed=%s",
+                "content-processing-finished: processed=%d/%d  elapsed=%s",
                 processed_keys,
                 total_keys,
                 humanize_seconds(int(elapsed)),
