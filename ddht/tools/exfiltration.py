@@ -1,6 +1,8 @@
 import argparse
 import itertools
 import logging
+import pathlib
+import tempfile
 from typing import NamedTuple, Optional, Tuple
 
 from eth_typing import Hash32
@@ -18,7 +20,6 @@ from ddht.v5_1.alexandria.content_storage import (
 )
 from ddht.v5_1.alexandria.rlp_sedes import BlockHeader
 from ddht.v5_1.alexandria.typing import ContentKey
-from ddht.xdg import get_xdg_ddht_root
 
 logger = logging.getLogger("ddht.tools.exfiltration")
 
@@ -86,13 +87,15 @@ async def exfiltrate_header_chain(
     w3: Web3,
     epoch_start_at: Optional[int],
     epoch_end_at: Optional[int],
+    storage_dir: Optional[pathlib.Path],
     truncate: bool = False,
 ) -> None:
-    ddht_xdg_root = get_xdg_ddht_root()
-    storage_dir = ddht_xdg_root / "alexandria" / "storage"
-    storage_dir.mkdir(parents=True, exist_ok=True)
+    if storage_dir is None:
+        storage_dir = pathlib.Path(tempfile.mkdtemp())
 
+    storage_dir.mkdir(parents=True, exist_ok=True)
     content_storage = FileSystemContentStorage(storage_dir)
+    logger.info("ContentStorage: %s", storage_dir)
 
     try:
         master_accumulator_data = content_storage.get_content(
@@ -193,10 +196,10 @@ async def exfiltrate_header_chain(
         epoch_accumulator_root = ssz.get_hash_tree_root(
             epoch_accumulator, sedes=EpochAccumulatorSedes,
         )
-        content_storage.set_content(
-            epoch_accumulator_key(epoch),
-            ssz.encode(epoch_accumulator, sedes=EpochAccumulatorSedes),
-        )
+        # content_storage.set_content(
+        #     epoch_accumulator_key(epoch),
+        #     ssz.encode(epoch_accumulator, sedes=EpochAccumulatorSedes),
+        # )
 
         master_accumulator.append(epoch_accumulator_root)
         master_accumulator_root = ssz.get_hash_tree_root(
@@ -204,15 +207,15 @@ async def exfiltrate_header_chain(
         )
 
         # set the accumulator for the epoch
-        master_accumulator_data = ssz.encode(
-            master_accumulator, sedes=MasterAccumulatorSedes
-        )
-        content_storage.set_content(
-            master_accumulator_key(epoch), master_accumulator_data
-        )
-        content_storage.set_content(
-            LATEST_MASTER_ACCUMULATOR_KEY, master_accumulator_data, exists_ok=True,
-        )
+        # master_accumulator_data = ssz.encode(
+        #     master_accumulator, sedes=MasterAccumulatorSedes
+        # )
+        # content_storage.set_content(
+        #     master_accumulator_key(epoch), master_accumulator_data
+        # )
+        # content_storage.set_content(
+        #     LATEST_MASTER_ACCUMULATOR_KEY, master_accumulator_data, exists_ok=True,
+        # )
 
         logger.info(
             "completed: epoch=%d blocks=#%d-%d  epoch_root=%s  master_root=%s",
@@ -224,7 +227,7 @@ async def exfiltrate_header_chain(
         )
         previous_total_difficulty = epoch_accumulator[-1].total_difficulty
 
-    logger.info("Starting exfiltration")
+    logger.info("Finished exfiltration")
 
 
 async def retrieve_epoch_headers(w3: Web3, epoch: int) -> Tuple[BlockHeader, ...]:
@@ -294,6 +297,7 @@ async def retrieve_header(w3: Web3, block_number: int) -> BlockHeader:
 parser = argparse.ArgumentParser(description="Block Header Exfiltration")
 parser.add_argument("--start-epoch", type=int)
 parser.add_argument("--end-epoch", type=int)
+parser.add_argument("--storage-dir", type=pathlib.Path)
 parser.add_argument("--log-level", type=int, default=logging.INFO)
 
 
@@ -317,5 +321,5 @@ if __name__ == "__main__":
     from web3.auto.ipc import w3
 
     trio.run(
-        exfiltrate_header_chain, w3, args.start_epoch, args.end_epoch,
+        exfiltrate_header_chain, w3, args.start_epoch, args.end_epoch, args.storage_dir,
     )
