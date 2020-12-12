@@ -67,6 +67,7 @@ def test_advertisement_to_and_from_sedes_payload():
 content_key_st = st.integers(min_value=33, max_value=128).map(ContentFactory)
 
 
+@settings(deadline=500)
 @given(content_key=content_key_st,)
 def test_advertisement_encoded_size(content_key):
     advertisement = AdvertisementFactory(content_key=content_key)
@@ -75,6 +76,7 @@ def test_advertisement_encoded_size(content_key):
     assert len(encoded) == ADVERTISEMENT_FIXED_SIZE + len(content_key) - 4
 
 
+@settings(deadline=500)
 @given(content_keys=st.lists(content_key_st),)
 def test_advertise_message_encoded_size(content_keys):
     advertisements = tuple(
