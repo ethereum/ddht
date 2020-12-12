@@ -43,6 +43,7 @@ from ddht.v5_1.alexandria.content import (
 )
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
+from ddht.v5_1.alexandria.content_validator import ContentValidator
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.partials.proof import Proof, compute_proof, validate_proof
 from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
@@ -90,6 +91,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             client=self.client,
             content_storages=(pinned_content_storage, commons_content_storage),
         )
+        self.content_validator = ContentValidator(self)
 
         self.advertisement_db = advertisement_db
         self.advertisement_provider = AdvertisementProvider(
