@@ -86,7 +86,7 @@ class ContentProvider(Service, ContentProviderAPI):
                         "Ignoring content request for unknown key: content_key=%s",
                         request.message.payload.content_key.hex(),
                     )
-                    return
+                    continue
 
                 # This lock ensures that we are never trying to generate too many
                 # proofs concurrently since proof generation is CPU bound.

@@ -33,6 +33,7 @@ extras_require = {
     ],
     "web3": ["web3>=5.13.1,<6"],
     "alexandria": [
+        "pyethash>=0.1.27,<1.0.0",
         "ssz>=0.2.4,<0.3",
     ],
     "benchmark": [

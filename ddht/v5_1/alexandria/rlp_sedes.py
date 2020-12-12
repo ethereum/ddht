@@ -13,6 +13,24 @@ uint256 = sedes.BigEndianInt(256)
 trie_root = sedes.Binary.fixed_length(32, allow_empty=True)
 
 
+class MiningHeader(rlp.Serializable):  # type: ignore
+    fields = [
+        ("parent_hash", hash32),
+        ("uncles_hash", hash32),
+        ("coinbase", address),
+        ("state_root", trie_root),
+        ("transaction_root", trie_root),
+        ("receipt_root", trie_root),
+        ("bloom", uint256),
+        ("difficulty", sedes.big_endian_int),
+        ("block_number", sedes.big_endian_int),
+        ("gas_limit", sedes.big_endian_int),
+        ("gas_used", sedes.big_endian_int),
+        ("timestamp", sedes.big_endian_int),
+        ("extra_data", sedes.binary),
+    ]
+
+
 @functools.total_ordering
 class BlockHeader(rlp.Serializable):  # type: ignore
     fields = [
@@ -35,18 +53,18 @@ class BlockHeader(rlp.Serializable):  # type: ignore
 
     def __init__(
         self,
-        difficulty: int,
-        block_number: BlockNumber,
-        gas_limit: int,
-        timestamp: int,
-        coinbase: Address,
         parent_hash: Hash32,
         uncles_hash: Hash32,
+        coinbase: Address,
         state_root: Hash32,
         transaction_root: Hash32,
         receipt_root: Hash32,
         bloom: int,
+        difficulty: int,
+        block_number: BlockNumber,
+        gas_limit: int,
         gas_used: int,
+        timestamp: int,
         extra_data: bytes,
         mix_hash: Hash32,
         nonce: bytes,
@@ -89,6 +107,10 @@ class BlockHeader(rlp.Serializable):  # type: ignore
         if self._hash is None:
             self._hash = Hash32(keccak(rlp.encode(self)))
         return self._hash
+
+    @property
+    def mining_hash(self) -> Hash32:
+        return Hash32(keccak(rlp.encode(self[:-2], MiningHeader)))
 
     @property
     def hex_hash(self) -> str:

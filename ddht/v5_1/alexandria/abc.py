@@ -90,6 +90,15 @@ class BroadcastLogAPI(ABC):
         ...
 
 
+class ContentValidatorAPI(ABC):
+    @abstractmethod
+    async def validate_content(self, content_key: ContentKey, content: bytes) -> None:
+        ...
+
+    async def validate_header(self, content_key: ContentKey, content: bytes) -> None:
+        ...
+
+
 class ContentProviderAPI(ServiceAPI):
     @abstractmethod
     async def ready(self) -> None:
@@ -416,6 +425,8 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     advertisement_db: AdvertisementDatabaseAPI
     advertisement_provider: AdvertisementProviderAPI
     advertisement_manager: AdvertisementManagerAPI
+
+    content_validator: ContentValidatorAPI
 
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
