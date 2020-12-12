@@ -50,6 +50,26 @@ def content_storage(request, base_storage):
         raise Exception(f"Unhandled parameter: {request.param}")
 
 
+def test_content_storage_sized(base_storage):
+    assert len(base_storage) == 0
+
+    base_storage.set_content(b"key-0", b"content-0")
+
+    assert len(base_storage) == 1
+
+    base_storage.set_content(b"key-0", b"content-0-updated")
+
+    assert len(base_storage) == 1
+
+    base_storage.set_content(b"key-1", b"content-1")
+
+    assert len(base_storage) == 2
+
+    base_storage.delete_content(b"key-0")
+
+    assert len(base_storage) == 1
+
+
 def test_content_storage_read_write_exists_delete(content_storage):
     content_key = b"\x00test-key"
     content = ContentFactory(128)

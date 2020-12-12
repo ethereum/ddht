@@ -31,6 +31,9 @@ class _AtomicBatch(ContentStorageAPI):
         self._deleted = set()
         self.is_decommissioned = False
 
+    def __len__(self) -> int:
+        raise NotImplementedError("Cannot query length batch length")
+
     def has_content(self, content_key: ContentKey) -> bool:
         if self.is_decommissioned:
             raise BatchDecommissioned
@@ -118,6 +121,9 @@ class MemoryContentStorage(ContentStorageAPI):
         if db is None:
             db = {}
         self._db = db
+
+    def __len__(self) -> int:
+        return len(self._db)
 
     def has_content(self, content_key: ContentKey) -> bool:
         return content_key in self._db
@@ -299,6 +305,12 @@ def enumerate_content_keys(
         yield content_key
 
 
+def get_row_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT count(*) FROM storage").fetchone()
+    (row_count,) = row
+    return row_count  # type: ignore
+
+
 class FileSystemContentStorage(ContentStorageAPI):
     base_dir: pathlib.Path
 
@@ -311,6 +323,9 @@ class FileSystemContentStorage(ContentStorageAPI):
         create_tables(conn)
         self._conn = conn
         self.base_dir = base_dir.resolve()
+
+    def __len__(self) -> int:
+        return get_row_count(self._conn)
 
     def has_content(self, content_key: ContentKey) -> bool:
         return check_content_exists(self._conn, content_key)

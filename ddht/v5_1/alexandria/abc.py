@@ -7,6 +7,7 @@ from typing import (
     Iterable,
     Optional,
     Sequence,
+    Sized,
     Tuple,
     Type,
     Union,
@@ -45,7 +46,7 @@ from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 
 
-class ContentStorageAPI(ABC):
+class ContentStorageAPI(Sized):
     @abstractmethod
     def has_content(self, content_key: ContentKey) -> bool:
         ...
