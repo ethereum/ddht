@@ -14,6 +14,7 @@ from typing import (
 
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
+from eth_keys import keys
 from eth_typing import Hash32, NodeID
 import trio
 
@@ -180,6 +181,11 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI
     subscription_manager: SubscriptionManagerAPI[AlexandriaMessage[Any]]
+
+    @property
+    @abstractmethod
+    def local_private_key(self) -> keys.PrivateKey:
+        ...
 
     #
     # Proxy API for subscriptions
