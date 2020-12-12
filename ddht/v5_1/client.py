@@ -12,7 +12,7 @@ from typing import (
 )
 
 from async_generator import asynccontextmanager
-from async_service import Service
+from async_service import Service, background_trio_service
 from eth_enr import ENRAPI, ENRManager, QueryableENRDatabaseAPI
 from eth_keys import keys
 from eth_typing import NodeID
@@ -150,12 +150,12 @@ class Client(Service, ClientAPI):
         return self.pool.local_node_id
 
     async def run(self) -> None:
-        self.manager.run_daemon_task(self._run_envelope_encoder_and_decoder)
+        self.manager.run_daemon_task(self._run_envelope_and_dispatcher_services)
         self.manager.run_daemon_task(self._do_listen, self.listen_on)
 
         await self.manager.wait_finished()
 
-    async def _run_envelope_encoder_and_decoder(self) -> None:
+    async def _run_envelope_and_dispatcher_services(self) -> None:
         """
         Ensure that in the task hierarchy the envelope encode will be shut down
         *after* the dispatcher.
@@ -164,22 +164,14 @@ class Client(Service, ClientAPI):
           |
           ---EnvelopeEncoder
                 |
-                -------Dispatcher
+                ---EnvelopeDecoder
+                      |
+                      ---Dispatcher
         """
-        self.manager.run_daemon_child_service(self.envelope_decoder)
-        self.manager.run_daemon_child_service(self.envelope_encoder)
-        self.manager.run_daemon_task(self._run_dispatcher)
-
-        await self.manager.wait_finished()
-
-    async def _run_dispatcher(self) -> None:
-        """
-        Run the dispatcher in a manner that it is a child of the envelope
-        encoder to ensure that they are shut down in the correct order.
-        """
-        self.manager.run_daemon_child_service(self.dispatcher)
-
-        await self.manager.wait_finished()
+        async with background_trio_service(self.envelope_encoder):
+            async with background_trio_service(self.envelope_decoder):
+                async with background_trio_service(self.dispatcher):
+                    await self.manager.wait_finished()
 
     async def wait_listening(self) -> None:
         await self._listening.wait()
