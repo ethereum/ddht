@@ -11,7 +11,7 @@ from typing import (
 )
 
 from async_generator import asynccontextmanager
-from async_service import Service
+from async_service import Service, background_trio_service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
@@ -550,11 +550,11 @@ class Network(Service, NetworkAPI):
         self, target: NodeID, concurrency: int = 3,
     ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
         explorer = Explorer(self, target, concurrency)
-        self.manager.run_child_service(explorer)
-        await explorer.ready()
+        async with background_trio_service(explorer):
+            await explorer.ready()
 
-        async with explorer.stream() as receive_channel:
-            yield receive_channel
+            async with explorer.stream() as receive_channel:
+                yield receive_channel
 
     #
     # Long Running Processes
