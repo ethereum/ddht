@@ -130,6 +130,7 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
 
                 async with receive_channel:
                     async for partial_proof in receive_channel:
+                        # TODO: computationally expensive
                         proof = proof.merge(partial_proof)
                         still_missing = sum(
                             segment.length for segment in proof.get_missing_segments()

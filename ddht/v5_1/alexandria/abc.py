@@ -195,6 +195,19 @@ class AdvertisementManagerAPI(ServiceAPI):
         ...
 
 
+class ContentCollectorAPI(ServiceAPI):
+    content_manager: ContentManagerAPI
+
+    @property
+    @abstractmethod
+    def content_storage(self) -> ContentStorageAPI:
+        ...
+
+    @abstractmethod
+    async def ready(self) -> None:
+        ...
+
+
 class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     network: NetworkAPI
     request_tracker: RequestTrackerAPI

@@ -41,6 +41,8 @@ from ddht.v5_1.alexandria.content import (
     compute_content_distance,
     content_key_to_content_id,
 )
+from ddht.v5_1.alexandria.content_collector import ContentCollector
+from ddht.v5_1.alexandria.content_manager import ContentManager
 from ddht.v5_1.alexandria.content_provider import ContentProvider
 from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
 from ddht.v5_1.alexandria.content_validator import ContentValidator
@@ -121,6 +123,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         await self.advertisement_manager.ready()
         await self.advertisement_provider.ready()
         await self.content_provider.ready()
+        await self.commons_content_collector.ready()
         await self.radius_tracker.ready()
 
         await self._ping_handler_ready.wait()
