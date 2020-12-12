@@ -12,7 +12,7 @@ async def _yield(num: int = 10, base: int = 0):
 
 
 @pytest.mark.trio
-async def test_resource_queue():
+async def test_resource_queue_fuzzy():
     known_resources = {"a", "b", "c", "d"}
     queue = ResourceQueue(known_resources)
 
@@ -75,3 +75,45 @@ async def test_resource_queue():
         assert seen_resources_after_add == queue.resources
 
         nursery.cancel_scope.cancel()
+
+
+@pytest.mark.trio
+async def test_resource_queue_add_idempotent():
+    queue = ResourceQueue(("a", "b", "c"), max_resource_count=4)
+
+    assert len(queue) == 3
+
+    await queue.add("a")
+
+    assert len(queue) == 3
+
+    await queue.add("d")
+
+    assert len(queue) == 4
+
+
+@pytest.mark.trio
+async def test_resource_queue_add_blocks_when_queue_full(autojump_clock):
+    queue = ResourceQueue(("a", "b", "c"), max_resource_count=3)
+
+    await queue.add("a")
+
+    assert len(queue) == 3
+
+    with pytest.raises(trio.TooSlowError):
+        with trio.fail_after(1):
+            await queue.add("d")
+
+
+@pytest.mark.trio
+async def test_resource_queue_remove():
+    queue = ResourceQueue(("a", "b", "c"), max_resource_count=10)
+
+    assert len(queue) == 3
+
+    queue.remove("a")
+
+    assert len(queue) == 2
+
+    with pytest.raises(KeyError):
+        queue.remove("a")

@@ -66,7 +66,7 @@ class ResourceQueue(ResourceQueueAPI[TResource]):
 
     async def add(self, resource: TResource) -> None:
         if resource in self:
-            raise ValueError("Resource already tracked")
+            return
         self.resources.add(resource)
         await self._send.send(resource)
 
