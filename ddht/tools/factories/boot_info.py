@@ -22,7 +22,7 @@ class BootInfoFactory(factory.Factory):  # type: ignore
     class Meta:
         model = BootInfo
 
-    protocol_version = ProtocolVersion.v5
+    protocol_version = ProtocolVersion.v5_1
     private_key = None
     base_dir = factory.LazyFunction(get_xdg_ddht_root)
     port = DEFAULT_PORT
