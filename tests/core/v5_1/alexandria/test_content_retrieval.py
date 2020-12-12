@@ -1,4 +1,4 @@
-from async_service import LifecycleError, background_trio_service
+from async_service import background_trio_service
 import pytest
 import trio
 
@@ -7,18 +7,6 @@ from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
 from ddht.v5_1.alexandria.messages import GetContentMessage
 from ddht.v5_1.alexandria.partials.proof import compute_proof, validate_proof
 from ddht.v5_1.alexandria.sedes import content_sedes
-
-
-@pytest.mark.trio
-async def test_content_retrieval_cannot_await_before_running(alice_alexandria_network):
-    content_retrieval = ContentRetrieval(
-        alice_alexandria_network,
-        content_key=b"test-key",
-        hash_tree_root=b"unicornsrainbowscupcakessparkles",
-    )
-
-    with pytest.raises(LifecycleError):
-        await content_retrieval.wait_content_proof()
 
 
 @pytest.mark.trio

@@ -1,7 +1,6 @@
 import logging
 
 from async_service import Service
-from async_service import external_trio_api as external_api
 from eth_typing import Hash32
 from eth_utils import ValidationError
 from ssz.constants import CHUNK_SIZE
@@ -72,7 +71,6 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
         self.node_queue = ResourceQueue((), max_resource_count=max_node_ids)
         self._content_ready = trio.Event()
 
-    @external_api
     async def wait_content_proof(self) -> Proof:
         await self._content_ready.wait()
         return self._content_proof
@@ -130,6 +128,7 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
 
                 async with receive_channel:
                     async for partial_proof in receive_channel:
+                        # TODO: computationally expensive
                         proof = proof.merge(partial_proof)
                         still_missing = sum(
                             segment.length for segment in proof.get_missing_segments()
