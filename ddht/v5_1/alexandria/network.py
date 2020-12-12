@@ -64,7 +64,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self,
         network: NetworkAPI,
         bootnodes: Collection[ENRAPI],
-        content_storage: ContentStorageAPI,
+        pinned_content_storage: ContentStorageAPI,
+        commons_content_storage: ContentStorageAPI,
         advertisement_db: AdvertisementDatabaseAPI,
         max_advertisement_count: int = 65536,
     ) -> None:
@@ -81,9 +82,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
 
-        self.content_storage = content_storage
+        self.commons_content_storage = commons_content_storage
+
+        self.pinned_content_storage = pinned_content_storage
+
         self.content_provider = ContentProvider(
-            client=self.client, content_storage=content_storage,
+            client=self.client,
+            content_storages=(pinned_content_storage, commons_content_storage),
         )
 
         self.advertisement_db = advertisement_db
@@ -101,6 +106,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         self._ping_handler_ready = trio.Event()
         self._find_nodes_handler_ready = trio.Event()
+
+    async def routing_table_ready(self) -> None:
+        await self._routing_table_ready.wait()
 
     async def ready(self) -> None:
         await self.advertisement_manager.ready()

@@ -188,6 +188,9 @@ alexandria_parser = subparser.add_parser(
 
 alexandria_parser.set_defaults(func=do_alexandria)
 
+#
+# Alexandria[Bootnodes]
+#
 alexandria_bootnodes_parser_group = alexandria_parser.add_mutually_exclusive_group()
 alexandria_bootnodes_parser_group.add_argument(
     "--bootnode",
@@ -201,4 +204,48 @@ alexandria_bootnodes_parser_group.add_argument(
     action="store_const",
     const=(),
     dest="alexandria_bootnodes",
+)
+
+#
+# Alexandria[CommonsStorage]
+#
+alexandria_commons_storage_parser_group = (
+    alexandria_parser.add_mutually_exclusive_group()
+)
+alexandria_commons_storage_parser_group.add_argument(
+    "--commons-storage-dir",
+    help=(
+        "The filesystem path where the 'commons' storage should be located."
+        "Use the string `:memory:` to use an in-memory ephemeral data store"
+    ),
+    dest="alexandria_commons_storage",
+)
+alexandria_commons_storage_parser_group.add_argument(
+    "--commons-storage-ephemeral",
+    help=("Use an in-memory ephemeral data store for 'commons' storage"),
+    action="store_const",
+    const=":memory:",
+    dest="alexandria_commons_storage",
+)
+
+#
+# Alexandria[PinnedStorage]
+#
+alexandria_pinned_storage_parser_group = (
+    alexandria_parser.add_mutually_exclusive_group()
+)
+alexandria_pinned_storage_parser_group.add_argument(
+    "--pinned-storage-dir",
+    help=(
+        "The filesystem path where the 'pinned' storage should be located."
+        "Use the string `:memory:` to use an in-memory ephemeral data store"
+    ),
+    dest="alexandria_pinned_storage",
+)
+alexandria_pinned_storage_parser_group.add_argument(
+    "--pinned-storage-ephemeral",
+    help=("Use an in-memory ephemeral data store for 'pinned' storage"),
+    action="store_const",
+    const=":memory:",
+    dest="alexandria_pinned_storage",
 )

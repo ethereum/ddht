@@ -419,6 +419,14 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     content_storage: ContentStorageAPI
     content_provider: ContentProviderAPI
 
+    commons_content_storage: ContentStorageAPI
+
+    pinned_content_storage: ContentStorageAPI
+
+    @abstractmethod
+    async def routing_table_ready(self) -> None:
+        ...
+
     @abstractmethod
     async def ready(self) -> None:
         ...

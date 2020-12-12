@@ -27,7 +27,8 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
     def __init__(self, node: NodeAPI) -> None:
         self.node = node
-        self.content_storage = MemoryContentStorage()
+        self.commons_content_storage = MemoryContentStorage()
+        self.pinned_content_storage = MemoryContentStorage()
         self.advertisement_db = AdvertisementDatabase(sqlite3.connect(":memory:"),)
         self._lock = NamedLock()
 
@@ -73,7 +74,8 @@ class AlexandriaNode(AlexandriaNodeAPI):
                 alexandria_network = AlexandriaNetwork(
                     network=network,
                     bootnodes=bootnodes,
-                    content_storage=self.content_storage,
+                    commons_content_storage=self.commons_content_storage,
+                    pinned_content_storage=self.pinned_content_storage,
                     advertisement_db=self.advertisement_db,
                     max_advertisement_count=max_advertisement_count,
                 )
