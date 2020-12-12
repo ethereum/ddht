@@ -4,7 +4,10 @@ from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
 
 ALEXANDRIA_PROTOCOL_ID = b"alexandria"
 
-DEFAULT_BOOTNODES: Tuple[str, ...] = ()
+DEFAULT_BOOTNODES: Tuple[str, ...] = (
+    "enr:-IS4QDZscd3qpOw_l86T6GjpRZ82r226SZJDCP7-omblk3O5UIIx6vESBpI3G2ipmJwbfU_lh4oBdLHQ6OokswcaIvQDgmlkgnY0gmlwhK3_32GJc2VjcDI1NmsxoQI5dQz6gpFLH57j0OCVEatTsgVpB7J9RYgvkn-LHzcAwYN1ZHCCdl8",  # noqa: E501
+    "enr:-IS4QFoF5kk9l4xQrXDJvaGcKfkQUwLnJCny0u73FvkfZUmHSjBJAvG34Efr19MOqzkPqK5D7-NF5f7kj8rcTsLcPGIDgmlkgnY0gmlwhC1PSECJc2VjcDI1NmsxoQKNsjWTyTWNLBG0DtW_ycHCUo2XL29zLN0bCAs4ykcZVoN1ZHCCdl8",  # noqa: E501
+)
 
 # 1 gigabyte
 GB = 1024 * 1024 * 1024  # 2**30

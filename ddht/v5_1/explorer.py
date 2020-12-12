@@ -293,5 +293,5 @@ class Explorer(Service, ExplorerAPI):
                         self._condition.notify_all()
                         await self._send_channel.send(enr)
 
-        self.logger.info("%s: finished seeding nodes for exploration", self)
+        self.logger.debug("%s: finished seeding nodes for exploration", self)
         self._exploration_seeded.set()
