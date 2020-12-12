@@ -1,5 +1,4 @@
 import functools
-import logging
 from typing import (
     Any,
     AsyncContextManager,
@@ -18,7 +17,7 @@ from async_service import Service
 from eth_enr import ENRAPI
 from eth_keys import keys
 from eth_typing import NodeID
-from eth_utils import ValidationError
+from eth_utils import ValidationError, get_extended_debug_logger
 import trio
 
 from ddht.base_message import InboundMessage
@@ -64,13 +63,13 @@ from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
 
 class AlexandriaClient(Service, AlexandriaClientAPI):
-    logger = logging.getLogger("ddht.AlexandriaClient")
-
     protocol_id = ALEXANDRIA_PROTOCOL_ID
 
     _active_request_ids: Set[bytes]
 
     def __init__(self, network: NetworkAPI) -> None:
+        self.logger = get_extended_debug_logger("ddht.AlexandriaClient")
+
         self.network = network
         self.request_tracker = RequestTracker()
         self.subscription_manager = SubscriptionManager()
@@ -212,7 +211,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 node_id
             )
 
-        self.logger.debug(
+        self.logger.debug2(
             "Sending request: %s with request id %s", request, request_id.hex(),
         )
 
@@ -259,7 +258,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 response_message_type, endpoint, node_id,
             )
             async with subscription_ctx as subscription:
-                self.logger.debug(
+                self.logger.debug2(
                     "Sending request with request id %s", request_id.hex(),
                 )
                 # Send the request

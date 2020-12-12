@@ -550,11 +550,12 @@ class Network(Service, NetworkAPI):
         self, target: NodeID, concurrency: int = 3,
     ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
         explorer = Explorer(self, target, concurrency)
-        async with background_trio_service(explorer):
-            await explorer.ready()
+        with trio.fail_after(300):
+            async with background_trio_service(explorer):
+                await explorer.ready()
 
-            async with explorer.stream() as receive_channel:
-                yield receive_channel
+                async with explorer.stream() as receive_channel:
+                    yield receive_channel
 
     #
     # Long Running Processes

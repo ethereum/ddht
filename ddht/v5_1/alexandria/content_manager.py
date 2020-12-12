@@ -112,7 +112,7 @@ class ContentManager(Service, ContentManagerAPI):
 
                 last_key = content_keys[-1]
                 processed_keys += len(content_keys)
-                progress = processed_keys / total_keys
+                progress = processed_keys * 100 / total_keys
 
                 self.logger.debug(
                     "content-processing: progress=%0.1f  processed=%d  "

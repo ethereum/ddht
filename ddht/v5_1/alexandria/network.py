@@ -287,11 +287,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, target: NodeID, concurrency: int = 3,
     ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
         explorer = Explorer(self, target, concurrency)
-        async with background_trio_service(explorer):
-            await explorer.ready()
+        with trio.fail_after(300):
+            async with background_trio_service(explorer):
+                await explorer.ready()
 
-            async with explorer.stream() as receive_channel:
-                yield receive_channel
+                async with explorer.stream() as receive_channel:
+                    yield receive_channel
 
     async def get_content_proof(
         self,
@@ -343,14 +344,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         content_retrieval = ContentRetrieval(
             self, content_key, hash_tree_root, concurrency=concurrency,
         )
-        manager = self.manager.run_child_service(content_retrieval)
-
-        await manager.wait_started()
-
-        try:
-            yield content_retrieval
-        finally:
-            manager.cancel()
+        with trio.fail_after(300):
+            async with background_trio_service(content_retrieval):
+                yield content_retrieval
 
     async def get_content(
         self, content_key: ContentKey, hash_tree_root: Hash32, *, concurrency: int = 3,
@@ -476,13 +472,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         send_channel, receive_channel = trio.open_memory_channel[Advertisement](32)
 
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(_feed_advertisements, send_channel)
+        with trio.fail_after(300):
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(_feed_advertisements, send_channel)
 
-            async with receive_channel:
-                yield receive_channel
+                async with receive_channel:
+                    yield receive_channel
 
-            nursery.cancel_scope.cancel()
+                nursery.cancel_scope.cancel()
 
     @asynccontextmanager
     async def stream_locations(
@@ -538,19 +535,23 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             32
         )
 
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(_feed_candidate_nodes, work_send_channel)
+        with trio.fail_after(300):
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(_feed_candidate_nodes, work_send_channel)
 
-            for worker_id in range(concurrency):
-                nursery.start_soon(
-                    _worker, worker_id, work_receive_channel, ad_send_channel.clone()
-                )
-            await ad_send_channel.aclose()
+                for worker_id in range(concurrency):
+                    nursery.start_soon(
+                        _worker,
+                        worker_id,
+                        work_receive_channel,
+                        ad_send_channel.clone(),
+                    )
+                await ad_send_channel.aclose()
 
-            async with ad_receive_channel:
-                yield ad_receive_channel
+                async with ad_receive_channel:
+                    yield ad_receive_channel
 
-            nursery.cancel_scope.cancel()
+                nursery.cancel_scope.cancel()
 
     async def broadcast(
         self, advertisement: Advertisement, redundancy_factor: int = 3
