@@ -54,11 +54,20 @@ class ContentCollector(Service, ContentCollectorAPI):
                     )
 
     async def _gather_advertisement_content(self, advertisement: Advertisement) -> None:
-        proof = await self._network.get_content(
-            content_key=advertisement.content_key,
-            hash_tree_root=advertisement.hash_tree_root,
-        )
+        try:
+            proof = await self._network.get_content(
+                content_key=advertisement.content_key,
+                hash_tree_root=advertisement.hash_tree_root,
+            )
+        except trio.TooSlowError:
+            self.logger.debug(
+                f"Unable to retrieve advertised content: "
+                f"content_key={advertisement.content_key.hex()}"
+            )
+            return
+
         content = proof.get_content()
+
         try:
             await self._network.content_validator.validate_content(
                 content_key=advertisement.content_key, content=content,
