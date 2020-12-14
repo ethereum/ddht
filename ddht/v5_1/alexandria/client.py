@@ -523,11 +523,12 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         *,
         advertisements: Collection[Advertisement],
     ) -> Tuple[AckMessage, ...]:
+        if not advertisements:
+            raise Exception("Must send at least one advertisement")
         advertisement_batches = partition_advertisements(
             advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
         )
         messages = tuple(AdvertiseMessage(batch) for batch in advertisement_batches)
-        assert len(messages)
         return tuple(
             [
                 await self._request(node_id, endpoint, message, AckMessage)

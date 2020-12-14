@@ -22,6 +22,7 @@ import trio
 from ddht._utils import every, weighted_choice
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
+from ddht.exceptions import MissingEndpointFields
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
@@ -383,7 +384,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         endpoint: Optional[Endpoint] = None,
     ) -> Tuple[AckPayload, ...]:
         if not all(ad.is_valid for ad in advertisements):
-            raise ValidationError("Cannot send invalid advertisements")
+            raise Exception("Cannot send invalid advertisements")
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
         responses = await self.client.advertise(
@@ -606,6 +607,13 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 except trio.TooSlowError:
                     self.logger.debug(
                         "Broadcast timeout: node_id=%s  advertisement=%s",
+                        node_id.hex(),
+                        advertisement,
+                    )
+                    return
+                except MissingEndpointFields:
+                    self.logger.debug(
+                        "Unreachable node: node_id=%s  advertisement=%s",
                         node_id.hex(),
                         advertisement,
                     )
