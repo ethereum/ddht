@@ -35,6 +35,7 @@ from ddht.v5_1.alexandria.messages import (
     AckMessage,
     AdvertiseMessage,
     AlexandriaMessage,
+    AlexandriaMessageType,
     ContentMessage,
     FindNodesMessage,
     FoundNodesMessage,
@@ -120,6 +121,8 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         *,
         request_id: bytes,
     ) -> None:
+        if message.type != AlexandriaMessageType.RESPONSE:
+            raise TypeError("%s is not of type RESPONSE", message)
         data_payload = message.to_wire_bytes()
         await self.network.client.send_talk_response(
             node_id, endpoint, payload=data_payload, request_id=request_id,
@@ -155,6 +158,8 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         # then feed this into our local tracker, which allows us to query it
         # upon receiving an incoming TALKRESPONSE to see if the response is to
         # a message from this protocol.
+        if request.type != AlexandriaMessageType.REQUEST:
+            raise TypeError("%s is not of type REQUEST", request)
         if request_id is None:
             request_id = self.network.client.request_tracker.get_free_request_id(
                 node_id
@@ -598,6 +603,12 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 except DecodingError:
                     pass
                 else:
+                    if message.type != AlexandriaMessageType.REQUEST:
+                        self.logger.debug(
+                            "Received non-REQUEST msg via TALKREQ: %s", message
+                        )
+                        continue
+
                     self.subscription_manager.feed_subscriptions(
                         InboundMessage(
                             message=message,
@@ -625,6 +636,12 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 except DecodingError:
                     pass
                 else:
+                    if message.type != AlexandriaMessageType.RESPONSE:
+                        self.logger.debug(
+                            "Received non-RESPONSE msg via TALKRESP: %s", message
+                        )
+                        continue
+
                     self.subscription_manager.feed_subscriptions(
                         InboundMessage(
                             message=message,

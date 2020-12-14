@@ -7,7 +7,7 @@ import trio
 from ddht.kademlia import KademliaRoutingTable
 from ddht.tools.factories.alexandria import AdvertisementFactory
 from ddht.v5_1.alexandria.advertisements import partition_advertisements
-from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
+from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID, MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.messages import (
     AckMessage,
     AdvertiseMessage,
@@ -20,6 +20,7 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     decode_message,
 )
+from ddht.v5_1.alexandria.payloads import PingPayload, PongPayload
 from ddht.v5_1.exceptions import ProtocolNotSupported
 from ddht.v5_1.messages import TalkRequestMessage, TalkResponseMessage
 
@@ -49,6 +50,94 @@ async def test_alexandria_client_handles_empty_response(
 
 
 @pytest.mark.trio
+async def test_request_ensures_valid_msg_type(bob, alice_alexandria_client):
+    with pytest.raises(TypeError):
+        await alice_alexandria_client._request(
+            bob.node_id,
+            bob.endpoint,
+            PongMessage(PongPayload(enr_seq=1234, advertisement_radius=4321)),
+            PongMessage,
+            request_id=b"\x01\x02",
+        )
+
+
+@pytest.mark.trio
+async def test_send_response_ensures_valid_msg_type(bob, alice_alexandria_client):
+    with pytest.raises(TypeError):
+        await alice_alexandria_client._send_response(
+            bob.node_id,
+            bob.endpoint,
+            PingMessage(PingPayload(enr_seq=1234, advertisement_radius=4321)),
+            request_id=b"\x01\x02",
+        )
+
+
+@pytest.mark.trio
+async def test_feed_talk_requests_ignores_wrongly_typed_msgs(
+    bob, bob_alexandria_client, alice_alexandria_client, autojump_clock,
+):
+    async with bob_alexandria_client.network.dispatcher.subscribe(
+        TalkRequestMessage
+    ) as sub:
+        async with bob_alexandria_client.subscribe(PongMessage) as client_subscription:
+
+            # Send a PongMessage via TALKREQ.
+            msg = PongMessage(PongPayload(enr_seq=1234, advertisement_radius=4321))
+            await alice_alexandria_client.network.client.send_talk_request(
+                bob.node_id,
+                bob.endpoint,
+                protocol=ALEXANDRIA_PROTOCOL_ID,
+                payload=msg.to_wire_bytes(),
+                request_id=b"\x01\x02",
+            )
+
+            # The message will be received by bob.
+            with trio.fail_after(1):
+                inbound_msg = await sub.receive()
+
+            assert inbound_msg.request_id == b"\x01\x02"
+
+            # But the alexandria client will not deliver it to any subscribers. And it should
+            # log a warning about it.
+            with trio.move_on_after(0.5) as scope:
+                await client_subscription.receive()
+
+            assert scope.cancelled_caught
+
+
+@pytest.mark.trio
+async def test_feed_talk_responses_ignores_wrongly_typed_msgs(
+    bob, bob_alexandria_client, alice_alexandria_client, autojump_clock,
+):
+    async with bob_alexandria_client.network.dispatcher.subscribe(
+        TalkResponseMessage
+    ) as sub:
+        async with bob_alexandria_client.subscribe(PingMessage) as client_subscription:
+
+            # Send a PingMessage via TALKRESP.
+            msg = PingMessage(PingPayload(enr_seq=1234, advertisement_radius=4321))
+            await alice_alexandria_client.network.client.send_talk_response(
+                bob.node_id,
+                bob.endpoint,
+                payload=msg.to_wire_bytes(),
+                request_id=b"\x01\x02",
+            )
+
+            # The message will be received by bob.
+            with trio.fail_after(1):
+                inbound_msg = await sub.receive()
+
+            assert inbound_msg.request_id == b"\x01\x02"
+
+            # But the alexandria client will not deliver it to any subscribers. And it should
+            # log a warning about it.
+            with trio.move_on_after(0.5) as scope:
+                await client_subscription.receive()
+
+            assert scope.cancelled_caught
+
+
+@pytest.mark.trio
 async def test_alexandria_client_send_ping(bob, bob_network, alice_alexandria_client):
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
         await alice_alexandria_client.send_ping(
@@ -59,10 +148,10 @@ async def test_alexandria_client_send_ping(bob, bob_network, alice_alexandria_cl
             request_id=b"\x01\x02",
         )
         with trio.fail_after(1):
-            talk_response = await subscription.receive()
+            inbound_msg = await subscription.receive()
 
-        assert talk_response.request_id == b"\x01\x02"
-        message = decode_message(talk_response.message.payload)
+        assert inbound_msg.request_id == b"\x01\x02"
+        message = decode_message(inbound_msg.message.payload)
         assert isinstance(message, PingMessage)
         assert message.payload.enr_seq == 1234
         assert message.payload.advertisement_radius == 4321

@@ -1,3 +1,4 @@
+import enum
 from typing import Any, Dict, Generic, Tuple, Type, TypeVar
 
 from eth_typing import Hash32
@@ -38,8 +39,14 @@ TPayload = TypeVar("TPayload")
 TAlexandriaMessage = TypeVar("TAlexandriaMessage", bound="AlexandriaMessage[Any]")
 
 
+class AlexandriaMessageType(enum.Enum):
+    REQUEST = 1
+    RESPONSE = 2
+
+
 class AlexandriaMessage(Generic[TPayload]):
     message_id: int
+    type: AlexandriaMessageType
     sedes: BaseSedes
     payload_type: Type[TPayload]
 
@@ -91,6 +98,7 @@ def register(message_class: Type[TAlexandriaMessage]) -> Type[TAlexandriaMessage
 @register
 class PingMessage(AlexandriaMessage[PingPayload]):
     message_id = 1
+    type = AlexandriaMessageType.REQUEST
     sedes = PingSedes
     payload_type = PingPayload
 
@@ -100,6 +108,7 @@ class PingMessage(AlexandriaMessage[PingPayload]):
 @register
 class PongMessage(AlexandriaMessage[PongPayload]):
     message_id = 2
+    type = AlexandriaMessageType.RESPONSE
     sedes = PongSedes
     payload_type = PongPayload
 
@@ -109,6 +118,7 @@ class PongMessage(AlexandriaMessage[PongPayload]):
 @register
 class FindNodesMessage(AlexandriaMessage[FindNodesPayload]):
     message_id = 3
+    type = AlexandriaMessageType.REQUEST
     sedes = FindNodesSedes
     payload_type = FindNodesPayload
 
@@ -128,6 +138,7 @@ class FindNodesMessage(AlexandriaMessage[FindNodesPayload]):
 @register
 class FoundNodesMessage(AlexandriaMessage[FoundNodesPayload]):
     message_id = 4
+    type = AlexandriaMessageType.RESPONSE
     sedes = FoundNodesSedes
     payload_type = FoundNodesPayload
 
@@ -148,6 +159,7 @@ class FoundNodesMessage(AlexandriaMessage[FoundNodesPayload]):
 @register
 class GetContentMessage(AlexandriaMessage[GetContentPayload]):
     message_id = 5
+    type = AlexandriaMessageType.REQUEST
     sedes = GetContentSedes
     payload_type = GetContentPayload
 
@@ -157,6 +169,7 @@ class GetContentMessage(AlexandriaMessage[GetContentPayload]):
 @register
 class ContentMessage(AlexandriaMessage[ContentPayload]):
     message_id = 6
+    type = AlexandriaMessageType.RESPONSE
     sedes = ContentSedes
     payload_type = ContentPayload
 
@@ -166,6 +179,7 @@ class ContentMessage(AlexandriaMessage[ContentPayload]):
 @register
 class AdvertiseMessage(AlexandriaMessage[AdvertisePayload]):
     message_id = 7
+    type = AlexandriaMessageType.REQUEST
     sedes = AdvertiseSedes
     payload_type = tuple
 
@@ -190,6 +204,7 @@ class AdvertiseMessage(AlexandriaMessage[AdvertisePayload]):
 @register
 class AckMessage(AlexandriaMessage[AckPayload]):
     message_id = 8
+    type = AlexandriaMessageType.RESPONSE
     sedes = AckSedes
     payload_type = AckPayload
 
@@ -199,6 +214,7 @@ class AckMessage(AlexandriaMessage[AckPayload]):
 @register
 class LocateMessage(AlexandriaMessage[LocatePayload]):
     message_id = 9
+    type = AlexandriaMessageType.REQUEST
     sedes = LocateSedes
     payload_type = LocatePayload
 
@@ -208,6 +224,7 @@ class LocateMessage(AlexandriaMessage[LocatePayload]):
 @register
 class LocationsMessage(AlexandriaMessage[LocationsPayload]):
     message_id = 10
+    type = AlexandriaMessageType.RESPONSE
     sedes = LocationsSedes
     payload_type = LocationsPayload
 
