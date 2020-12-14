@@ -1,3 +1,4 @@
+import collections
 from typing import Any, AsyncIterator, Collection, Set
 
 from async_generator import asynccontextmanager
@@ -46,29 +47,17 @@ class ResourceQueue(ResourceQueueAPI[TResource]):
 
     resources: Set[TResource]
 
-    def __init__(
-        self, resources: Collection[TResource], max_resource_count: int = None,
-    ) -> None:
-        if max_resource_count is None:
-            max_resource_count = len(resources)
-
-        if len(resources) > max_resource_count:
-            raise ValueError(
-                f"Number of resources exceeds maximum: {len(resources)} > {max_resource_count}"
-            )
+    def __init__(self, resources: Collection[TResource],) -> None:
         self.resources = set(resources)
-        self._max_resource_count = max_resource_count
-        self._send, self._receive = trio.open_memory_channel[TResource](
-            max_resource_count
-        )
-        for resource in resources:
-            self._send.send_nowait(resource)
+        self._queue = collections.deque(self.resources)
+        self._lock = trio.Lock()
 
     async def add(self, resource: TResource) -> None:
         if resource in self:
             return
-        self.resources.add(resource)
-        await self._send.send(resource)
+        async with self._lock:
+            self._queue.appendleft(resource)
+            self.resources.add(resource)
 
     def __contains__(self, value: Any) -> bool:
         return value in self.resources
@@ -76,8 +65,13 @@ class ResourceQueue(ResourceQueueAPI[TResource]):
     def __len__(self) -> int:
         return len(self.resources)
 
-    def remove(self, resource: TResource) -> None:
-        self.resources.remove(resource)
+    async def remove(self, resource: TResource) -> None:
+        async with self._lock:
+            self.resources.discard(resource)
+            try:
+                self._queue.remove(resource)
+            except ValueError:
+                pass
 
     @asynccontextmanager
     async def reserve(self) -> AsyncIterator[TResource]:
@@ -85,11 +79,16 @@ class ResourceQueue(ResourceQueueAPI[TResource]):
         # part of the tracked resources discard it and move onto the next
         # resource in the queue.
         while True:
-            resource = await self._receive.receive()
-            if resource in self:
-                break
-            else:
-                continue
+            async with self._lock:
+                try:
+                    resource = self._queue.pop()
+                except IndexError:
+                    continue
+
+                if resource in self:
+                    break
+                else:
+                    continue
 
         try:
             yield resource
@@ -97,5 +96,6 @@ class ResourceQueue(ResourceQueueAPI[TResource]):
             # The resource could have been removed during the context block so
             # only add it back to the queue if it is still part of the tracked
             # resources.
-            if resource in self:
-                await self._send.send(resource)
+            async with self._lock:
+                if resource in self:
+                    self._queue.appendleft(resource)

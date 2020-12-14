@@ -68,7 +68,7 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
         self.hash_tree_root = hash_tree_root
         self.content_id = content_key_to_content_id(content_key)
 
-        self.node_queue = ResourceQueue((), max_resource_count=max_node_ids)
+        self.node_queue = ResourceQueue(())
         self._content_ready = trio.Event()
 
     async def wait_content_proof(self) -> Proof:
@@ -95,25 +95,12 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
                 "Unable to retrieve initial proof from any of the provide nodes"
             )
 
-        # The size of the `segment_queue` mitigates against an attack scenario
-        # where a malicious node gives us back proofs that contain the first
-        # chunk which is required, but then contains as many gaps as possible
-        # in the requested data.  At a `max_chunk_count` of 16, a valid proof
-        # can push four new sub-segments onto the queue.  If *all* of our
-        # connected peers are giving us this type of malicious response, our
-        # queue will quickly grow to the maximum size at which point the
-        # deadlock protection will be triggered within the worker process.
-        #
-        # This situation is mitigated by both setting our queue size to a
-        # sufficiently large size that we expect it to not be able to be
-        # filled, as well as allowing our worker process to timeout while
-        # trying to add sub-segments back into the queue.
         missing_segments = proof.get_missing_segments()
         bite_size_missing_segments = slice_segments_to_max_chunk_count(
             missing_segments, max_chunk_count=16,
         )
 
-        self._segment_queue = ResourceQueue(bite_size_missing_segments * 4)
+        self._segment_queue = ResourceQueue(bite_size_missing_segments)
 
         send_channel, receive_channel = trio.open_memory_channel[Proof](
             self._concurrency
@@ -172,14 +159,19 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
                         max_chunks,
                     )
 
-                    # TODO: timeout and other exception handling
-                    proof = await self._network.get_content_proof(
-                        node_id,
-                        hash_tree_root=self.hash_tree_root,
-                        content_key=self.content_key,
-                        start_chunk_index=start_chunk_index,
-                        max_chunks=max_chunks,
-                    )
+                    try:
+                        proof = await self._network.get_content_proof(
+                            node_id,
+                            hash_tree_root=self.hash_tree_root,
+                            content_key=self.content_key,
+                            start_chunk_index=start_chunk_index,
+                            max_chunks=max_chunks,
+                        )
+                    except trio.TooSlowError:
+                        self.logger.debug(
+                            "%s: timeout: node=%s", worker_name, node_id.hex(),
+                        )
+                        continue
 
                     try:
                         validate_proof(proof)
@@ -191,7 +183,7 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
                         )
                         # If a peer gives us an invalid proof, remove them
                         # from rotation.
-                        self.node_queue.remove(node_id)
+                        await self.node_queue.remove(node_id)
                         continue
 
                     # check that the proof contains at minimum the first chunk we requested.
@@ -203,7 +195,7 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
                         )
                         # If the peer didn't include the start chunk,
                         # remove them from rotation.
-                        self.node_queue.remove(node_id)
+                        await self.node_queue.remove(node_id)
                         continue
 
                     self.logger.debug(
@@ -235,4 +227,4 @@ class ContentRetrieval(Service, ContentRetrievalAPI):
                         # but before the sub-segments have been added,
                         # we'll lose track of the still missing
                         # sub-segments.
-                        self._segment_queue.remove(segment)
+                        await self._segment_queue.remove(segment)
