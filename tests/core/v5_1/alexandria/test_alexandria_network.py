@@ -1,6 +1,7 @@
 from contextlib import AsyncExitStack
 
 from eth_enr.tools.factories import ENRFactory
+from eth_utils import ValidationError
 import pytest
 import trio
 
@@ -142,6 +143,7 @@ async def test_alexandria_network_advertise_single_message(
                 request.sender_node_id,
                 request.sender_endpoint,
                 advertisement_radius=12345,
+                acked=(True,),
                 request_id=request.request_id,
             )
 
@@ -149,15 +151,76 @@ async def test_alexandria_network_advertise_single_message(
             nursery.start_soon(_respond)
 
             with trio.fail_after(2):
-                ack_payloads = await alice_alexandria_network.advertise(
+                ack_payload = await alice_alexandria_network.advertise(
                     bob.node_id, advertisements=advertisements,
                 )
 
-            assert len(ack_payloads) == 1
-            ack_payload = ack_payloads[0]
-
             assert isinstance(ack_payload, AckPayload)
             assert ack_payload.advertisement_radius == 12345
+            assert ack_payload.acked == (True,)
+
+
+@pytest.mark.trio
+async def test_alexandria_network_advertise_multi_message(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisements = tuple(
+        AdvertisementFactory(private_key=alice.private_key) for i in range(16)
+    )
+    assert len(partition_advertisements(advertisements, MAX_PAYLOAD_SIZE)) > 1
+    async with bob_alexandria_client.subscribe(AdvertiseMessage) as subscription:
+
+        async def _respond():
+            async for request in subscription:
+                await bob_alexandria_client.send_ack(
+                    request.sender_node_id,
+                    request.sender_endpoint,
+                    advertisement_radius=12345,
+                    acked=(True,) * len(request.message.payload),
+                    request_id=request.request_id,
+                )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with trio.fail_after(2):
+                ack_payload = await alice_alexandria_network.advertise(
+                    bob.node_id, advertisements=advertisements,
+                )
+
+            nursery.cancel_scope.cancel()
+
+        assert isinstance(ack_payload, AckPayload)
+        assert ack_payload.advertisement_radius == 12345
+        assert ack_payload.acked == (True,) * 16
+
+
+@pytest.mark.trio
+async def test_alexandria_network_advertise_wrong_ack_count(
+    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_network
+):
+    advertisements = (AdvertisementFactory(private_key=alice.private_key),)
+
+    async with bob_alexandria_client.subscribe(AdvertiseMessage) as subscription:
+
+        async def _respond():
+            request = await subscription.receive()
+            await bob_alexandria_client.send_ack(
+                request.sender_node_id,
+                request.sender_endpoint,
+                advertisement_radius=12345,
+                acked=(True, False, True),  # wrong number
+                request_id=request.request_id,
+            )
+
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(_respond)
+
+            with pytest.raises(ValidationError):
+                with trio.fail_after(2):
+                    await alice_alexandria_network.advertise(
+                        bob.node_id, advertisements=advertisements,
+                    )
 
 
 @pytest.mark.trio
@@ -241,6 +304,7 @@ async def test_alexandria_network_advertise_multiple_messages(
                     request.sender_node_id,
                     request.sender_endpoint,
                     advertisement_radius=12345,
+                    acked=(True,) * len(request.message.payload),
                     request_id=request.request_id,
                 )
 
@@ -248,14 +312,11 @@ async def test_alexandria_network_advertise_multiple_messages(
             nursery.start_soon(_respond)
 
             with trio.fail_after(1):
-                ack_payloads = await alice_alexandria_network.advertise(
+                ack_payload = await alice_alexandria_network.advertise(
                     bob.node_id, advertisements=advertisements,
                 )
 
-            assert len(ack_payloads) == num_messages
-            assert all(
-                isinstance(ack_payload, AckPayload) for ack_payload in ack_payloads
-            )
+            assert len(ack_payload.acked) == len(advertisements)
 
 
 @pytest.mark.trio
@@ -367,6 +428,7 @@ async def test_alexandria_network_broadcast_api(
                     request.sender_node_id,
                     request.sender_endpoint,
                     advertisement_radius=network.local_advertisement_radius,
+                    acked=(True,) * len(request.message.payload),
                     request_id=request.request_id,
                 )
 

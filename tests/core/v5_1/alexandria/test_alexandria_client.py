@@ -463,7 +463,11 @@ async def test_alexandria_client_send_advertisements(
 async def test_alexandria_client_send_ack(bob, bob_network, alice_alexandria_client):
     async with bob_network.dispatcher.subscribe(TalkResponseMessage) as subscription:
         await alice_alexandria_client.send_ack(
-            bob.node_id, bob.endpoint, advertisement_radius=12345, request_id=b"\x01",
+            bob.node_id,
+            bob.endpoint,
+            advertisement_radius=12345,
+            acked=(True,),
+            request_id=b"\x01",
         )
         with trio.fail_after(1):
             talk_response = await subscription.receive()
@@ -473,7 +477,7 @@ async def test_alexandria_client_send_ack(bob, bob_network, alice_alexandria_cli
 
 
 @pytest.mark.trio
-async def test_alexandria_client_advertise_single_message(
+async def test_alexandria_client_advertise(
     alice, bob, bob_network, bob_alexandria_client, alice_alexandria_client
 ):
     advertisements = (AdvertisementFactory(private_key=alice.private_key),)
@@ -486,6 +490,7 @@ async def test_alexandria_client_advertise_single_message(
                 request.sender_node_id,
                 request.sender_endpoint,
                 advertisement_radius=12345,
+                acked=(True,),
                 request_id=request.request_id,
             )
 
@@ -493,51 +498,25 @@ async def test_alexandria_client_advertise_single_message(
             nursery.start_soon(_respond)
 
             with trio.fail_after(1):
-                ack_messages = await alice_alexandria_client.advertise(
+                ack_message = await alice_alexandria_client.advertise(
                     bob.node_id, bob.endpoint, advertisements=advertisements,
                 )
-                assert len(ack_messages) == 1
-                ack_message = ack_messages[0]
-
                 assert isinstance(ack_message, AckMessage)
                 assert ack_message.payload.advertisement_radius == 12345
 
 
 @pytest.mark.trio
-async def test_alexandria_client_advertise_muliple_messages(
-    alice, bob, bob_network, bob_alexandria_client, alice_alexandria_client
+async def test_alexandria_client_advertise_too_many(
+    alice, bob, alice_alexandria_client, bob_alexandria_client,
 ):
     advertisements = tuple(
-        AdvertisementFactory(private_key=alice.private_key) for _ in range(10)
-    )
-    expected_message_count = len(
-        partition_advertisements(advertisements, max_payload_size=MAX_PAYLOAD_SIZE,)
+        AdvertisementFactory(private_key=alice.private_key) for _ in range(32)
     )
 
-    async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
-
-        async def _respond():
-            for _ in range(expected_message_count):
-                request = await subscription.receive()
-                await bob_alexandria_client.send_ack(
-                    request.sender_node_id,
-                    request.sender_endpoint,
-                    advertisement_radius=12345,
-                    request_id=request.request_id,
-                )
-
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(_respond)
-
-            with trio.fail_after(1):
-                ack_messages = await alice_alexandria_client.advertise(
-                    bob.node_id, bob.endpoint, advertisements=advertisements,
-                )
-                assert len(ack_messages) == expected_message_count
-                ack_message = ack_messages[0]
-
-                assert isinstance(ack_message, AckMessage)
-                assert ack_message.payload.advertisement_radius == 12345
+    with pytest.raises(Exception, match="Payload too large"):
+        await alice_alexandria_client.advertise(
+            bob.node_id, bob.endpoint, advertisements=advertisements,
+        )
 
 
 @pytest.mark.trio
@@ -626,7 +605,8 @@ async def test_alexandria_client_locate_multi_response(
     advertisements = tuple(
         AdvertisementFactory(private_key=alice.private_key) for i in range(32)
     )
-    num_responses = len(partition_advertisements(advertisements, MAX_PAYLOAD_SIZE))
+    batches = partition_advertisements(advertisements, MAX_PAYLOAD_SIZE)
+    num_responses = len(batches)
     assert num_responses > 1
 
     async with bob_alexandria_client.subscribe(LocateMessage) as subscription:

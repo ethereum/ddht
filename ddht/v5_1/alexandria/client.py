@@ -104,6 +104,12 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         request_id: Optional[bytes] = None,
     ) -> bytes:
         data_payload = message.to_wire_bytes()
+        if len(data_payload) > MAX_PAYLOAD_SIZE:
+            raise Exception(
+                "Payload too large:  payload=%d  max_size=%d",
+                len(data_payload),
+                MAX_PAYLOAD_SIZE,
+            )
         request_id = await self.network.client.send_talk_request(
             node_id,
             endpoint,
@@ -124,6 +130,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         if message.type != AlexandriaMessageType.RESPONSE:
             raise TypeError("%s is not of type RESPONSE", message)
         data_payload = message.to_wire_bytes()
+        if len(data_payload) > MAX_PAYLOAD_SIZE:
+            raise Exception(
+                f"Payload too large:  payload={len(data_payload)}  max_size={MAX_PAYLOAD_SIZE}"
+            )
         await self.network.client.send_talk_response(
             node_id, endpoint, payload=data_payload, request_id=request_id,
         )
@@ -165,6 +175,12 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 node_id
             )
         request_data = request.to_wire_bytes()
+        if len(request_data) > MAX_PAYLOAD_SIZE:
+            raise Exception(
+                "Payload too large:  payload=%d  max_size=%d",
+                len(request_data),
+                MAX_PAYLOAD_SIZE,
+            )
         with self.request_tracker.reserve_request_id(node_id, request_id):
             response_data = await self.network.talk(
                 node_id,
@@ -394,9 +410,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         endpoint: Endpoint,
         *,
         advertisement_radius: int,
+        acked: Tuple[bool, ...],
         request_id: bytes,
     ) -> None:
-        message = AckMessage(AckPayload(advertisement_radius))
+        message = AckMessage(AckPayload(advertisement_radius, acked))
         return await self._send_response(
             node_id, endpoint, message, request_id=request_id
         )
@@ -422,8 +439,10 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         advertisements: Sequence[Advertisement],
         request_id: bytes,
     ) -> int:
+        # Here we use a slightly smaller MAX_PAYLOAD_SIZE to account for the
+        # other fields in the message.
         advertisement_batches = partition_advertisements(
-            advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
+            advertisements, max_payload_size=MAX_PAYLOAD_SIZE - 8,
         )
         num_batches = len(advertisement_batches)
         for batch in advertisement_batches:
@@ -522,19 +541,11 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         endpoint: Endpoint,
         *,
         advertisements: Collection[Advertisement],
-    ) -> Tuple[AckMessage, ...]:
+    ) -> AckMessage:
         if not advertisements:
             raise Exception("Must send at least one advertisement")
-        advertisement_batches = partition_advertisements(
-            advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
-        )
-        messages = tuple(AdvertiseMessage(batch) for batch in advertisement_batches)
-        return tuple(
-            [
-                await self._request(node_id, endpoint, message, AckMessage)
-                for message in messages
-            ]
-        )
+        message = AdvertiseMessage(tuple(advertisements))
+        return await self._request(node_id, endpoint, message, AckMessage)
 
     async def locate(
         self,

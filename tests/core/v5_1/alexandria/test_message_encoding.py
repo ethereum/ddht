@@ -92,7 +92,7 @@ def test_advertisement_message_encoding_round_trip(advertisements):
 
 @given(advertisement_radius=st.integers(min_value=0, max_value=2 ** 256 - 1),)
 def test_ack_message_encoding_round_trip(advertisement_radius):
-    payload = AckPayload(advertisement_radius)
+    payload = AckPayload(advertisement_radius, (True, False))
     message = AckMessage(payload)
     encoded = message.to_wire_bytes()
     result = decode_message(encoded)

@@ -42,7 +42,7 @@ AdvertisementSedes = Container(
     field_sedes=(byte_list, bytes32, uint40, uint8, uint256, uint256)
 )
 AdvertiseSedes = List(AdvertisementSedes, max_length=32)
-AckSedes = Container(field_sedes=(uint256,))
+AckSedes = Container(field_sedes=(uint256, List(boolean, max_length=32)))
 
 LocateSedes = Container(field_sedes=(content_key_sedes,))
 LocationsSedes = Container(field_sedes=(uint8, List(AdvertisementSedes, max_length=32)))

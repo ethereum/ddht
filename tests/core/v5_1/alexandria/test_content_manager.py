@@ -87,6 +87,7 @@ async def test_content_manager_enumerates_and_broadcasts_content(
                     request.sender_node_id,
                     request.sender_endpoint,
                     advertisement_radius=2 ** 256 - 1,
+                    acked=tuple(True for _ in request.message.payload),
                     request_id=request.request_id,
                 )
 

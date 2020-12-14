@@ -120,6 +120,7 @@ async def test_radius_tracker_tracks_via_ack(
                     request.sender_node_id,
                     request.sender_endpoint,
                     advertisement_radius=1234,
+                    acked=(True,),
                     request_id=request.request_id,
                 )
                 did_respond.set()

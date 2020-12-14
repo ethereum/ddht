@@ -382,7 +382,9 @@ async def test_advertisement_manager_does_not_ack_if_advertisements_already_know
     with pytest.raises(trio.TooSlowError):
         with trio.fail_after(10):
             async with bob_alexandria_network.advertisement_manager.new_advertisement.subscribe_and_wait():  # noqa: E501
-                with pytest.raises(trio.TooSlowError):
-                    await alice_alexandria_client.advertise(
-                        bob.node_id, bob.endpoint, advertisements=(advertisement,),
-                    )
+                ack_payload = await alice_alexandria_client.advertise(
+                    bob.node_id, bob.endpoint, advertisements=(advertisement,),
+                )
+
+    assert len(ack_payload.acked) == 1
+    assert ack_payload.acked[0] is False

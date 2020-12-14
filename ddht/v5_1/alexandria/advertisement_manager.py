@@ -248,19 +248,22 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
             return
 
         # We Ack
-        message_has_interesting_ads = all(
+        acked = tuple(
             self.check_interest(advertisement)
             for advertisement in request.message.payload
         )
-        if message_has_interesting_ads:
-            await self._network.client.send_ack(
-                request.sender_node_id,
-                request.sender_endpoint,
-                advertisement_radius=self._network.local_advertisement_radius,
-                request_id=request.request_id,
-            )
+        await self._network.client.send_ack(
+            request.sender_node_id,
+            request.sender_endpoint,
+            advertisement_radius=self._network.local_advertisement_radius,
+            acked=acked,
+            request_id=request.request_id,
+        )
 
-        for advertisement in request.message.payload:
+        for advertisement, is_interesting in zip(request.message.payload, acked):
+            if not is_interesting:
+                continue
+
             # Log the advertisements on the way in so that we don't try to
             # rebroadcast back to this node.
             self._network.broadcast_log.log(request.sender_node_id, advertisement)

@@ -34,9 +34,10 @@ from ddht.v5_1.alexandria.abc import (
 )
 from ddht.v5_1.alexandria.advertisement_manager import AdvertisementManager
 from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
-from ddht.v5_1.alexandria.advertisements import Advertisement
+from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
 from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 from ddht.v5_1.alexandria.client import AlexandriaClient
+from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.content import (
     compute_content_distance,
     content_key_to_content_id,
@@ -382,15 +383,36 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         *,
         advertisements: Collection[Advertisement],
         endpoint: Optional[Endpoint] = None,
-    ) -> Tuple[AckPayload, ...]:
+    ) -> AckPayload:
         if not all(ad.is_valid for ad in advertisements):
             raise Exception("Cannot send invalid advertisements")
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
-        responses = await self.client.advertise(
-            node_id, advertisements=advertisements, endpoint=endpoint,
+
+        advertisement_batches = partition_advertisements(
+            advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
         )
-        return tuple(response.payload for response in responses)
+        responses = tuple(
+            [
+                await self.client.advertise(node_id, endpoint, advertisements=batch)
+                for batch in advertisement_batches
+            ]
+        )
+
+        for batch, response in zip(advertisement_batches, responses):
+            if len(batch) != len(response.payload.acked):
+                raise ValidationError(
+                    f"Invalid response: acked={len(response.payload.acked)}  "
+                    f"expected={len(batch)}"
+                )
+
+        advertisement_radius = min(
+            response.payload.advertisement_radius for response in responses
+        )
+        acked = tuple(
+            was_acked for response in responses for was_acked in response.payload.acked
+        )
+        return AckPayload(advertisement_radius, acked)
 
     async def locate(
         self,
@@ -603,7 +625,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
                 # attempt to send the advertisement to the node.
                 try:
-                    await self.advertise(node_id, advertisements=(advertisement,))
+                    ack_payload = await self.advertise(
+                        node_id, advertisements=(advertisement,)
+                    )
                 except trio.TooSlowError:
                     self.logger.debug(
                         "Broadcast timeout: node_id=%s  advertisement=%s",
@@ -619,14 +643,15 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     )
                     return
                 else:
-                    self.logger.debug(
-                        "Broadcast successful: node_id=%s  advertisement=%s",
-                        node_id.hex(),
-                        advertisement,
-                    )
-                    # log the broadcast
+                    if all(ack_payload.acked):
+                        self.logger.debug(
+                            "Broadcast successful: node_id=%s  advertisement=%s",
+                            node_id.hex(),
+                            advertisement,
+                        )
+                        # log the broadcast
+                        acked_nodes.add(node_id)
                     self.broadcast_log.log(node_id, advertisement)
-                    acked_nodes.add(node_id)
                 finally:
                     async with condition:
                         condition.notify_all()
