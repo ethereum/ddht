@@ -1,7 +1,6 @@
 from contextlib import AsyncExitStack
 
 from eth_enr.tools.factories import ENRFactory
-from eth_utils import ValidationError
 import pytest
 import trio
 
@@ -170,7 +169,7 @@ async def test_alexandria_network_advertise_invalid_signature(
     )
     assert not advertisement.is_valid
 
-    with pytest.raises(ValidationError, match="invalid"):
+    with pytest.raises(Exception, match="invalid"):
         await alice_alexandria_network.advertise(
             bob.node_id, advertisements=(advertisement,),
         )
