@@ -324,6 +324,7 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Endpoint,
         *,
         advertisement_radius: int,
+        acked: Tuple[bool, ...],
         request_id: bytes,
     ) -> None:
         ...
@@ -395,7 +396,7 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Endpoint,
         *,
         advertisements: Collection[Advertisement],
-    ) -> Tuple[AckMessage, ...]:
+    ) -> AckMessage:
         ...
 
     @abstractmethod
@@ -564,7 +565,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         *,
         advertisements: Collection[Advertisement],
         endpoint: Optional[Endpoint] = None,
-    ) -> Tuple[AckPayload, ...]:
+    ) -> AckPayload:
         ...
 
     @abstractmethod

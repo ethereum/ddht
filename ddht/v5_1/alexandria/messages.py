@@ -210,6 +210,16 @@ class AckMessage(AlexandriaMessage[AckPayload]):
 
     payload: AckPayload
 
+    @classmethod
+    def from_payload_args(
+        cls: Type[TAlexandriaMessage], payload_args: Any
+    ) -> TAlexandriaMessage:
+        # py-ssz uses an internal type for decoded `ssz.sedes.List` types that
+        # we don't need or want so we force it to a normal tuple type here.
+        advertisement_radius, raw_acked = payload_args
+        payload = cls.payload_type(advertisement_radius, tuple(raw_acked))
+        return cls(payload)
+
 
 @register
 class LocateMessage(AlexandriaMessage[LocatePayload]):

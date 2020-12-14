@@ -48,7 +48,7 @@ async def test_resource_queue_fuzzy():
         for _ in range(10):
             nursery.start_soon(worker, seen_resources)
 
-        await _yield(1, 200)
+        await _yield(1, 500)
 
         assert seen_resources == queue.resources
 
@@ -63,14 +63,14 @@ async def test_resource_queue_fuzzy():
         assert "e" in queue
         assert "f" in queue
 
-        await _yield(1, 200)
+        await _yield(1, 500)
 
         seen_resources_after_add = set()
 
         for _ in range(10):
             nursery.start_soon(worker, seen_resources_after_add)
 
-        await _yield(1, 200)
+        await _yield(1, 500)
 
         assert seen_resources_after_add == queue.resources
 

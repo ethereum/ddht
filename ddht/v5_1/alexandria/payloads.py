@@ -53,6 +53,7 @@ AdvertisePayload = Tuple[Advertisement, ...]
 
 class AckPayload(NamedTuple):
     advertisement_radius: int
+    acked: Tuple[bool, ...]
 
 
 class LocatePayload(NamedTuple):
