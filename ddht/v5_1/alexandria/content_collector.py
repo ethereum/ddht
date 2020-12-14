@@ -55,8 +55,9 @@ class ContentCollector(Service, ContentCollectorAPI):
 
             if scope.cancelled_caught:
                 self.logger.debug(
-                    f"Unable to retrieve advertised content: "
-                    f"content_key={advertisement.content_key.hex()}"
+                    "Unable to retrieve advertised content: node_id=%s  content_key=%s",
+                    advertisement.node_id.hex(),
+                    advertisement.content_key.hex(),
                 )
 
     async def _monitor_new_advertisements(self) -> None:

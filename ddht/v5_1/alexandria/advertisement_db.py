@@ -276,6 +276,35 @@ def get_advertisement_count(conn: sqlite3.Connection) -> int:
     return row_count  # type: ignore
 
 
+EXPIRED_ADVERTISEMENT_QUERY = """SELECT
+    advertisement.content_key AS advertisement_content_key,
+    advertisement.hash_tree_root AS advertisement_hash_tree_root,
+    advertisement.signature AS advertisement_signature,
+    advertisement.expires_at AS advertisement_expires_at
+
+    FROM advertisement
+    WHERE advertisement.expires_at <= ?
+"""
+
+
+def get_expired_advertisements(
+    conn: sqlite3.Connection, when: datetime.datetime
+) -> Iterable[Advertisement]:
+    for row in conn.execute(EXPIRED_ADVERTISEMENT_QUERY, (when,)):
+        content_key, hash_tree_root, signature_bytes, raw_expires_at = row
+
+        expires_at = datetime.datetime.strptime(raw_expires_at, DB_DATETIME_FORMAT)
+        signature = keys.Signature(signature_bytes)
+        yield Advertisement(
+            content_key,
+            hash_tree_root,
+            expires_at,
+            signature.v,
+            signature.r,
+            signature.s,
+        )
+
+
 class AdvertisementDatabase(AdvertisementDatabaseAPI):
     def __init__(self, conn: sqlite3.Connection) -> None:
         create_tables(conn)
@@ -326,5 +355,5 @@ class AdvertisementDatabase(AdvertisementDatabaseAPI):
         return get_advertisement_count(self._conn)
 
     def expired(self) -> Iterable[Advertisement]:
-        # TODO
-        ...
+        when = datetime.datetime.utcnow().replace(microsecond=0)
+        yield from get_expired_advertisements(self._conn, when)

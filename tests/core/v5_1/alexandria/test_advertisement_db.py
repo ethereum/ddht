@@ -224,3 +224,33 @@ def test_advertisement_db_count_api(advertisement_db):
     advertisement_db.remove(ad_a)
 
     assert advertisement_db.count() == 3
+
+
+def test_advertisement_db_expired_api(advertisement_db):
+    assert advertisement_db.count() == 0
+
+    ad_a = AdvertisementFactory()
+    advertisement_db.add(ad_a)
+
+    ad_b = AdvertisementFactory.expired()
+    advertisement_db.add(ad_b)
+
+    ad_c = AdvertisementFactory()
+    advertisement_db.add(ad_c)
+
+    ad_d = AdvertisementFactory.expired()
+    advertisement_db.add(ad_d)
+
+    assert advertisement_db.count() == 4
+
+    expired_ads = tuple(advertisement_db.expired())
+    assert len(expired_ads) == 2
+    assert ad_b in expired_ads
+    assert ad_d in expired_ads
+
+    for ad in expired_ads:
+        advertisement_db.remove(ad)
+
+    assert advertisement_db.count() == 2
+
+    assert not tuple(advertisement_db.expired())
