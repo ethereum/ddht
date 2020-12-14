@@ -4,6 +4,7 @@ from typing import Any, Dict, Generic, Tuple, Type, TypeVar
 from eth_typing import Hash32
 import ssz
 from ssz import BaseSedes
+from ssz.exceptions import DeserializationError
 
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
@@ -271,5 +272,9 @@ def decode_message(data: bytes) -> AlexandriaMessage[Any]:
     except KeyError:
         raise DecodingError(f"Unknown message type: id={message_id}")
 
-    payload_args = ssz.decode(data[1:], sedes=message_class.sedes)
+    try:
+        payload_args = ssz.decode(data[1:], sedes=message_class.sedes)
+    except DeserializationError as err:
+        raise DecodingError(str(err)) from err
+
     return message_class.from_payload_args(payload_args)

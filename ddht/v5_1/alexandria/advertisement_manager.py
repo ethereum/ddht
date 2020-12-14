@@ -3,6 +3,7 @@ import secrets
 
 from async_service import Service
 from eth_utils import ValidationError
+from eth_utils.toolz import take
 import ssz
 from ssz.constants import CHUNK_SIZE
 import trio
@@ -33,13 +34,29 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
 
         self.new_advertisement = Event("new-advertisement")
 
+    async def ready(self) -> None:
+        await self._ready.wait()
+
     async def run(self) -> None:
+        self.manager.run_daemon_task(self._periodically_purge_expired)
         self.manager.run_daemon_task(self._handle_advertisement_requests)
 
         await self.manager.wait_finished()
 
-    async def ready(self) -> None:
-        await self._ready.wait()
+    async def _periodically_purge_expired(self) -> None:
+        while True:
+            await trio.lowlevel.checkpoint()
+
+            # Purge in *small* chunks to avoid blocking too long
+            to_purge = tuple(take(64, self._advertisement_db.expired()))
+            if not to_purge:
+                await trio.sleep(30)
+                continue
+
+            self.logger.debug("Purging: count=%d", len(to_purge))
+
+            for advertisement in to_purge:
+                self._advertisement_db.remove(advertisement)
 
     async def _handle_advertisement_requests(self) -> None:
         async with trio.open_nursery() as nursery:

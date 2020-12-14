@@ -92,7 +92,7 @@ class ContentManager(Service, ContentManagerAPI):
                 elapsed = trio.current_time() - start_at
                 content_keys = tuple(
                     take(
-                        self._concurrency,
+                        self._concurrency * 2,
                         self.content_storage.enumerate_keys(start_key=last_key),
                     )
                 )
