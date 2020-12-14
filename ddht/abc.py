@@ -320,9 +320,7 @@ class ResourceQueueAPI(Sized, Container[TResource]):
     resources: Set[TResource]
 
     @abstractmethod
-    def __init__(
-        self, resources: Collection[TResource], max_resource_count: int = None,
-    ) -> None:
+    def __init__(self, resources: Collection[TResource],) -> None:
         ...
 
     @abstractmethod
@@ -330,7 +328,7 @@ class ResourceQueueAPI(Sized, Container[TResource]):
         ...
 
     @abstractmethod
-    def remove(self, resource: TResource) -> None:
+    async def remove(self, resource: TResource) -> None:
         ...
 
     def reserve(self) -> AsyncContextManager[TResource]:
