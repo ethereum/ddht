@@ -1,3 +1,4 @@
+import itertools
 import logging
 import secrets
 
@@ -38,13 +39,46 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
         await self._ready.wait()
 
     async def run(self) -> None:
+        self.manager.run_daemon_task(self._enforce_max_advertisement_limit)
         self.manager.run_daemon_task(self._periodically_purge_expired)
         self.manager.run_daemon_task(self._handle_advertisement_requests)
 
         await self.manager.wait_finished()
 
+    async def _enforce_max_advertisement_limit(self) -> None:
+        while self.manager.is_running:
+            while self.manager.is_running:
+                await trio.lowlevel.checkpoint()
+                total_advertisements = self._advertisement_db.count()
+                num_to_purge = max(
+                    0, total_advertisements - self._network.max_advertisement_count
+                )
+
+                if not num_to_purge:
+                    break
+
+                to_purge = tuple(
+                    take(
+                        # Purge at most 64 at a time
+                        min(64, num_to_purge),
+                        itertools.filterfalse(
+                            lambda ad: ad.node_id == self._network.local_node_id,
+                            self._advertisement_db.furthest(
+                                self._network.local_node_id
+                            ),
+                        ),
+                    )
+                )
+
+                self.logger.debug("Purging ads outside radius: count=%d", len(to_purge))
+
+                for advertisement in to_purge:
+                    self._advertisement_db.remove(advertisement)
+
+            await trio.sleep(30)
+
     async def _periodically_purge_expired(self) -> None:
-        while True:
+        while self.manager.is_running:
             await trio.lowlevel.checkpoint()
 
             # Purge in *small* chunks to avoid blocking too long
@@ -53,7 +87,7 @@ class AdvertisementManager(Service, AdvertisementManagerAPI):
                 await trio.sleep(30)
                 continue
 
-            self.logger.debug("Purging: count=%d", len(to_purge))
+            self.logger.debug("Purging expired ads: count=%d", len(to_purge))
 
             for advertisement in to_purge:
                 self._advertisement_db.remove(advertisement)
