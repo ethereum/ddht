@@ -37,7 +37,11 @@ from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
 from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
 from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 from ddht.v5_1.alexandria.client import AlexandriaClient
-from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
+from ddht.v5_1.alexandria.constants import (
+    DEFAULT_COMMONS_STORAGE_SIZE,
+    DEFAULT_MAX_ADVERTISEMENTS,
+    MAX_PAYLOAD_SIZE,
+)
 from ddht.v5_1.alexandria.content import (
     compute_content_distance,
     content_key_to_content_id,
@@ -69,7 +73,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         commons_content_storage: ContentStorageAPI,
         pinned_content_storage: ContentStorageAPI,
         advertisement_db: AdvertisementDatabaseAPI,
-        max_advertisement_count: int = 65536,
+        max_advertisement_count: int = DEFAULT_MAX_ADVERTISEMENTS,
+        commons_content_storage_max_size: int = DEFAULT_COMMONS_STORAGE_SIZE,
     ) -> None:
         self.logger = get_extended_debug_logger("ddht.Alexandria")
 
@@ -87,7 +92,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
 
         self.commons_content_storage = commons_content_storage
-        self.commons_content_manager = ContentManager(self, commons_content_storage)
+        self.commons_content_storage_max_size = commons_content_storage_max_size
+        self.commons_content_manager = ContentManager(
+            self,
+            commons_content_storage,
+            max_size=self.commons_content_storage_max_size,
+        )
         self.commons_content_collector = ContentCollector(
             self, self.commons_content_manager
         )
