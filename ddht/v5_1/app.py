@@ -88,6 +88,8 @@ class Application(BaseApplication):
 
         if b"udp" not in enr_manager.enr:
             enr_manager.update((b"udp", port))
+        elif enr_manager.enr[b"udp"] != port:
+            enr_manager.update((b"udp", port))
 
         listen_on_ip_address: AnyIPAddress
         if self._boot_info.listen_on is None:
