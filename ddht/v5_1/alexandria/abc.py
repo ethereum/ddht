@@ -48,6 +48,10 @@ from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 
 class ContentStorageAPI(Sized):
     @abstractmethod
+    def total_size(self) -> int:
+        ...
+
+    @abstractmethod
     def has_content(self, content_key: ContentKey) -> bool:
         ...
 
@@ -83,10 +87,6 @@ class ContentStorageAPI(Sized):
 
     @abstractmethod
     def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
-        ...
-
-    @abstractmethod
-    def total_size(self) -> int:
         ...
 
 
@@ -181,6 +181,16 @@ class AdvertisementDatabaseAPI(ABC):
 
 class ContentManagerAPI(ServiceAPI):
     content_storage: ContentStorageAPI
+
+    @property
+    @abstractmethod
+    def content_radius(self) -> int:
+        ...
+
+    @property
+    @abstractmethod
+    def is_full(self) -> bool:
+        ...
 
     @abstractmethod
     async def process_content(self, content_key: ContentKey, content: bytes) -> None:

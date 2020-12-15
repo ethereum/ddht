@@ -18,7 +18,11 @@ from ddht.v5_1.alexandria.abc import (
     ContentStorageAPI,
 )
 from ddht.v5_1.alexandria.advertisements import Advertisement
-from ddht.v5_1.alexandria.content import content_key_to_content_id
+from ddht.v5_1.alexandria.content import (
+    compute_content_distance,
+    content_key_to_content_id,
+)
+from ddht.v5_1.alexandria.content_storage import ContentNotFound
 from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentKey
 
@@ -37,6 +41,7 @@ class ContentManager(Service, ContentManagerAPI):
         self.content_storage = content_storage
         self._concurrency = concurrency
 
+        # This determines the storage size where the storage is considered "full"
         if max_size is not None and max_size < 1:
             raise ValueError("`max_size` must be a positive integer")
         self._max_size = max_size
@@ -56,16 +61,46 @@ class ContentManager(Service, ContentManagerAPI):
 
         await self.manager.wait_finished()
 
+    @property
+    def is_full(self) -> bool:
+        if self._max_size is None:
+            return True
+        else:
+            return self.content_storage.total_size() > self._max_size
+
+    @property
+    def content_radius(self) -> int:
+        if self.is_full:
+            furthest_key = first(
+                self.content_storage.iter_furthest(self._network.local_node_id)
+            )
+            content_id = content_key_to_content_id(furthest_key)
+            return compute_content_distance(self._network.local_node_id, content_id)
+        else:
+            return 2 ** 256 - 1
+
     async def _enforce_total_size(self) -> None:
         if self._max_size is None:
             raise Exception("Invalid")
 
         while self.manager.is_running:
-            while self.content_storage.total_size() > self._max_size:
+            while self.manager.is_running:
                 await trio.lowlevel.checkpoint()
+                total_size = self.content_storage.total_size()
+
+                if total_size == 0:
+                    break
+
                 furthest_key = first(
                     self.content_storage.iter_furthest(self._network.local_node_id)
                 )
+                # TODO: we can actually read the size from the database so this
+                # should probably be a new
+                # `ContentStorageAPI.get_content_size(...)`.
+                furthest_content = self.content_storage.get_content(furthest_key)
+                if total_size - len(furthest_content) <= self._max_size:
+                    break
+
                 self.logger.debug("Purging: content_key=%s", furthest_key.hex())
                 self.content_storage.delete_content(furthest_key)
 
@@ -76,7 +111,10 @@ class ContentManager(Service, ContentManagerAPI):
     ) -> None:
         while self.manager.is_running:
             content_key = await receive_channel.receive()
-            content = self.content_storage.get_content(content_key)
+            try:
+                content = self.content_storage.get_content(content_key)
+            except ContentNotFound:
+                continue
 
             # TODO: computationally expensive
             hash_tree_root = ssz.get_hash_tree_root(content, sedes=content_sedes)

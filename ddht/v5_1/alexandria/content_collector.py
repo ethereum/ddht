@@ -12,6 +12,7 @@ from ddht.v5_1.alexandria.abc import (
     ContentStorageAPI,
 )
 from ddht.v5_1.alexandria.advertisements import Advertisement
+from ddht.v5_1.alexandria.content import compute_content_distance
 
 
 class ContentCollector(Service, ContentCollectorAPI):
@@ -50,6 +51,15 @@ class ContentCollector(Service, ContentCollectorAPI):
         self, worker_id: int, receive_channel: trio.abc.ReceiveChannel[Advertisement]
     ) -> None:
         async for advertisement in receive_channel:
+            if self.content_storage.has_content(advertisement.content_key):
+                continue
+
+            distance = compute_content_distance(
+                self._network.local_node_id, advertisement.content_id,
+            )
+            if distance > self.content_manager.content_radius:
+                continue
+
             with trio.move_on_after(30) as scope:
                 await self._gather_advertisement_content(advertisement)
 
@@ -71,9 +81,6 @@ class ContentCollector(Service, ContentCollectorAPI):
                     nursery.start_soon(self._worker, worker_id, receive_channel)
 
                 async for advertisement in subscription:
-                    if self.content_storage.has_content(advertisement.content_key):
-                        continue
-
                     await send_channel.send(advertisement)
 
     async def _gather_advertisement_content(self, advertisement: Advertisement) -> None:
