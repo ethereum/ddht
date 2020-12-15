@@ -11,7 +11,12 @@ from hypothesis import strategies as st
 import pytest
 
 from ddht.tools.factories.content import ContentFactory
+from ddht.tools.factories.node_id import NodeIDFactory
 from ddht.v5_1.alexandria.abc import ContentStorageAPI
+from ddht.v5_1.alexandria.content import (
+    compute_content_distance,
+    content_key_to_content_id,
+)
 from ddht.v5_1.alexandria.content_storage import (
     BatchDecommissioned,
     ContentAlreadyExists,
@@ -68,6 +73,38 @@ def test_content_storage_sized(base_storage):
     base_storage.delete_content(b"key-0")
 
     assert len(base_storage) == 1
+
+
+def test_content_storage_closest_and_furthest_iteration(base_storage):
+    content_keys = tuple(b"key-" + bytes([i]) for i in range(32))
+    for idx, content_key in enumerate(content_keys):
+        base_storage.set_content(content_key, b"dummy-" + bytes([idx]))
+
+    target = NodeIDFactory()
+
+    expected_closest = tuple(
+        sorted(
+            content_keys,
+            key=lambda content_key: compute_content_distance(
+                target, content_key_to_content_id(content_key)
+            ),
+        )
+    )
+    expected_furthest = tuple(
+        sorted(
+            content_keys,
+            key=lambda content_key: compute_content_distance(
+                target, content_key_to_content_id(content_key)
+            ),
+            reverse=True,
+        )
+    )
+
+    actual_closest = tuple(base_storage.iter_closest(target))
+    actual_furthest = tuple(base_storage.iter_furthest(target))
+
+    assert actual_closest == expected_closest
+    assert actual_furthest == expected_furthest
 
 
 def test_content_storage_read_write_exists_delete(content_storage):

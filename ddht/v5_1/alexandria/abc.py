@@ -77,6 +77,14 @@ class ContentStorageAPI(Sized):
     def atomic(self) -> ContextManager["ContentStorageAPI"]:
         ...
 
+    @abstractmethod
+    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
+        ...
+
+    @abstractmethod
+    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
+        ...
+
 
 class BroadcastLogAPI(ABC):
     @abstractmethod
