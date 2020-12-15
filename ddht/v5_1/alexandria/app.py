@@ -32,6 +32,12 @@ class AlexandriaApplication(BaseApplication):
         xdg_alexandria_root = get_xdg_alexandria_root()
         xdg_alexandria_root.mkdir(parents=True, exist_ok=True)
 
+        max_advertisement_count = self._alexandria_boot_info.max_advertisement_count
+
+        commons_content_storage_max_size = (
+            self._alexandria_boot_info.commons_storage_size
+        )
+
         commons_content_storage: ContentStorageAPI
         commons_storage_display: str
 
@@ -97,6 +103,8 @@ class AlexandriaApplication(BaseApplication):
             commons_content_storage=commons_content_storage,
             pinned_content_storage=pinned_content_storage,
             advertisement_db=advertisement_db,
+            commons_content_storage_max_size=commons_content_storage_max_size,
+            max_advertisement_count=max_advertisement_count,
         )
 
         self.manager.run_daemon_child_service(alexandria_network)
@@ -104,19 +112,23 @@ class AlexandriaApplication(BaseApplication):
         self.logger.info("Starting Alexandria...")
         self.logger.info("Root Directory         : %s", xdg_alexandria_root)
         self.logger.info(
-            "ContentStorage[Commons]: storage=%s  items=%d",
+            "ContentStorage[Commons]: storage=%s  items=%d  size=%d  max_size=%d",
             commons_storage_display,
             len(commons_content_storage),
+            commons_content_storage.total_size(),
+            commons_content_storage_max_size,
         )
         self.logger.info(
-            "ContentStorage[Pinned] : storage=%s  items=%d",
+            "ContentStorage[Pinned] : storage=%s  items=%d  size=%d",
             pinned_storage_display,
             len(pinned_content_storage),
+            pinned_content_storage.total_size(),
         )
         self.logger.info(
-            "AdvertisementDB        : storage=%s  total=%d",
+            "AdvertisementDB        : storage=%s  total=%d  max=%d",
             advertisement_db_path,
             advertisement_db.count(),
+            max_advertisement_count,
         )
 
         await self.manager.wait_finished()

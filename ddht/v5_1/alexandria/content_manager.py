@@ -31,10 +31,15 @@ class ContentManager(Service, ContentManagerAPI):
         network: AlexandriaNetworkAPI,
         content_storage: ContentStorageAPI,
         concurrency: int = 3,
+        max_size: Optional[int] = None,
     ) -> None:
         self._network = network
         self.content_storage = content_storage
         self._concurrency = concurrency
+
+        if max_size is not None and max_size < 1:
+            raise ValueError("`max_size` must be a positive integer")
+        self._max_size = max_size
 
     @property
     def _advertisement_manager(self) -> AdvertisementManagerAPI:
@@ -45,9 +50,26 @@ class ContentManager(Service, ContentManagerAPI):
         return self._network.advertisement_db
 
     async def run(self) -> None:
+        if self._max_size is not None:
+            self.manager.run_daemon_task(self._enforce_total_size)
         self.manager.run_daemon_task(self._periodically_advertise_content)
 
         await self.manager.wait_finished()
+
+    async def _enforce_total_size(self) -> None:
+        if self._max_size is None:
+            raise Exception("Invalid")
+
+        while self.manager.is_running:
+            while self.content_storage.total_size() > self._max_size:
+                await trio.lowlevel.checkpoint()
+                furthest_key = first(
+                    self.content_storage.iter_furthest(self._network.local_node_id)
+                )
+                self.logger.debug("Purging: content_key=%s", furthest_key.hex())
+                self.content_storage.delete_content(furthest_key)
+
+            await trio.sleep(30)
 
     async def _broadcast_worker(
         self, receive_channel: trio.abc.ReceiveChannel[ContentKey]

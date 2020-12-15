@@ -6,12 +6,21 @@ from typing import Literal, Optional, Sequence, Tuple, TypedDict, Union
 from eth_enr import ENR
 from eth_enr.abc import ENRAPI
 
-from ddht.v5_1.alexandria.constants import DEFAULT_BOOTNODES
+from ddht.v5_1.alexandria.constants import (
+    DEFAULT_BOOTNODES,
+    DEFAULT_COMMONS_STORAGE_SIZE,
+    DEFAULT_MAX_ADVERTISEMENTS,
+)
 
 
 class AlexandriaBootInfoKwargs(TypedDict, total=False):
     bootnodes: Tuple[ENRAPI, ...]
+
+    max_advertisement_count: int
+
+    commons_storage_size: int
     commons_storage: Optional[Union[Literal[":memory:"], pathlib.Path]]
+
     pinned_storage: Optional[Union[Literal[":memory:"], pathlib.Path]]
 
 
@@ -20,6 +29,20 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> AlexandriaBootInf
         bootnodes = tuple(ENR.from_repr(enr_repr) for enr_repr in DEFAULT_BOOTNODES)
     else:
         bootnodes = args.alexandria_bootnodes
+
+    max_advertisement_count: int
+
+    if args.alexandria_max_advertisement_count is None:
+        max_advertisement_count = DEFAULT_MAX_ADVERTISEMENTS
+    else:
+        max_advertisement_count = args.alexandria_max_advertisement_count
+
+    commons_storage_size: int
+
+    if args.alexandria_commons_storage_size is None:
+        commons_storage_size = DEFAULT_COMMONS_STORAGE_SIZE
+    else:
+        commons_storage_size = args.alexandria_commons_storage_size
 
     commons_storage: Optional[Union[Literal[":memory:"], pathlib.Path]]
 
@@ -45,6 +68,8 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> AlexandriaBootInf
 
     return AlexandriaBootInfoKwargs(
         bootnodes=bootnodes,
+        max_advertisement_count=max_advertisement_count,
+        commons_storage_size=commons_storage_size,
         commons_storage=commons_storage,
         pinned_storage=pinned_storage,
     )
@@ -53,7 +78,12 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> AlexandriaBootInf
 @dataclass(frozen=True)
 class AlexandriaBootInfo:
     bootnodes: Tuple[ENRAPI, ...]
+
+    max_advertisement_count: int
+
+    commons_storage_size: int
     commons_storage: Optional[Union[Literal[":memory:"], pathlib.Path]]
+
     pinned_storage: Optional[Union[Literal[":memory:"], pathlib.Path]]
 
     @classmethod

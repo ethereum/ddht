@@ -213,7 +213,27 @@ alexandria_bootnodes_parser_group.add_argument(
 )
 
 #
-# Alexandria[CommonsStorage]
+# Alexandria[max_advertisement_count]
+#
+alexandria_parser.add_argument(
+    "--max-advertisement-count",
+    help=("Maximum number of advertisements to store"),
+    dest="alexandria_max_advertisement_count",
+    type=int,
+)
+
+#
+# Alexandria[CommonsStorage-size]
+#
+alexandria_parser.add_argument(
+    "--commons-storage-size",
+    help=("Total number of bytes to allocate towards 'commons' storage."),
+    dest="alexandria_commons_storage_size",
+    type=int,
+)
+
+#
+# Alexandria[CommonsStorage-dir]
 #
 alexandria_commons_storage_parser_group = (
     alexandria_parser.add_mutually_exclusive_group()
@@ -235,7 +255,7 @@ alexandria_commons_storage_parser_group.add_argument(
 )
 
 #
-# Alexandria[PinnedStorage]
+# Alexandria[PinnedStorage-dir]
 #
 alexandria_pinned_storage_parser_group = (
     alexandria_parser.add_mutually_exclusive_group()

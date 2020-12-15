@@ -30,3 +30,15 @@ MAX_PAYLOAD_SIZE = DISCOVERY_MAX_PACKET_SIZE - 90
 
 # One hour in seconds
 ONE_HOUR = 60 * 60
+
+
+# One Megabyte
+MB = 1024 * 1024
+
+
+# Default max bytes for "commons" storage
+DEFAULT_COMMONS_STORAGE_SIZE = 100 * MB
+
+
+# Default maximum number of advertisements
+DEFAULT_MAX_ADVERTISEMENTS = 65536
