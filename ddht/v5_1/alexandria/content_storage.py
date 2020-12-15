@@ -126,6 +126,9 @@ class _AtomicBatch(ContentStorageAPI):
     def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
         raise NotImplementedError("Proximate iteration not supported")
 
+    def total_size(self) -> int:
+        raise NotImplementedError("`total_size` not support")
+
 
 class MemoryContentStorage(ContentStorageAPI):
     def __init__(self, db: Optional[Dict[ContentKey, bytes]] = None) -> None:
@@ -212,10 +215,14 @@ class MemoryContentStorage(ContentStorageAPI):
             ),
         )
 
+    def total_size(self) -> int:
+        return sum(len(content) for content in self._db.values())
+
 
 STORAGE_CREATE_STATEMENT = """CREATE TABLE storage (
     content_key BLOB NOT NULL PRIMARY KEY,
     short_content_id INTEGER NOT NULL,
+    size INTEGER NOT NULL,
     path TEXT NOT NULL
     CONSTRAINT _path_not_empty CHECK (length(path) > 0)
 )
@@ -243,20 +250,27 @@ STORAGE_INSERT_QUERY = """INSERT INTO storage
     (
         content_key,
         short_content_id,
+        size,
         path
     )
-    VALUES (?, ?, ?)
+    VALUES (?, ?, ?, ?)
 """
 
 
 def insert_content(
-    conn: sqlite3.Connection, content_key: ContentKey, path: pathlib.Path,
+    conn: sqlite3.Connection,
+    content_key: ContentKey,
+    content_size: int,
+    path: pathlib.Path,
 ) -> None:
     content_id = content_key_to_content_id(content_key)
     # The high 64 bits of the content id for doing proximate queries
     short_content_id = int.from_bytes(content_id, "big") >> 193
     with conn:
-        conn.execute(STORAGE_INSERT_QUERY, (content_key, short_content_id, str(path)))
+        conn.execute(
+            STORAGE_INSERT_QUERY,
+            (content_key, short_content_id, content_size, str(path)),
+        )
 
 
 STORAGE_EXISTS_QUERY = """SELECT EXISTS (
@@ -362,6 +376,12 @@ def get_proximate_content_keys(
         yield content_key
 
 
+def get_total_content_size(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT sum(storage.size) FROM storage").fetchone()
+    (total_size,) = row
+    return total_size or 0
+
+
 class FileSystemContentStorage(ContentStorageAPI):
     base_dir: pathlib.Path
 
@@ -421,7 +441,7 @@ class FileSystemContentStorage(ContentStorageAPI):
             with content_path.open("wb") as content_file:
                 content_file.write(content)
 
-            insert_content(self._conn, content_key, content_path_rel)
+            insert_content(self._conn, content_key, len(content), content_path_rel)
         except Exception:
             content_path.unlink(missing_ok=True)
             delete_content(self._conn, content_key)
@@ -460,3 +480,6 @@ class FileSystemContentStorage(ContentStorageAPI):
 
     def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
         yield from get_proximate_content_keys(self._conn, target, reverse=False)
+
+    def total_size(self) -> int:
+        return get_total_content_size(self._conn)
