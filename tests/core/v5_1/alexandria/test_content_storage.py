@@ -75,6 +75,20 @@ def test_content_storage_sized(base_storage):
     assert len(base_storage) == 1
 
 
+def test_content_storage_disk_usage(base_storage):
+    content_keys = tuple(bytes([i]) for i in range(32))
+    content_values = tuple(b"\x00" * 32 for i in range(32))
+    expected = 32 * 32
+
+    assert base_storage.total_size() == 0
+
+    for content_key, content in zip(content_keys, content_values):
+        base_storage.set_content(content_key, content)
+
+    actual_size = base_storage.total_size()
+    assert actual_size == expected
+
+
 def test_content_storage_closest_and_furthest_iteration(base_storage):
     content_keys = tuple(b"key-" + bytes([i]) for i in range(32))
     for idx, content_key in enumerate(content_keys):

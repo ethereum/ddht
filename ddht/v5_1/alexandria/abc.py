@@ -85,6 +85,10 @@ class ContentStorageAPI(Sized):
     def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
         ...
 
+    @abstractmethod
+    def total_size(self) -> int:
+        ...
+
 
 class BroadcastLogAPI(ABC):
     @abstractmethod
