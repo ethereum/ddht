@@ -2,10 +2,15 @@ import bisect
 import contextlib
 import pathlib
 import sqlite3
-from typing import Any, ContextManager, Dict, Iterator, Optional, Set, Tuple
+from typing import Any, ContextManager, Dict, Iterable, Iterator, Optional, Set, Tuple
+
+from eth_typing import NodeID
 
 from ddht.v5_1.alexandria.abc import ContentStorageAPI
-from ddht.v5_1.alexandria.content import content_key_to_content_id
+from ddht.v5_1.alexandria.content import (
+    compute_content_distance,
+    content_key_to_content_id,
+)
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
@@ -115,6 +120,12 @@ class _AtomicBatch(ContentStorageAPI):
             to_write,
         )
 
+    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
+        raise NotImplementedError("Proximate iteration not supported")
+
+    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
+        raise NotImplementedError("Proximate iteration not supported")
+
 
 class MemoryContentStorage(ContentStorageAPI):
     def __init__(self, db: Optional[Dict[ContentKey, bytes]] = None) -> None:
@@ -184,9 +195,27 @@ class MemoryContentStorage(ContentStorageAPI):
         for content_key, content in to_write:
             self.set_content(content_key, content, exists_ok=True)
 
+    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
+        yield from sorted(
+            self._db.keys(),
+            key=lambda content_key: compute_content_distance(
+                target, content_key_to_content_id(content_key)
+            ),
+            reverse=True,
+        )
+
+    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
+        yield from sorted(
+            self._db.keys(),
+            key=lambda content_key: compute_content_distance(
+                target, content_key_to_content_id(content_key)
+            ),
+        )
+
 
 STORAGE_CREATE_STATEMENT = """CREATE TABLE storage (
     content_key BLOB NOT NULL PRIMARY KEY,
+    short_content_id INTEGER NOT NULL,
     path TEXT NOT NULL
     CONSTRAINT _path_not_empty CHECK (length(path) > 0)
 )
@@ -213,17 +242,21 @@ def create_tables(conn: sqlite3.Connection) -> None:
 STORAGE_INSERT_QUERY = """INSERT INTO storage
     (
         content_key,
+        short_content_id,
         path
     )
-    VALUES (?, ?)
+    VALUES (?, ?, ?)
 """
 
 
 def insert_content(
     conn: sqlite3.Connection, content_key: ContentKey, path: pathlib.Path,
 ) -> None:
+    content_id = content_key_to_content_id(content_key)
+    # The high 64 bits of the content id for doing proximate queries
+    short_content_id = int.from_bytes(content_id, "big") >> 193
     with conn:
-        conn.execute(STORAGE_INSERT_QUERY, (content_key, str(path)))
+        conn.execute(STORAGE_INSERT_QUERY, (content_key, short_content_id, str(path)))
 
 
 STORAGE_EXISTS_QUERY = """SELECT EXISTS (
@@ -309,6 +342,24 @@ def get_row_count(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT count(*) FROM storage").fetchone()
     (row_count,) = row
     return row_count  # type: ignore
+
+
+CONTENT_PROXIMATE_QUERY = """SELECT
+    storage.content_key AS storage_content_key
+
+    FROM storage
+    ORDER BY ((?1 | storage.short_content_id) - (?1 & storage.short_content_id)) {order}
+"""
+
+
+def get_proximate_content_keys(
+    conn: sqlite3.Connection, node_id: NodeID, reverse: bool
+) -> Iterable[ContentKey]:
+    short_node_id = int.from_bytes(node_id, "big") >> 193
+    query = CONTENT_PROXIMATE_QUERY.format(order="DESC" if reverse else "")
+    for row in conn.execute(query, (short_node_id,)):
+        (content_key,) = row
+        yield content_key
 
 
 class FileSystemContentStorage(ContentStorageAPI):
@@ -403,3 +454,9 @@ class FileSystemContentStorage(ContentStorageAPI):
             self.delete_content(content_key)
         for content_key, content in to_write:
             self.set_content(content_key, content, exists_ok=True)
+
+    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
+        yield from get_proximate_content_keys(self._conn, target, reverse=True)
+
+    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
+        yield from get_proximate_content_keys(self._conn, target, reverse=False)
