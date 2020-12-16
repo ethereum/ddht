@@ -12,7 +12,6 @@ import trio
 from ddht._utils import every
 from ddht.v5_1.alexandria.abc import (
     AdvertisementDatabaseAPI,
-    AdvertisementManagerAPI,
     AlexandriaNetworkAPI,
     ContentManagerAPI,
     ContentStorageAPI,
@@ -44,18 +43,14 @@ class ContentManager(Service, ContentManagerAPI):
         # This determines the storage size where the storage is considered "full"
         if max_size is not None and max_size < 1:
             raise ValueError("`max_size` must be a positive integer")
-        self._max_size = max_size
+        self.max_size = max_size
 
     @property
-    def _advertisement_manager(self) -> AdvertisementManagerAPI:
-        return self._network.advertisement_manager
-
-    @property
-    def _advertisement_db(self) -> AdvertisementDatabaseAPI:
-        return self._network.advertisement_db
+    def _local_advertisement_db(self) -> AdvertisementDatabaseAPI:
+        return self._network.local_advertisement_db
 
     async def run(self) -> None:
-        if self._max_size is not None:
+        if self.max_size is not None:
             self.manager.run_daemon_task(self._enforce_total_size)
         self.manager.run_daemon_task(self._periodically_advertise_content)
 
@@ -63,10 +58,10 @@ class ContentManager(Service, ContentManagerAPI):
 
     @property
     def is_full(self) -> bool:
-        if self._max_size is None:
+        if self.max_size is None:
             return True
         else:
-            return self.content_storage.total_size() > self._max_size
+            return self.content_storage.total_size() > self.max_size
 
     @property
     def content_radius(self) -> int:
@@ -80,7 +75,7 @@ class ContentManager(Service, ContentManagerAPI):
             return 2 ** 256 - 1
 
     async def _enforce_total_size(self) -> None:
-        if self._max_size is None:
+        if self.max_size is None:
             raise Exception("Invalid")
 
         while self.manager.is_running:
@@ -98,7 +93,7 @@ class ContentManager(Service, ContentManagerAPI):
                 # should probably be a new
                 # `ContentStorageAPI.get_content_size(...)`.
                 furthest_content = self.content_storage.get_content(furthest_key)
-                if total_size - len(furthest_content) <= self._max_size:
+                if total_size - len(furthest_content) <= self.max_size:
                     break
 
                 self.logger.debug("Purging: content_key=%s", furthest_key.hex())
@@ -196,7 +191,7 @@ class ContentManager(Service, ContentManagerAPI):
     ) -> Advertisement:
         try:
             advertisement = first(
-                self._advertisement_db.query(
+                self._local_advertisement_db.query(
                     content_key=content_key,
                     node_id=self._network.local_node_id,
                     hash_tree_root=hash_tree_root,
@@ -208,7 +203,7 @@ class ContentManager(Service, ContentManagerAPI):
                 hash_tree_root=hash_tree_root,
                 private_key=self._network.client.local_private_key,
             )
-            self._advertisement_db.add(advertisement)
+            self._local_advertisement_db.add(advertisement)
 
         return advertisement  # type: ignore
 
@@ -233,7 +228,7 @@ class ContentManager(Service, ContentManagerAPI):
         # TODO: computationally expensive
         hash_tree_root = ssz.get_hash_tree_root(content, sedes=content_sedes)
 
-        known_hash_tree_roots = self._advertisement_db.get_hash_tree_roots_for_content_id(
+        known_hash_tree_roots = self._local_advertisement_db.get_hash_tree_roots_for_content_id(
             content_id,
         )
 

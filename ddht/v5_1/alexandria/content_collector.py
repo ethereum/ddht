@@ -5,7 +5,7 @@ from eth_utils import ValidationError
 import trio
 
 from ddht.v5_1.alexandria.abc import (
-    AdvertisementManagerAPI,
+    AdvertisementCollectorAPI,
     AlexandriaNetworkAPI,
     ContentCollectorAPI,
     ContentManagerAPI,
@@ -36,8 +36,8 @@ class ContentCollector(Service, ContentCollectorAPI):
         return self.content_manager.content_storage
 
     @property
-    def _advertisement_manager(self) -> AdvertisementManagerAPI:
-        return self._network.advertisement_manager
+    def _advertisement_collector(self) -> AdvertisementCollectorAPI:
+        return self._network.advertisement_collector
 
     async def ready(self) -> None:
         await self._ready.wait()
@@ -74,7 +74,7 @@ class ContentCollector(Service, ContentCollectorAPI):
         send_channel, receive_channel = trio.open_memory_channel[Advertisement](
             self._concurrency
         )
-        async with self._advertisement_manager.new_advertisement.subscribe() as subscription:
+        async with self._advertisement_collector.new_advertisement.subscribe() as subscription:
             self._ready.set()
             async with trio.open_nursery() as nursery:
                 for worker_id in range(self._concurrency):

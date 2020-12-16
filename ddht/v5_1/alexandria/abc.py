@@ -181,6 +181,7 @@ class AdvertisementDatabaseAPI(ABC):
 
 class ContentManagerAPI(ServiceAPI):
     content_storage: ContentStorageAPI
+    max_size: Optional[int]
 
     @property
     @abstractmethod
@@ -197,7 +198,7 @@ class ContentManagerAPI(ServiceAPI):
         ...
 
 
-class AdvertisementManagerAPI(ServiceAPI):
+class AdvertisementCollectorAPI(ServiceAPI):
     new_advertisement: EventAPI[Advertisement]
 
     @abstractmethod
@@ -214,6 +215,28 @@ class AdvertisementManagerAPI(ServiceAPI):
 
     @abstractmethod
     async def handle_advertisement(self, advertisement: Advertisement) -> bool:
+        ...
+
+
+class AdvertisementManagerAPI(ServiceAPI):
+    advertisement_db: AdvertisementDatabaseAPI
+    max_advertisement_count: Optional[int]
+
+    @property
+    @abstractmethod
+    def advertisement_radius(self) -> int:
+        ...
+
+    @abstractmethod
+    async def purge_expired_ads(self) -> None:
+        ...
+
+    @abstractmethod
+    async def purge_distant_ads(self) -> None:
+        ...
+
+    @abstractmethod
+    async def ready(self) -> None:
         ...
 
 
@@ -466,9 +489,14 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     radius_tracker: RadiusTrackerAPI
     broadcast_log: BroadcastLogAPI
 
-    advertisement_db: AdvertisementDatabaseAPI
+    local_advertisement_db: AdvertisementDatabaseAPI
+    local_advertisement_manager: AdvertisementManagerAPI
+
+    remote_advertisement_db: AdvertisementDatabaseAPI
+    remote_advertisement_manager: AdvertisementManagerAPI
+
     advertisement_provider: AdvertisementProviderAPI
-    advertisement_manager: AdvertisementManagerAPI
+    advertisement_collector: AdvertisementCollectorAPI
 
     content_validator: ContentValidatorAPI
 

@@ -22,7 +22,7 @@ async def test_content_provider_serves_advertisements(
         advertisement_db.add(advertisement)
 
     advertisement_provider = AdvertisementProvider(
-        bob_alexandria_client, advertisement_db
+        bob_alexandria_client, (advertisement_db,),
     )
     async with background_trio_service(advertisement_provider):
         # this ensures that the subscription is in place.
@@ -42,7 +42,7 @@ async def test_content_provider_serves_unknown_content_key_request(
     advertisement_db = AdvertisementDatabase(sqlite3.connect(":memory:"))
 
     advertisement_provider = AdvertisementProvider(
-        bob_alexandria_client, advertisement_db
+        bob_alexandria_client, (advertisement_db,),
     )
     async with background_trio_service(advertisement_provider):
         # this ensures that the subscription is in place.

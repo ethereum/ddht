@@ -19,19 +19,21 @@ from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
 
-from ddht._utils import every, weighted_choice
+from ddht._utils import every, humanize_bytes, weighted_choice
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
 from ddht.exceptions import MissingEndpointFields
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
+from ddht.v5_1.alexandria._utils import humanize_advertisement_radius
 from ddht.v5_1.alexandria.abc import (
     AdvertisementDatabaseAPI,
     AlexandriaNetworkAPI,
     ContentRetrievalAPI,
     ContentStorageAPI,
 )
+from ddht.v5_1.alexandria.advertisement_collector import AdvertisementCollector
 from ddht.v5_1.alexandria.advertisement_manager import AdvertisementManager
 from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
 from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
@@ -72,7 +74,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         bootnodes: Collection[ENRAPI],
         commons_content_storage: ContentStorageAPI,
         pinned_content_storage: ContentStorageAPI,
-        advertisement_db: AdvertisementDatabaseAPI,
+        local_advertisement_db: AdvertisementDatabaseAPI,
+        remote_advertisement_db: AdvertisementDatabaseAPI,
         max_advertisement_count: int = DEFAULT_MAX_ADVERTISEMENTS,
         commons_content_storage_max_size: int = DEFAULT_COMMONS_STORAGE_SIZE,
     ) -> None:
@@ -111,12 +114,31 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         )
         self.content_validator = ContentValidator(self)
 
-        self.advertisement_db = advertisement_db
-        self.advertisement_provider = AdvertisementProvider(
-            client=self.client, advertisement_db=self.advertisement_db,
+        self.local_advertisement_db = local_advertisement_db
+        self.local_advertisement_manager = AdvertisementManager(
+            network=self,
+            advertisement_db=local_advertisement_db,
+            max_advertisement_count=None,
         )
-        self.advertisement_manager = AdvertisementManager(
-            network=self, advertisement_db=advertisement_db,
+
+        self.remote_advertisement_db = remote_advertisement_db
+        self.remote_advertisement_manager = AdvertisementManager(
+            network=self,
+            advertisement_db=remote_advertisement_db,
+            max_advertisement_count=max_advertisement_count,
+        )
+
+        self.advertisement_collector = AdvertisementCollector(
+            network=self,
+            local_advertisement_manager=self.local_advertisement_manager,
+            remote_advertisement_manager=self.remote_advertisement_manager,
+        )
+        self.advertisement_provider = AdvertisementProvider(
+            client=self.client,
+            advertisement_dbs=(
+                self.local_advertisement_db,
+                self.remote_advertisement_db,
+            ),
         )
 
         self.radius_tracker = RadiusTracker(self)
@@ -131,8 +153,10 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         await self._routing_table_ready.wait()
 
     async def ready(self) -> None:
-        await self.advertisement_manager.ready()
+        await self.local_advertisement_manager.ready()
+        await self.remote_advertisement_manager.ready()
         await self.advertisement_provider.ready()
+        await self.advertisement_collector.ready()
         await self.content_provider.ready()
         await self.commons_content_collector.ready()
         await self.radius_tracker.ready()
@@ -168,7 +192,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         # Child services
         self.manager.run_daemon_child_service(self.client)
-        self.manager.run_daemon_child_service(self.advertisement_manager)
+        self.manager.run_daemon_child_service(self.local_advertisement_manager)
+        self.manager.run_daemon_child_service(self.remote_advertisement_manager)
+        self.manager.run_daemon_child_service(self.advertisement_collector)
         self.manager.run_daemon_child_service(self.advertisement_provider)
         self.manager.run_daemon_child_service(self.content_provider)
         self.manager.run_daemon_child_service(self.commons_content_manager)
@@ -183,17 +209,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     #
     @property
     def local_advertisement_radius(self) -> int:
-        advertisement_count = self.advertisement_db.count()
-
-        if advertisement_count < self.max_advertisement_count:
-            return 2 ** 256 - 1
-
-        furthest_advertisement = first(
-            self.advertisement_db.furthest(self.local_node_id)
-        )
-        return compute_content_distance(
-            self.local_node_id, furthest_advertisement.content_id,
-        )
+        return self.remote_advertisement_manager.advertisement_radius
 
     #
     # High Level API
@@ -702,13 +718,39 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # Long Running Processes
     #
     async def _periodically_report_status(self) -> None:
+        if self.remote_advertisement_manager.max_advertisement_count is None:
+            # this fixes a type hinting error below since this value is Optional[int]
+            raise Exception("Invalid")
+        if self.commons_content_manager.max_size is None:
+            # this fixes a type hinting error below since this value is Optional[int]
+            raise Exception("Invalid")
+
         async for _ in every(5, initial_delay=5):
+            num_remote_ads = self.remote_advertisement_db.count()
+            max_remote_ads = self.remote_advertisement_manager.max_advertisement_count
+            remote_ad_capacity = 100 * num_remote_ads / max_remote_ads
+
+            commons_size = self.commons_content_storage.total_size()
+            commons_max_size = self.commons_content_manager.max_size
+            commons_capacity = 100 * commons_size / commons_max_size
+
+            radius_display = humanize_advertisement_radius(
+                self.remote_advertisement_manager.advertisement_radius
+            )
             self.logger.info(
-                "status: commons=%d  pinned=%d  advertisements=%d  radius=%d",
+                "status: commons=%d (%s/%s %.1f%%)  pinned=%d (%s)  local-ads=%d  "
+                "remote-ads=%d/%d (%.1f%%)  radius=%.2f",
                 len(self.commons_content_storage),
+                humanize_bytes(commons_size),
+                humanize_bytes(commons_max_size),
+                commons_capacity,
                 len(self.pinned_content_storage),
-                self.advertisement_db.count(),
-                self.local_advertisement_radius.bit_length(),
+                humanize_bytes(self.pinned_content_storage.total_size()),
+                self.local_advertisement_db.count(),
+                num_remote_ads,
+                max_remote_ads,
+                remote_ad_capacity,
+                radius_display,
             )
 
     async def _periodically_report_routing_table(self) -> None:

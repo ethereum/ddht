@@ -6,7 +6,7 @@ import sqlite3
 import tempfile
 from typing import Optional
 
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
 
@@ -413,6 +413,7 @@ content_key_st = st.binary(min_size=4, max_size=8)
 content_st = st.binary(min_size=8, max_size=8)
 
 
+@settings(deadline=500)
 @given(data=st.data(),)
 def test_content_storage_atomic_batch_fuzzy(data):
     """

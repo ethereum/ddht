@@ -2,6 +2,7 @@ import argparse
 import pathlib
 import sqlite3
 
+from ddht._utils import humanize_bytes
 from ddht.app import BaseApplication
 from ddht.boot_info import BootInfo
 from ddht.v5_1.alexandria.abc import AdvertisementDatabaseAPI, ContentStorageAPI
@@ -92,9 +93,18 @@ class AlexandriaApplication(BaseApplication):
                 f"pinned_storage={self._alexandria_boot_info.pinned_storage}"
             )
 
-        advertisement_db_path = xdg_alexandria_root / "advertisements.sqlite3"
-        advertisement_db: AdvertisementDatabaseAPI = AdvertisementDatabase(
-            sqlite3.connect(str(advertisement_db_path)),
+        local_advertisement_db_path = (
+            xdg_alexandria_root / "advertisements.local.sqlite3"
+        )
+        local_advertisement_db: AdvertisementDatabaseAPI = AdvertisementDatabase(
+            sqlite3.connect(str(local_advertisement_db_path)),
+        )
+
+        remote_advertisement_db_path = (
+            xdg_alexandria_root / "advertisements.remote.sqlite3"
+        )
+        remote_advertisement_db: AdvertisementDatabaseAPI = AdvertisementDatabase(
+            sqlite3.connect(str(remote_advertisement_db_path)),
         )
 
         alexandria_network = AlexandriaNetwork(
@@ -102,7 +112,8 @@ class AlexandriaApplication(BaseApplication):
             bootnodes=self._alexandria_boot_info.bootnodes,
             commons_content_storage=commons_content_storage,
             pinned_content_storage=pinned_content_storage,
-            advertisement_db=advertisement_db,
+            local_advertisement_db=local_advertisement_db,
+            remote_advertisement_db=remote_advertisement_db,
             commons_content_storage_max_size=commons_content_storage_max_size,
             max_advertisement_count=max_advertisement_count,
         )
@@ -112,22 +123,27 @@ class AlexandriaApplication(BaseApplication):
         self.logger.info("Starting Alexandria...")
         self.logger.info("Root Directory         : %s", xdg_alexandria_root)
         self.logger.info(
-            "ContentStorage[Commons]: storage=%s  items=%d  size=%d  max_size=%d",
+            "ContentStorage[Commons]: storage=%s  items=%d  size=%s  max_size=%s",
             commons_storage_display,
             len(commons_content_storage),
-            commons_content_storage.total_size(),
-            commons_content_storage_max_size,
+            humanize_bytes(commons_content_storage.total_size()),
+            humanize_bytes(commons_content_storage_max_size),
         )
         self.logger.info(
-            "ContentStorage[Pinned] : storage=%s  items=%d  size=%d",
+            "ContentStorage[Pinned] : storage=%s  items=%d  size=%s",
             pinned_storage_display,
             len(pinned_content_storage),
-            pinned_content_storage.total_size(),
+            humanize_bytes(pinned_content_storage.total_size()),
         )
         self.logger.info(
-            "AdvertisementDB        : storage=%s  total=%d  max=%d",
-            advertisement_db_path,
-            advertisement_db.count(),
+            "AdvertisementDB[local] : storage=%s  total=%d",
+            local_advertisement_db_path,
+            local_advertisement_db.count(),
+        )
+        self.logger.info(
+            "AdvertisementDB[remote]: storage=%s  total=%d  max=%d",
+            remote_advertisement_db_path,
+            remote_advertisement_db.count(),
             max_advertisement_count,
         )
 

@@ -42,3 +42,6 @@ DEFAULT_COMMONS_STORAGE_SIZE = 100 * MB
 
 # Default maximum number of advertisements
 DEFAULT_MAX_ADVERTISEMENTS = 65536
+
+
+MAX_RADIUS = 2 ** 256 - 1

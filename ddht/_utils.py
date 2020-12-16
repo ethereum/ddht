@@ -275,3 +275,33 @@ def caboose(seq: Iterable[TItem], el: TElement) -> Iterable[Union[TElement, TIte
     """
     yield from seq
     yield el
+
+
+BYTE = 1
+KILOBYTE = 1024
+MEGABYTE = KILOBYTE * 1024
+GIGABYTE = MEGABYTE * 1024
+TERABYTE = GIGABYTE * 1024
+PETABYTE = TERABYTE * 1024
+
+BYTES_UNITS = (
+    (PETABYTE, "PB"),
+    (TERABYTE, "TB"),
+    (GIGABYTE, "GB"),
+    (MEGABYTE, "MB"),
+    (KILOBYTE, "KB"),
+    (BYTE, "B"),
+)
+
+
+def humanize_bytes(value: int) -> str:
+    if value == 0:
+        return "0B"
+
+    for bytes_per_unit, unit_display in BYTES_UNITS:
+        if value >= bytes_per_unit:
+            scaled_value = value / bytes_per_unit
+            value_display = f"{scaled_value:.2f}".rstrip("0").rstrip(".")
+            return f"{value_display}{unit_display}"
+    else:
+        raise Exception("Should be unreachable")

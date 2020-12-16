@@ -511,7 +511,7 @@ async def test_alexandria_network_stream_locations(
         )
 
         for advertisement, network in zip(advertisements, networks):
-            network.advertisement_db.add(advertisement)
+            network.remote_advertisement_db.add(advertisement)
 
         # give the the network some time to interconnect.
         with trio.fail_after(30):
@@ -559,7 +559,7 @@ async def test_alexandria_network_stream_locations_early_exit(
         )
 
         for advertisement, network in zip(advertisements, networks):
-            network.advertisement_db.add(advertisement)
+            network.remote_advertisement_db.add(advertisement)
 
         # give the the network some time to interconnect.
         with trio.fail_after(30):
@@ -610,7 +610,7 @@ async def test_alexandria_network_get_content(
                 hash_tree_root=hash_tree_root,
                 private_key=network.client.local_private_key,
             )
-            network.advertisement_db.add(advertisement)
+            network.local_advertisement_db.add(advertisement)
             network.pinned_content_storage.set_content(content_key, content)
 
         # give the the network some time to interconnect.
