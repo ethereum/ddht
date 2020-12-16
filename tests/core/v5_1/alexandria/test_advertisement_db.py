@@ -178,6 +178,8 @@ def test_advertisement_db_get_hash_tree_roots_for_content_id(advertisement_db):
     content_key = b"\x01testkey"
     content_id = content_key_to_content_id(content_key)
 
+    assert set(advertisement_db.get_hash_tree_roots_for_content_id(content_id)) == set()
+
     hash_tree_root_a = b"\x02" * 32
     hash_tree_root_b = b"\x03" * 32
     hash_tree_root_c = b"\x04" * 32
