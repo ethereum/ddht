@@ -29,7 +29,12 @@ class AlexandriaNode(AlexandriaNodeAPI):
         self.node = node
         self.commons_content_storage = MemoryContentStorage()
         self.pinned_content_storage = MemoryContentStorage()
-        self.advertisement_db = AdvertisementDatabase(sqlite3.connect(":memory:"),)
+        self.local_advertisement_db = AdvertisementDatabase(
+            sqlite3.connect(":memory:"),
+        )
+        self.remote_advertisement_db = AdvertisementDatabase(
+            sqlite3.connect(":memory:"),
+        )
         self._lock = NamedLock()
 
     @property
@@ -76,7 +81,8 @@ class AlexandriaNode(AlexandriaNodeAPI):
                     bootnodes=bootnodes,
                     commons_content_storage=self.commons_content_storage,
                     pinned_content_storage=self.pinned_content_storage,
-                    advertisement_db=self.advertisement_db,
+                    local_advertisement_db=self.local_advertisement_db,
+                    remote_advertisement_db=self.remote_advertisement_db,
                     max_advertisement_count=max_advertisement_count,
                 )
                 async with background_trio_service(alexandria_network):

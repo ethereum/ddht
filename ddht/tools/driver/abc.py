@@ -30,7 +30,9 @@ from ddht.v5_1.packets import AnyPacket
 class AlexandriaNodeAPI(ABC):
     commons_content_storage: ContentStorageAPI
     pinned_content_storage: ContentStorageAPI
-    advertisement_db: AdvertisementDatabaseAPI
+
+    local_advertisement_db: AdvertisementDatabaseAPI
+    remote_advertisement_db: AdvertisementDatabaseAPI
 
     @property
     @abstractmethod

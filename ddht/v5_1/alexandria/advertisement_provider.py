@@ -1,4 +1,5 @@
 import logging
+from typing import Iterable, Sequence
 
 from async_service import Service
 from eth_utils.toolz import take
@@ -10,7 +11,9 @@ from ddht.v5_1.alexandria.abc import (
     AdvertisementProviderAPI,
     AlexandriaClientAPI,
 )
+from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.messages import LocateMessage
+from ddht.v5_1.alexandria.typing import ContentKey
 
 MAX_RESPONSE_ADVERTISEMENTS = 32
 
@@ -21,11 +24,11 @@ class AdvertisementProvider(Service, AdvertisementProviderAPI):
     def __init__(
         self,
         client: AlexandriaClientAPI,
-        advertisement_db: AdvertisementDatabaseAPI,
+        advertisement_dbs: Sequence[AdvertisementDatabaseAPI],
         concurrency: int = 3,
     ) -> None:
         self._client = client
-        self._advertisement_db = advertisement_db
+        self._advertisement_dbs = tuple(advertisement_dbs)
         self._concurrency_lock = trio.Semaphore(concurrency)
         self._ready = trio.Event()
 
@@ -39,6 +42,12 @@ class AdvertisementProvider(Service, AdvertisementProviderAPI):
                 async for request in subscription:
                     nursery.start_soon(self.serve_request, request)
 
+    def _source_advertisements(
+        self, content_key: ContentKey
+    ) -> Iterable[Advertisement]:
+        for advertisement_db in self._advertisement_dbs:
+            yield from advertisement_db.query(content_key=content_key)
+
     async def serve_request(self, request: InboundMessage[LocateMessage]) -> None:
         with trio.move_on_after(10):
             async with self._concurrency_lock:
@@ -47,7 +56,7 @@ class AdvertisementProvider(Service, AdvertisementProviderAPI):
                 advertisements = tuple(
                     take(
                         MAX_RESPONSE_ADVERTISEMENTS,
-                        self._advertisement_db.query(content_key=content_key),
+                        self._source_advertisements(content_key),
                     )
                 )
                 self.logger.debug(

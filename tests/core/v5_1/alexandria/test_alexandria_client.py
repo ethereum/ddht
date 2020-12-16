@@ -605,7 +605,7 @@ async def test_alexandria_client_locate_multi_response(
     advertisements = tuple(
         AdvertisementFactory(private_key=alice.private_key) for i in range(32)
     )
-    batches = partition_advertisements(advertisements, MAX_PAYLOAD_SIZE)
+    batches = partition_advertisements(advertisements, MAX_PAYLOAD_SIZE - 8)
     num_responses = len(batches)
     assert num_responses > 1
 

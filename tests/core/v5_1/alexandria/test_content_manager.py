@@ -28,7 +28,7 @@ async def test_content_manager_enumerates_and_broadcasts_content(
         for idx in range(12)
     )
 
-    advertisement_db = alice.alexandria.advertisement_db
+    advertisement_db = alice.alexandria.local_advertisement_db
     pinned_storage = alice.alexandria.pinned_content_storage
 
     for content_key, content in contents[0:13:3]:
