@@ -540,6 +540,17 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     ) -> AsyncIterator[trio.abc.ReceiveChannel[Advertisement]]:
         content_id = content_key_to_content_id(content_key)
 
+        async def _feed_advertisements_from_db(
+            advertisement_db: AdvertisementDatabaseAPI,
+            ad_send_channel: trio.abc.SendChannel[Advertisement],
+        ) -> None:
+            ads_iter = advertisement_db.query(
+                content_key=content_key, hash_tree_root=hash_tree_root,
+            )
+            async with ad_send_channel:
+                for advertisement in ads_iter:
+                    await ad_send_channel.send(advertisement)
+
         async def _feed_candidate_nodes(
             work_send_channel: trio.abc.SendChannel[NodeID],
         ) -> None:
@@ -590,6 +601,16 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         with trio.fail_after(300):
             async with trio.open_nursery() as nursery:
+                nursery.start_soon(
+                    _feed_advertisements_from_db,
+                    self.remote_advertisement_db,
+                    ad_send_channel.clone(),
+                )
+                nursery.start_soon(
+                    _feed_advertisements_from_db,
+                    self.local_advertisement_db,
+                    ad_send_channel.clone(),
+                )
                 nursery.start_soon(_feed_candidate_nodes, work_send_channel)
 
                 for worker_id in range(concurrency):

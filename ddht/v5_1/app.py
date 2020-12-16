@@ -46,6 +46,7 @@ def get_local_private_key(boot_info: BootInfo) -> keys.PrivateKey:
 class Application(BaseApplication):
     client: ClientAPI
     network: NetworkAPI
+    rpc_server: RPCServer
 
     def __init__(self, args: argparse.Namespace, boot_info: BootInfo) -> None:
         super().__init__(args, boot_info)
@@ -125,8 +126,8 @@ class Application(BaseApplication):
                 get_core_rpc_handlers(enr_manager, self.network.routing_table),
                 get_v51_rpc_handlers(self.network),
             )
-            rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
-            self.manager.run_daemon_child_service(rpc_server)
+            self.rpc_server = RPCServer(self._boot_info.ipc_path, handlers)
+            self.manager.run_daemon_child_service(self.rpc_server)
 
         self.logger.info("Starting DDHT...")
         self.logger.info("Protocol-Version: %s", self._boot_info.protocol_version.value)

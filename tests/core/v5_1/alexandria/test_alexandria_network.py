@@ -502,7 +502,7 @@ async def test_alexandria_network_stream_locations(
         networks = await stack.enter_async_context(tester.alexandria.network_group(6))
 
         # put advertisements into the database
-        advertisements = tuple(
+        other_advertisements = tuple(
             AdvertisementFactory(
                 content_key=content_key,
                 hash_tree_root=b"unicornsrainbowscupcakessparkles",
@@ -510,7 +510,7 @@ async def test_alexandria_network_stream_locations(
             for _ in range(6)
         )
 
-        for advertisement, network in zip(advertisements, networks):
+        for advertisement, network in zip(other_advertisements, networks):
             network.remote_advertisement_db.add(advertisement)
 
         # give the the network some time to interconnect.
@@ -522,6 +522,19 @@ async def test_alexandria_network_stream_locations(
         alice_alexandria_network = await stack.enter_async_context(
             alice.alexandria.network(bootnodes=bootnodes)
         )
+
+        local_advertisement = AdvertisementFactory(
+            private_key=alice.private_key,
+            content_key=content_key,
+            hash_tree_root=b"unicornsrainbowscupcakessparkles",
+        )
+        alice_alexandria_network.local_advertisement_db.add(local_advertisement)
+        remote_advertisement = AdvertisementFactory(
+            private_key=alice.private_key,
+            content_key=content_key,
+            hash_tree_root=b"unicornsrainbowscupcakessparkles",
+        )
+        alice_alexandria_network.remote_advertisement_db.add(remote_advertisement)
 
         with trio.fail_after(30):
             for _ in range(1000):
@@ -537,8 +550,17 @@ async def test_alexandria_network_stream_locations(
                 )
 
         assert len(found_advertisements) >= 5
+
+        assert local_advertisement in found_advertisements
+        assert remote_advertisement in found_advertisements
+
         for advertisement in found_advertisements:
-            assert advertisement in advertisements
+            if advertisement == local_advertisement:
+                continue
+            elif advertisement == remote_advertisement:
+                continue
+
+            assert advertisement in other_advertisements
 
 
 @pytest.mark.trio
