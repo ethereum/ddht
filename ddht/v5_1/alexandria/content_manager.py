@@ -228,8 +228,8 @@ class ContentManager(Service, ContentManagerAPI):
         # TODO: computationally expensive
         hash_tree_root = ssz.get_hash_tree_root(content, sedes=content_sedes)
 
-        known_hash_tree_roots = self._local_advertisement_db.get_hash_tree_roots_for_content_id(
-            content_id,
+        known_hash_tree_roots = set(
+            self._local_advertisement_db.get_hash_tree_roots_for_content_id(content_id,)
         )
 
         # We should avoid "polution" of our content database with mismatching
@@ -242,7 +242,8 @@ class ContentManager(Service, ContentManagerAPI):
                 (root.hex() for root in known_hash_tree_roots)
             )
             raise NotImplementedError(
-                f"Content hash tree root mismatch: root={hash_tree_root.hex()}  "
+                f"Content hash tree root mismatch: "
+                f"content_key={content_key.hex()}  root={hash_tree_root.hex()}  "
                 f"known={known_roots_display}"
             )
 
