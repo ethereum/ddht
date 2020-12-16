@@ -562,7 +562,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                                     if advertisement.hash_tree_root != hash_tree_root:
                                         continue
                                 await ad_send_channel.send(advertisement)
-                    except trio.TooSlowError:
+                    except (trio.TooSlowError, MissingEndpointFields):
                         continue
 
         work_send_channel, work_receive_channel = trio.open_memory_channel[NodeID](
