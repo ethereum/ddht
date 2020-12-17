@@ -15,7 +15,7 @@ from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import Hash32, NodeID
 from eth_utils import ValidationError, get_extended_debug_logger
-from eth_utils.toolz import cons, first
+from eth_utils.toolz import cons, first, take
 from lru import LRU
 import trio
 
@@ -544,11 +544,16 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             advertisement_db: AdvertisementDatabaseAPI,
             ad_send_channel: trio.abc.SendChannel[Advertisement],
         ) -> None:
-            ads_iter = advertisement_db.query(
-                content_key=content_key, hash_tree_root=hash_tree_root,
+            advertisements = tuple(
+                take(
+                    32,
+                    advertisement_db.query(
+                        content_key=content_key, hash_tree_root=hash_tree_root,
+                    ),
+                )
             )
             async with ad_send_channel:
-                for advertisement in ads_iter:
+                for advertisement in advertisements:
                     await ad_send_channel.send(advertisement)
 
         async def _feed_candidate_nodes(
