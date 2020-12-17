@@ -315,12 +315,15 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, target: NodeID, concurrency: int = 3,
     ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
         explorer = Explorer(self, target, concurrency)
-        with trio.fail_after(300):
+        with trio.move_on_after(300) as scope:
             async with background_trio_service(explorer):
                 await explorer.ready()
 
                 async with explorer.stream() as receive_channel:
                     yield receive_channel
+
+        if scope.cancelled_caught:
+            self.logger.error("Timeout from explore")
 
     async def get_content_proof(
         self,
@@ -372,9 +375,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         content_retrieval = ContentRetrieval(
             self, content_key, hash_tree_root, concurrency=concurrency,
         )
-        with trio.fail_after(300):
+        with trio.move_on_after(300) as scope:
             async with background_trio_service(content_retrieval):
                 yield content_retrieval
+
+        if scope.cancelled_caught:
+            self.logger.error("Timeout from retrieve content")
 
     async def get_content(
         self, content_key: ContentKey, hash_tree_root: Hash32, *, concurrency: int = 3,
@@ -521,7 +527,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         send_channel, receive_channel = trio.open_memory_channel[Advertisement](32)
 
-        with trio.fail_after(300):
+        with trio.move_on_after(300) as scope:
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(_feed_advertisements, send_channel)
 
@@ -529,6 +535,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     yield receive_channel
 
                 nursery.cancel_scope.cancel()
+
+        if scope.cancelled_caught:
+            self.logger.error("Timeout from `stream_locate`")
 
     @asynccontextmanager
     async def stream_locations(
@@ -604,7 +613,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             32
         )
 
-        with trio.fail_after(300):
+        with trio.move_on_after(300) as scope:
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(
                     _feed_advertisements_from_db,
@@ -631,6 +640,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                     yield ad_receive_channel
 
                 nursery.cancel_scope.cancel()
+
+        if scope.cancelled_caught:
+            self.logger.error("Timeout from `stream_locate`")
 
     async def broadcast(
         self, advertisement: Advertisement, redundancy_factor: int = 3
