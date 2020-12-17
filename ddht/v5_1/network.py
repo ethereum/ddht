@@ -550,12 +550,15 @@ class Network(Service, NetworkAPI):
         self, target: NodeID, concurrency: int = 3,
     ) -> AsyncIterator[trio.abc.ReceiveChannel[ENRAPI]]:
         explorer = Explorer(self, target, concurrency)
-        with trio.fail_after(300):
+        with trio.move_on_after(300) as scope:
             async with background_trio_service(explorer):
                 await explorer.ready()
 
                 async with explorer.stream() as receive_channel:
                     yield receive_channel
+
+        if scope.cancelled_caught:
+            self.logger.error("Timeout from `stream_locate`")
 
     #
     # Long Running Processes

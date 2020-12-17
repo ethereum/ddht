@@ -149,7 +149,7 @@ class Explorer(Service, ExplorerAPI):
 
             while self.manager.is_running:
                 # TODO: stop-gap to ensure we don't deadlock
-                with trio.fail_after(60):
+                with trio.move_on_after(60) as scope:
                     async with self._condition:
 
                         try:
@@ -159,6 +159,9 @@ class Explorer(Service, ExplorerAPI):
                                 break
 
                         await self._condition.wait()
+
+                if scope.cancelled_caught:
+                    self.logger.error("Deadlocked")
 
         self.logger.debug("%s[final]: %s", self, self.get_stats())
         self.manager.cancel()

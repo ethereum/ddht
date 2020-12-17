@@ -261,7 +261,9 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                             yield receive_channel
                         # Wrap EOC error with TSE to make the timeouts obvious
                         except trio.EndOfChannel as err:
-                            raise trio.TooSlowError from err
+                            raise trio.TooSlowError(
+                                f"Timeout: request={request}  request_id={request_id.hex()}"
+                            ) from err
                 finally:
                     nursery.cancel_scope.cancel()
 

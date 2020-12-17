@@ -528,7 +528,7 @@ async def common_client_stream_find_nodes(
                 request,
                 reserved_request_id,
             )
-            raise trio.TooSlowError
+            raise trio.TooSlowError("Timeout in stream_find_nodes")
 
     async with trio.open_nursery() as nursery:
         send_channel, receive_channel = trio.open_memory_channel[
@@ -542,7 +542,7 @@ async def common_client_stream_find_nodes(
             try:
                 yield receive_channel
             except trio.EndOfChannel as err:
-                raise trio.TooSlowError from err
+                raise trio.TooSlowError("Timeout in stream_find_nodes") from err
             except (trio.ClosedResourceError, trio.ClosedResourceError):
                 pass
 
