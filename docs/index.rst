@@ -10,6 +10,7 @@ Contents
     :maxdepth: 3
 
     ddht
+    jsonrpc
     release_notes
 
 

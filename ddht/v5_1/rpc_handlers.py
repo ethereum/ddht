@@ -319,7 +319,7 @@ class BondHandler(RPCHandler[Tuple[NodeID, Optional[Endpoint]], int]):
         node_id, endpoint = validate_and_extract_destination(raw_destination)
         return node_id, endpoint
 
-    async def do_call(self, params: Tuple[NodeID, Optional[Endpoint]]) -> int:
+    async def do_call(self, params: Tuple[NodeID, Optional[Endpoint]]) -> bool:
         node_id, endpoint = params
         return await self._network.bond(node_id, endpoint=endpoint)
 
