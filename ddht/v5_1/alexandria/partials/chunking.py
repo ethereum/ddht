@@ -39,14 +39,12 @@ def compute_chunks(content: bytes) -> Iterable[Hash32]:
         yield Hash32(padded_content[left_boundary:right_boundary])
 
 
-@to_tuple
-def chunk_index_to_path(index: int, path_bit_size: int) -> Iterable[bool]:
+def chunk_index_to_path(index: int, path_bit_size: int) -> TreePath:
     """
     Given a chunk index, convert it to the path into the binary tree where the
     chunk is located.
     """
-    for power_of_two in reversed(POWERS_OF_TWO[:path_bit_size]):
-        yield bool(index & power_of_two)
+    return tuple(bool((index >> width) & 1) for width in range(path_bit_size - 1, -1, -1))
 
 
 def path_to_left_chunk_index(path: TreePath, path_bit_size: int) -> int:
@@ -64,10 +62,9 @@ def path_to_left_chunk_index(path: TreePath, path_bit_size: int) -> int:
     )
 
 
-@to_tuple
-def group_by_subtree(
+def get_subtree_slices(
     first_chunk_index: int, num_chunks: int
-) -> Iterable[Tuple[int, ...]]:
+) -> Tuple[slice, ...]:
     r"""
     Group the paths into groups that belong to the same subtree.
 
@@ -163,15 +160,13 @@ def group_by_subtree(
     at group size 1.
 
     """
-    last_chunk_index = first_chunk_index + num_chunks
-
-    chunk_indices = tuple(range(first_chunk_index, last_chunk_index))
-    chunks_to_process: Sequence[Tuple[int, ...]] = (chunk_indices,)
+    full_slice = slice(first_chunk_index, first_chunk_index + num_chunks)
+    slices_to_process: Sequence[slice] = (full_slice,)
 
     # The largest power of two that could fit between the chunk range.
     max_bucket_bit_size = num_chunks.bit_length() - 1
 
-    final_groups: List[Tuple[int, ...]] = []
+    final_slices: List[slice] = []
 
     # Now we iterate downwards through the powers of two, splitting each group
     # up by the bucket boundaries at that level.  Any full buckets are
@@ -179,50 +174,45 @@ def group_by_subtree(
     # final bucket size of `1` acts as a catch all for any ranges that cannot
     # be grouped.
     for bucket_bit_size in range(max_bucket_bit_size, -1, -1):
-        if not chunks_to_process:
+        if not slices_to_process:
             break
 
-        next_chunks_to_process: List[Tuple[int, ...]] = []
+        next_batch: List[slice] = []
 
-        for chunk in chunks_to_process:
-            chunk_start_index = chunk[0]
-            chunk_end_index = chunk[-1]
-
+        for slc in slices_to_process:
             bucket_size = 2 ** bucket_bit_size
 
             # Compute the start and end indices for the buckets at this bucket size.
-            bucket_start_at = chunk_start_index - (chunk_start_index % bucket_size)
-            bucket_end_at = chunk_end_index + (
-                bucket_size - chunk_end_index % bucket_size
-            )
+            first_bucket_start_at = (slc.start + bucket_size - 1) // bucket_size * bucket_size
+            last_bucket_end_at = slc.stop // bucket_size * bucket_size
 
             # Split the chunk up into groups aligned with the buckets at this
             # level.
-            group_candidates = tuple(
-                chunk[
-                    max(0, start_at - chunk_start_index) : start_at
-                    - chunk_start_index
-                    + bucket_size
-                ]
-                for start_at in range(bucket_start_at, bucket_end_at + 1, bucket_size)
+            final_slices.extend(
+                slice(slice_start_at, slice_start_at + bucket_size)
+                for slice_start_at
+                in range(first_bucket_start_at, last_bucket_end_at, bucket_size)
             )
 
-            # Any groups that are "full" are final.
-            final_groups.extend(
-                tuple(group for group in group_candidates if len(group) == bucket_size)
-            )
+            if first_bucket_start_at > slc.start:
+                next_batch.append(slice(slc.start, first_bucket_start_at))
+            if last_bucket_end_at < slc.stop:
+                next_batch.append(slice(last_bucket_end_at, slc.stop))
 
-            # All remaining groups move onto the next round (filtering out
-            # empty groups that occur due to how they are sliced)
-            next_chunks_to_process.extend(
-                filter(
-                    bool,
-                    (group for group in group_candidates if len(group) < bucket_size),
-                )
-            )
-        chunks_to_process = next_chunks_to_process
+        slices_to_process = next_batch
 
-    return tuple(sorted(final_groups))
+    return tuple(sorted(final_slices))
+
+
+def group_by_subtree(
+    first_chunk_index: int, num_chunks: int
+) -> Tuple[Tuple[int, ...], ...]:
+    subtree_slices = get_subtree_slices(first_chunk_index, num_chunks)
+    full_range = range(first_chunk_index + num_chunks)
+    return tuple(
+        tuple(full_range[subtree_slice])
+        for subtree_slice in subtree_slices
+    )
 
 
 class MissingSegment(NamedTuple):
