@@ -177,7 +177,10 @@ class Explorer(Service, ExplorerAPI):
         if enr.node_id == self._network.local_node_id:
             did_bond = True
         else:
-            did_bond = await self._network.bond(enr.node_id)
+            try:
+                did_bond = await self._network.bond(enr.node_id)
+            except (trio.TooSlowError, MissingEndpointFields):
+                return
 
         if did_bond:
             try:
