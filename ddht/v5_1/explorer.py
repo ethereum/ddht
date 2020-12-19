@@ -186,7 +186,7 @@ class Explorer(Service, ExplorerAPI):
                 # In the event that the consumer of `recursive_find_nodes`
                 # exits early before the lookup has completed we can end up
                 # operating on a closed channel.
-                pass
+                return
 
     async def _explore(self, node_id: NodeID, max_distance: int,) -> None:
         """
@@ -293,7 +293,14 @@ class Explorer(Service, ExplorerAPI):
                     if enr.node_id not in self.seen:
                         self.seen.add(enr.node_id)
                         self._condition.notify_all()
-                        await self._send_channel.send(enr)
+
+                        try:
+                            await self._send_channel.send(enr)
+                        except (trio.BrokenResourceError, trio.ClosedResourceError):
+                            # In the event that the consumer of `recursive_find_nodes`
+                            # exits early before the lookup has completed we can end up
+                            # operating on a closed channel.
+                            return
 
         self.logger.debug2("%s: finished seeding nodes for exploration", self)
         self._exploration_seeded.set()
