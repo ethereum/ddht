@@ -260,13 +260,13 @@ class SessionInitiator(BaseSession):
             try:
                 self._outbound_message_buffer_send_channel.send_nowait(message)
             except trio.WouldBlock:
-                self.logger.debug(
+                self.logger.debug2(
                     "%s: Discarding message due to full outbound message buffer: %s",
                     self,
                     message,
                 )
         elif self.is_before_handshake:
-            self.logger.debug(
+            self.logger.debug2(
                 "%s: outbound message triggered handshake initiation: %s",
                 self,
                 message,
@@ -495,7 +495,7 @@ class SessionRecipient(BaseSession):
             try:
                 self._outbound_message_buffer_send_channel.send_nowait(message)
             except trio.WouldBlock:
-                self.logger.warning(
+                self.logger.debug(
                     "%s: Discarding message due to full outbound message buffer: %s",
                     self,
                     message,
@@ -560,11 +560,11 @@ class SessionRecipient(BaseSession):
                     await self._process_message_buffers()
                     return True
             elif envelope.packet.is_message:
-                self.logger.debug("%s: Buffering Message: %s", self, envelope)
+                self.logger.debug2("%s: Buffering Message: %s", self, envelope)
                 try:
                     self._inbound_envelope_buffer_send_channel.send_nowait(envelope)
                 except trio.WouldBlock:
-                    self.logger.debug(
+                    self.logger.debug2(
                         "%s: Discarding inbound envelope due to full buffer: %s",
                         self,
                         envelope,
