@@ -95,11 +95,12 @@ class ContentCollector(Service, ContentCollectorAPI):
             await self._network.content_validator.validate_content(
                 content_key=advertisement.content_key, content=content,
             )
-        except ValidationError:
+        except ValidationError as err:
             self.logger.debug(
-                "Content validation failed: content_key=%s  content=%s",
+                "Content validation failed: content_key=%s  content=%s  error=%s",
                 advertisement.content_key.hex(),
                 content.hex(),
+                err,
             )
         else:
             await self.content_manager.process_content(

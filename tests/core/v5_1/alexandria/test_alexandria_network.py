@@ -652,7 +652,7 @@ async def test_alexandria_network_get_content(
 
         with trio.fail_after(60):
             result = await alice_alexandria_network.get_content(
-                content_key, hash_tree_root
+                content_key, hash_tree_root=hash_tree_root
             )
 
         assert result == proof
