@@ -1,6 +1,6 @@
 from eth_enr.tools.factories import ENRFactory
 from eth_keys import keys
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 import rlp
 
@@ -82,6 +82,7 @@ advertisement_st = st.tuples(
 ).map(lambda key_and_root: Advertisement.create(*key_and_root, PRIVATE_KEY))
 
 
+@settings(deadline=500)
 @given(advertisements=st.lists(advertisement_st, min_size=1, max_size=5).map(tuple),)
 def test_advertisement_message_encoding_round_trip(advertisements):
     message = AdvertiseMessage(advertisements)
