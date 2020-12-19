@@ -606,7 +606,11 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     @abstractmethod
     async def get_content(
-        self, content_key: ContentKey, hash_tree_root: Hash32, *, concurrency: int = 3,
+        self,
+        content_key: ContentKey,
+        *,
+        hash_tree_root: Optional[Hash32] = None,
+        concurrency: int = 3,
     ) -> Proof:
         ...
 

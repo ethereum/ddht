@@ -1,6 +1,7 @@
 from typing import Iterable, Tuple
 
 from eth_utils import encode_hex, to_dict
+import trio
 
 from ddht.abc import RPCHandlerAPI
 from ddht.rpc import RPCError, RPCHandler, RPCRequest, extract_params
@@ -81,6 +82,49 @@ class DeleteContentHandler(RPCHandler[ContentKey, None]):
             raise RPCError(str(err)) from err
 
 
+class RetrieveContentHandler(RPCHandler[ContentKey, str]):
+    def __init__(self, network: AlexandriaNetworkAPI) -> None:
+        self._network = network
+
+    def extract_params(self, request: RPCRequest) -> ContentKey:
+        raw_params = extract_params(request)
+
+        validate_params_length(raw_params, 1)
+
+        content_key_hex = raw_params[0]
+        content_key = ContentKey(validate_and_convert_hexstr(content_key_hex)[0])
+
+        return content_key
+
+    async def do_call(self, params: ContentKey) -> str:
+        content_key = params
+
+        content: bytes
+
+        try:
+            content = self._network.pinned_content_storage.get_content(content_key)
+        except ContentNotFound:
+            pass
+        else:
+            return encode_hex(content)
+
+        try:
+            content = self._network.commons_content_storage.get_content(content_key)
+        except ContentNotFound:
+            pass
+        else:
+            return encode_hex(content)
+
+        try:
+            proof = await self._network.get_content(content_key)
+        except trio.TooSlowError as err:
+            raise RPCError(
+                f"Timeout retrieving content: content_key={content_key.hex()}"
+            ) from err
+        else:
+            return encode_hex(proof.get_content())
+
+
 @to_dict
 def get_alexandria_rpc_handlers(
     network: AlexandriaNetworkAPI,
@@ -108,4 +152,8 @@ def get_alexandria_rpc_handlers(
     yield (
         "alexandria_deleteCommonsContent",
         DeleteContentHandler(network.commons_content_storage),
+    )
+    yield (
+        "alexandria_getContent",
+        RetrieveContentHandler(network),
     )

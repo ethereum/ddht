@@ -1,3 +1,4 @@
+import collections
 from typing import (
     AsyncContextManager,
     AsyncIterator,
@@ -382,9 +383,68 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         if scope.cancelled_caught:
             self.logger.error("Timeout from retrieve content")
 
+    async def _get_hash_tree_root(
+        self,
+        content_key: ContentKey,
+        network_sample_size: int = 32,
+        score_threshold: float = 0.9,
+    ) -> Hash32:
+        content_id = content_key_to_content_id(content_key)
+        roots_from_local = set(
+            self.local_advertisement_db.get_hash_tree_roots_for_content_id(content_id)
+        )
+        if len(roots_from_local) == 1:
+            return first(roots_from_local)  # type: ignore
+        elif len(roots_from_local) > 1:
+            raise NotImplementedError(f"Multiple roots: roots={roots_from_local}")
+
+        roots_from_remote = set(
+            self.remote_advertisement_db.get_hash_tree_roots_for_content_id(content_id)
+        )
+        if len(roots_from_remote) == 1:
+            return first(roots_from_remote)  # type: ignore
+        elif len(roots_from_remote) > 1:
+            raise NotImplementedError(f"Multiple roots: roots={roots_from_remote}")
+
+        # We use a list here instead of a set to allow for duplicates of the
+        # same ad.  Under the *assumption* that nodes are correctly validating
+        # their advertisements, multiple of the same ad should count as
+        # independent votes.
+        candidate_ads: List[Advertisement] = []
+        async with self.stream_locations(content_key) as advertisements_aiter:
+            async for advertisement in advertisements_aiter:
+                candidate_ads.append(advertisement)
+                if len(candidate_ads) >= network_sample_size:
+                    break
+
+        if not candidate_ads:
+            raise Exception("Unable to find existing roots")
+
+        seen_roots = tuple(ad.hash_tree_root for ad in candidate_ads)
+        root_counts = collections.Counter(seen_roots)
+        for hash_tree_root, num_votes in root_counts.items():
+            score = num_votes / len(seen_roots)
+            if score >= score_threshold:
+                return hash_tree_root
+        else:
+            score_displays = "  ".join(
+                (
+                    f"{hash_tree_root.hex()}={int(num_votes * 100 / len(seen_roots))}"
+                    for hash_tree_root, num_votes in root_counts.items()
+                )
+            )
+            raise Exception(f"No roots scored high enough: {score_displays}")
+
     async def get_content(
-        self, content_key: ContentKey, hash_tree_root: Hash32, *, concurrency: int = 3,
+        self,
+        content_key: ContentKey,
+        *,
+        hash_tree_root: Optional[Hash32] = None,
+        concurrency: int = 3,
     ) -> Proof:
+        if hash_tree_root is None:
+            hash_tree_root = await self._get_hash_tree_root(content_key)
+
         async def _feed_content_retrieval(
             content_retrieval: ContentRetrievalAPI,
         ) -> None:
