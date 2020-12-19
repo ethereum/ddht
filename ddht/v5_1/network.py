@@ -224,7 +224,10 @@ async def common_recursive_find_nodes(
                 tasks = tuple(
                     (do_lookup, (node_id, send_channel)) for node_id in node_ids
                 )
-                await adaptive_timeout(*tasks, threshold=1, variance=2.0)
+                try:
+                    await adaptive_timeout(*tasks, threshold=1, variance=2.0)
+                except trio.TooSlowError:
+                    pass
 
             async with condition:
                 # Remove the `node_ids` from the in_flight set.
