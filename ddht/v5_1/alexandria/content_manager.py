@@ -33,7 +33,7 @@ class ContentManager(Service, ContentManagerAPI):
         self,
         network: AlexandriaNetworkAPI,
         content_storage: ContentStorageAPI,
-        concurrency: int = 3,
+        concurrency: int = 6,
         max_size: Optional[int] = None,
     ) -> None:
         self._network = network

@@ -22,7 +22,7 @@ class ContentCollector(Service, ContentCollectorAPI):
         self,
         network: AlexandriaNetworkAPI,
         content_manager: ContentManagerAPI,
-        concurrency: int = 3,
+        concurrency: int = 6,
     ) -> None:
         self._network = network
         self.content_manager = content_manager
