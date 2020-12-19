@@ -1,9 +1,10 @@
 import logging
+import secrets
 from typing import Optional
 
 from async_service import Service
 from async_service import external_trio_api as external_api
-from eth_typing import Hash32
+from eth_typing import Hash32, NodeID
 from eth_utils import humanize_seconds
 from eth_utils.toolz import first, take
 import ssz
@@ -135,13 +136,20 @@ class ContentManager(Service, ContentManagerAPI):
             if not total_keys:
                 continue
 
+            first_key = first(
+                self.content_storage.iter_closest(NodeID(secrets.token_bytes(32)))
+            )
+
             self.logger.info(
-                "content-processing-starting: total=%d", total_keys,
+                "content-processing-starting: total=%d  start=%s",
+                total_keys,
+                first_key.hex(),
             )
 
             processed_keys = 0
 
-            last_key: Optional[ContentKey] = None
+            last_key = first_key
+            has_wrapped_around = False
 
             while self.manager.is_running:
                 elapsed = trio.current_time() - start_at
@@ -160,12 +168,17 @@ class ContentManager(Service, ContentManagerAPI):
                     content_keys = content_keys[1:]
 
                 if not content_keys:
-                    break
+                    last_key = None
+                    has_wrapped_around = True
+                    continue
 
                 for content_key in content_keys:
                     await send_channel.send(content_key)
 
                 last_key = content_keys[-1]
+                if has_wrapped_around and last_key >= first_key:
+                    break
+
                 processed_keys += len(content_keys)
                 progress = processed_keys * 100 / total_keys
 
