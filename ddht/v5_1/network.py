@@ -241,13 +241,16 @@ async def common_recursive_find_nodes(
                 while True:
                     # this `fail_after` is a failsafe to prevent deadlock situations
                     # which are possible with `Condition` objects.
-                    with trio.fail_after(60):
+                    with trio.move_on_after(60) as scope:
                         node_ids = get_unqueried_node_ids()
 
                         if not node_ids and not in_flight:
                             break
                         else:
                             await condition.wait()
+
+                    if scope.cancelled_caught:
+                        network.logger.error("Deadlock")
 
     send_channel, receive_channel = trio.open_memory_channel[ENRAPI](256)
 
