@@ -77,6 +77,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         pinned_content_storage: ContentStorageAPI,
         local_advertisement_db: AdvertisementDatabaseAPI,
         remote_advertisement_db: AdvertisementDatabaseAPI,
+        broadcast_log: BroadcastLog,
         max_advertisement_count: int = DEFAULT_MAX_ADVERTISEMENTS,
         commons_content_storage_max_size: int = DEFAULT_COMMONS_STORAGE_SIZE,
     ) -> None:
@@ -89,7 +90,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.client = AlexandriaClient(network)
 
         self.radius_tracker = RadiusTracker(self)
-        self.broadcast_log = BroadcastLog()
+        self.broadcast_log = broadcast_log
 
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,

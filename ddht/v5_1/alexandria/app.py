@@ -8,6 +8,7 @@ from ddht.boot_info import BootInfo
 from ddht.v5_1.alexandria.abc import AdvertisementDatabaseAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.advertisement_db import AdvertisementDatabase
 from ddht.v5_1.alexandria.boot_info import AlexandriaBootInfo
+from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 from ddht.v5_1.alexandria.content_storage import (
     FileSystemContentStorage,
     MemoryContentStorage,
@@ -108,6 +109,9 @@ class AlexandriaApplication(BaseApplication):
             sqlite3.connect(str(remote_advertisement_db_path)),
         )
 
+        broadcast_log_db_path = xdg_alexandria_root / "broadcast_log.sqlite3"
+        broadcast_log = BroadcastLog(sqlite3.connect(str(broadcast_log_db_path)))
+
         alexandria_network = AlexandriaNetwork(
             network=self.base_protocol_app.network,
             bootnodes=self._alexandria_boot_info.bootnodes,
@@ -115,6 +119,7 @@ class AlexandriaApplication(BaseApplication):
             pinned_content_storage=pinned_content_storage,
             local_advertisement_db=local_advertisement_db,
             remote_advertisement_db=remote_advertisement_db,
+            broadcast_log=broadcast_log,
             commons_content_storage_max_size=commons_content_storage_max_size,
             max_advertisement_count=max_advertisement_count,
         )
@@ -146,6 +151,12 @@ class AlexandriaApplication(BaseApplication):
             remote_advertisement_db_path,
             remote_advertisement_db.count(),
             max_advertisement_count,
+        )
+        self.logger.info(
+            "BroadcastLog: storage=%s  total=%d  max=%d",
+            broadcast_log_db_path,
+            broadcast_log.count,
+            broadcast_log.cache_size,
         )
 
         await alexandria_network.ready()

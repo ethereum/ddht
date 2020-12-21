@@ -17,6 +17,7 @@ from ddht.tools.driver.abc import (
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI, AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.advertisement_db import AdvertisementDatabase
+from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.content_storage import MemoryContentStorage
 from ddht.v5_1.alexandria.network import AlexandriaNetwork
@@ -35,6 +36,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
         self.remote_advertisement_db = AdvertisementDatabase(
             sqlite3.connect(":memory:"),
         )
+        self.broadcast_log = BroadcastLog(sqlite3.connect(":memory:"))
         self._lock = NamedLock()
 
     @property
@@ -82,6 +84,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
                     commons_content_storage=self.commons_content_storage,
                     pinned_content_storage=self.pinned_content_storage,
                     local_advertisement_db=self.local_advertisement_db,
+                    broadcast_log=self.broadcast_log,
                     remote_advertisement_db=self.remote_advertisement_db,
                     max_advertisement_count=max_advertisement_count,
                 )
