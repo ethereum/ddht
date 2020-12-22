@@ -103,7 +103,7 @@ class BroadcastLogAPI(ABC):
 
     @property
     @abstractmethod
-    def cache_size(self) -> int:
+    def cache_size(self) -> Optional[int]:
         ...
 
     @property
