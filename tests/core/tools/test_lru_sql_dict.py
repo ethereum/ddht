@@ -3,6 +3,7 @@ import sqlite3
 from eth_utils import is_text, to_bytes, to_int
 from hypothesis import given
 from hypothesis import strategies as st
+from lru import LRU
 import pytest
 
 from ddht.tools.lru_sql_dict import LRUSQLDict
@@ -60,6 +61,13 @@ def test_add_item_to_sqldict(sqldict):
     sqldict["one"] = 1
 
     assert sqldict["one"] == 1
+    assert sqldict.head.key == b"one"
+    assert sqldict.tail.key == b"one"
+    assert len(sqldict) == 1
+
+    sqldict["one"] = 100
+
+    assert sqldict["one"] == 100
     assert sqldict.head.key == b"one"
     assert sqldict.tail.key == b"one"
     assert len(sqldict) == 1
@@ -195,6 +203,83 @@ def test_dict_properties(sqldict):
     key = sqldict.pop("one")
     assert key == 1
     assert len(sqldict) == 2
+
+
+def test_dict_behavior_matches_LRU_implementation():
+    lru = LRU(100)
+    lru_sql_dict = LRUSQLDict(
+        sqlite3.connect(":memory:"),
+        key_encoder,
+        key_decoder,
+        value_encoder,
+        value_decoder,
+        100,
+    )
+    kv_pairs = ((to_bytes(number), number) for number in range(20))
+    for pair in kv_pairs:
+        lru[pair[0]] = pair[1]
+        lru_sql_dict[pair[0]] = pair[1]
+
+        assert lru.peek_first_item() == (lru_sql_dict.head.key, lru_sql_dict.head.value)
+        assert lru.peek_last_item() == (lru_sql_dict.tail.key, lru_sql_dict.tail.value)
+
+    lru[to_bytes(10)]
+    lru_sql_dict[to_bytes(10)]
+
+    assert lru.peek_first_item() == (lru_sql_dict.head.key, lru_sql_dict.head.value)
+    assert lru.peek_last_item() == (lru_sql_dict.tail.key, lru_sql_dict.tail.value)
+
+    lru[to_bytes(15)] = 100
+    lru_sql_dict[to_bytes(15)] = 100
+
+    assert lru.peek_first_item() == (lru_sql_dict.head.key, lru_sql_dict.head.value)
+    assert lru.peek_last_item() == (lru_sql_dict.tail.key, lru_sql_dict.tail.value)
+
+    del lru[to_bytes(0)]
+    del lru_sql_dict[to_bytes(0)]
+
+    assert lru.peek_first_item() == (lru_sql_dict.head.key, lru_sql_dict.head.value)
+    assert lru.peek_last_item() == (lru_sql_dict.tail.key, lru_sql_dict.tail.value)
+
+    lru[to_bytes(100)] = 100
+    lru_sql_dict[to_bytes(100)] = 100
+
+    assert lru.peek_first_item() == (lru_sql_dict.head.key, lru_sql_dict.head.value)
+    assert lru.peek_last_item() == (lru_sql_dict.tail.key, lru_sql_dict.tail.value)
+
+    lru[to_bytes(5)]
+    lru_sql_dict[to_bytes(5)]
+
+    assert lru.peek_first_item() == (lru_sql_dict.head.key, lru_sql_dict.head.value)
+    assert lru.peek_last_item() == (lru_sql_dict.tail.key, lru_sql_dict.tail.value)
+
+
+def test_dict_handles_variable_cache_sizes(tmpdir):
+    initial_dict = LRUSQLDict(
+        sqlite3.connect(tmpdir / "test_db"),
+        key_encoder,
+        key_decoder,
+        value_encoder,
+        value_decoder,
+        3,
+    )
+
+    kv_pairs = ((to_bytes(number), number) for number in range(3))
+    for pair in kv_pairs:
+        initial_dict[pair[0]] = pair[1]
+
+    assert len(initial_dict) == 3
+
+    updated_dict = LRUSQLDict(
+        sqlite3.connect(tmpdir / "test_db"),
+        key_encoder,
+        key_decoder,
+        value_encoder,
+        value_decoder,
+        2,
+    )
+
+    assert len(updated_dict) == 2
 
 
 def test_get_keyerror_with_empty_dict(sqldict):
