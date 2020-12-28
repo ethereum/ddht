@@ -101,6 +101,16 @@ class BroadcastLogAPI(ABC):
     ) -> bool:
         ...
 
+    @property
+    @abstractmethod
+    def cache_size(self) -> Optional[int]:
+        ...
+
+    @property
+    @abstractmethod
+    def count(self) -> int:
+        ...
+
 
 class ContentValidatorAPI(ABC):
     @abstractmethod

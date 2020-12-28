@@ -5,7 +5,7 @@ from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
 
 
 @pytest.mark.trio
-async def test_broadcast_log(alice, bob):
+async def test_broadcast_log(alice, bob, conn):
     ad_a = AdvertisementFactory(private_key=alice.private_key)
     ad_b = AdvertisementFactory(private_key=alice.private_key)
     ad_c = AdvertisementFactory(private_key=alice.private_key)
@@ -14,7 +14,7 @@ async def test_broadcast_log(alice, bob):
 
     all_ads = (ad_a, ad_b, ad_c, ad_d, ad_e)
 
-    broadcast_log = BroadcastLog(max_records=8)
+    broadcast_log = BroadcastLog(conn, max_records=8)
 
     # not logged when empty
     for ad in all_ads:
