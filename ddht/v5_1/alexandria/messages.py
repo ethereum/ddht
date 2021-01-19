@@ -1,7 +1,6 @@
 import enum
-from typing import Any, Dict, Generic, Tuple, Type, TypeVar
+from typing import Any, Dict, Generic, Type, TypeVar
 
-from eth_typing import Hash32
 import ssz
 from ssz import BaseSedes
 from ssz.exceptions import DeserializationError
@@ -9,27 +8,18 @@ from ssz.exceptions import DeserializationError
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
 from ddht.v5_1.alexandria.payloads import (
-    AckPayload,
-    Advertisement,
-    AdvertisePayload,
     ContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
     GetContentPayload,
-    LocatePayload,
-    LocationsPayload,
     PingPayload,
     PongPayload,
 )
 from ddht.v5_1.alexandria.sedes import (
-    AckSedes,
-    AdvertiseSedes,
     ContentSedes,
     FindNodesSedes,
     FoundNodesSedes,
     GetContentSedes,
-    LocateSedes,
-    LocationsSedes,
     PingSedes,
     PongSedes,
 )
@@ -175,94 +165,6 @@ class ContentMessage(AlexandriaMessage[ContentPayload]):
     payload_type = ContentPayload
 
     payload: ContentPayload
-
-
-@register
-class AdvertiseMessage(AlexandriaMessage[AdvertisePayload]):
-    message_id = 7
-    type = AlexandriaMessageType.REQUEST
-    sedes = AdvertiseSedes
-    payload_type = tuple
-
-    payload: AdvertisePayload
-
-    def get_payload_for_encoding(
-        self,
-    ) -> Tuple[Tuple[bytes, Hash32, int, int, int, int], ...]:
-        return tuple(advertisement.to_sedes_payload() for advertisement in self.payload)
-
-    @classmethod
-    def from_payload_args(
-        cls: Type[TAlexandriaMessage], payload_args: Any
-    ) -> TAlexandriaMessage:
-        payload = tuple(
-            Advertisement.from_sedes_payload(sedes_payload)
-            for sedes_payload in payload_args
-        )
-        return cls(payload)
-
-
-@register
-class AckMessage(AlexandriaMessage[AckPayload]):
-    message_id = 8
-    type = AlexandriaMessageType.RESPONSE
-    sedes = AckSedes
-    payload_type = AckPayload
-
-    payload: AckPayload
-
-    @classmethod
-    def from_payload_args(
-        cls: Type[TAlexandriaMessage], payload_args: Any
-    ) -> TAlexandriaMessage:
-        # py-ssz uses an internal type for decoded `ssz.sedes.List` types that
-        # we don't need or want so we force it to a normal tuple type here.
-        advertisement_radius, raw_acked = payload_args
-        payload = cls.payload_type(advertisement_radius, tuple(raw_acked))
-        return cls(payload)
-
-
-@register
-class LocateMessage(AlexandriaMessage[LocatePayload]):
-    message_id = 9
-    type = AlexandriaMessageType.REQUEST
-    sedes = LocateSedes
-    payload_type = LocatePayload
-
-    payload: LocatePayload
-
-
-@register
-class LocationsMessage(AlexandriaMessage[LocationsPayload]):
-    message_id = 10
-    type = AlexandriaMessageType.RESPONSE
-    sedes = LocationsSedes
-    payload_type = LocationsPayload
-
-    payload: LocationsPayload
-
-    def get_payload_for_encoding(
-        self,
-    ) -> Tuple[int, Tuple[Tuple[bytes, Hash32, int, int, int, int], ...]]:
-        return (
-            self.payload.total,
-            tuple(
-                advertisement.to_sedes_payload()
-                for advertisement in self.payload.locations
-            ),
-        )
-
-    @classmethod
-    def from_payload_args(
-        cls: Type[TAlexandriaMessage], payload_args: Any
-    ) -> TAlexandriaMessage:
-        total, ssz_advertisement_list = payload_args
-        advertisements = tuple(
-            Advertisement.from_sedes_payload(sedes_payload)
-            for sedes_payload in ssz_advertisement_list
-        )
-        payload = cls.payload_type(total, advertisements)
-        return cls(payload)
 
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:

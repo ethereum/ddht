@@ -79,14 +79,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
                 alexandria_network = AlexandriaNetwork(
-                    network=network,
-                    bootnodes=bootnodes,
-                    commons_content_storage=self.commons_content_storage,
-                    pinned_content_storage=self.pinned_content_storage,
-                    local_advertisement_db=self.local_advertisement_db,
-                    broadcast_log=self.broadcast_log,
-                    remote_advertisement_db=self.remote_advertisement_db,
-                    max_advertisement_count=max_advertisement_count,
+                    network=network, bootnodes=bootnodes,
                 )
                 async with background_trio_service(alexandria_network):
                     await alexandria_network.ready()

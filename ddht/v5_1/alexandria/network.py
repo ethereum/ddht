@@ -1,11 +1,9 @@
-import collections
 from typing import (
     AsyncContextManager,
     AsyncIterator,
     Collection,
     List,
     Optional,
-    Set,
     Tuple,
     Union,
 )
@@ -16,48 +14,22 @@ from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import Hash32, NodeID
 from eth_utils import ValidationError, get_extended_debug_logger
-from eth_utils.toolz import cons, first, take
+from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
 
-from ddht._utils import every, humanize_bytes, weighted_choice
+from ddht._utils import every, weighted_choice
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.endpoint import Endpoint
-from ddht.exceptions import MissingEndpointFields
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
-from ddht.v5_1.alexandria._utils import humanize_advertisement_radius
-from ddht.v5_1.alexandria.abc import (
-    AdvertisementDatabaseAPI,
-    AlexandriaNetworkAPI,
-    ContentRetrievalAPI,
-    ContentStorageAPI,
-)
-from ddht.v5_1.alexandria.advertisement_collector import AdvertisementCollector
-from ddht.v5_1.alexandria.advertisement_manager import AdvertisementManager
-from ddht.v5_1.alexandria.advertisement_provider import AdvertisementProvider
-from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
-from ddht.v5_1.alexandria.broadcast_log import BroadcastLog
+from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
-from ddht.v5_1.alexandria.constants import (
-    DEFAULT_COMMONS_STORAGE_SIZE,
-    DEFAULT_MAX_ADVERTISEMENTS,
-    MAX_PAYLOAD_SIZE,
-)
-from ddht.v5_1.alexandria.content import (
-    compute_content_distance,
-    content_key_to_content_id,
-)
-from ddht.v5_1.alexandria.content_collector import ContentCollector
-from ddht.v5_1.alexandria.content_manager import ContentManager
-from ddht.v5_1.alexandria.content_provider import ContentProvider
-from ddht.v5_1.alexandria.content_retrieval import ContentRetrieval
-from ddht.v5_1.alexandria.content_validator import ContentValidator
+from ddht.v5_1.alexandria.constants import MAX_RADIUS
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.partials.proof import Proof, compute_proof, validate_proof
-from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
-from ddht.v5_1.alexandria.radius_tracker import RadiusTracker
+from ddht.v5_1.alexandria.payloads import PongPayload
 from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
@@ -69,81 +41,16 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # Delegate to the AlexandriaClient for determining `protocol_id`
     protocol_id = AlexandriaClient.protocol_id
 
-    def __init__(
-        self,
-        network: NetworkAPI,
-        bootnodes: Collection[ENRAPI],
-        commons_content_storage: ContentStorageAPI,
-        pinned_content_storage: ContentStorageAPI,
-        local_advertisement_db: AdvertisementDatabaseAPI,
-        remote_advertisement_db: AdvertisementDatabaseAPI,
-        broadcast_log: BroadcastLog,
-        max_advertisement_count: int = DEFAULT_MAX_ADVERTISEMENTS,
-        commons_content_storage_max_size: int = DEFAULT_COMMONS_STORAGE_SIZE,
-    ) -> None:
+    def __init__(self, network: NetworkAPI, bootnodes: Collection[ENRAPI],) -> None:
         self.logger = get_extended_debug_logger("ddht.Alexandria")
 
         self._bootnodes = tuple(bootnodes)
 
-        self.max_advertisement_count = max_advertisement_count
-
         self.client = AlexandriaClient(network)
-
-        self.radius_tracker = RadiusTracker(self)
-        self.broadcast_log = broadcast_log
 
         self.routing_table = KademliaRoutingTable(
             self.enr_manager.enr.node_id, ROUTING_TABLE_BUCKET_SIZE,
         )
-
-        self.commons_content_storage = commons_content_storage
-        self.commons_content_storage_max_size = commons_content_storage_max_size
-        self.commons_content_manager = ContentManager(
-            self,
-            commons_content_storage,
-            max_size=self.commons_content_storage_max_size,
-        )
-        self.commons_content_collector = ContentCollector(
-            self, self.commons_content_manager
-        )
-
-        self.pinned_content_storage = pinned_content_storage
-        self.pinned_content_manager = ContentManager(self, pinned_content_storage)
-
-        self.content_provider = ContentProvider(
-            client=self.client,
-            content_storages=(commons_content_storage, pinned_content_storage),
-        )
-        self.content_validator = ContentValidator(self)
-
-        self.local_advertisement_db = local_advertisement_db
-        self.local_advertisement_manager = AdvertisementManager(
-            network=self,
-            advertisement_db=local_advertisement_db,
-            max_advertisement_count=None,
-        )
-
-        self.remote_advertisement_db = remote_advertisement_db
-        self.remote_advertisement_manager = AdvertisementManager(
-            network=self,
-            advertisement_db=remote_advertisement_db,
-            max_advertisement_count=max_advertisement_count,
-        )
-
-        self.advertisement_collector = AdvertisementCollector(
-            network=self,
-            local_advertisement_manager=self.local_advertisement_manager,
-            remote_advertisement_manager=self.remote_advertisement_manager,
-        )
-        self.advertisement_provider = AdvertisementProvider(
-            client=self.client,
-            advertisement_dbs=(
-                self.local_advertisement_db,
-                self.remote_advertisement_db,
-            ),
-        )
-
-        self.radius_tracker = RadiusTracker(self)
 
         self._last_pong_at = LRU(2048)
         self._routing_table_ready = trio.Event()
@@ -155,14 +62,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         await self._routing_table_ready.wait()
 
     async def ready(self) -> None:
-        await self.local_advertisement_manager.ready()
-        await self.remote_advertisement_manager.ready()
-        await self.advertisement_provider.ready()
-        await self.advertisement_collector.ready()
-        await self.content_provider.ready()
-        await self.commons_content_collector.ready()
-        await self.radius_tracker.ready()
-
         await self._ping_handler_ready.wait()
         await self._find_nodes_handler_ready.wait()
 
@@ -184,7 +83,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     async def run(self) -> None:
         # Long running processes
-        self.manager.run_daemon_task(self._periodically_report_status)
         self.manager.run_daemon_task(self._periodically_report_routing_table)
         self.manager.run_daemon_task(self._ping_oldest_routing_table_entry)
         self.manager.run_daemon_task(self._track_last_pong)
@@ -194,15 +92,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         # Child services
         self.manager.run_daemon_child_service(self.client)
-        self.manager.run_daemon_child_service(self.local_advertisement_manager)
-        self.manager.run_daemon_child_service(self.remote_advertisement_manager)
-        self.manager.run_daemon_child_service(self.advertisement_collector)
-        self.manager.run_daemon_child_service(self.advertisement_provider)
-        self.manager.run_daemon_child_service(self.content_provider)
-        self.manager.run_daemon_child_service(self.commons_content_manager)
-        self.manager.run_daemon_child_service(self.commons_content_collector)
-        self.manager.run_daemon_child_service(self.pinned_content_manager)
-        self.manager.run_daemon_child_service(self.radius_tracker)
+        # self.manager.run_daemon_child_service(self.radius_tracker)
 
         await self.manager.wait_finished()
 
@@ -211,7 +101,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     #
     @property
     def local_advertisement_radius(self) -> int:
-        return self.remote_advertisement_manager.advertisement_radius
+        return MAX_RADIUS
 
     #
     # High Level API
@@ -370,488 +260,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         validate_proof(proof)
         return proof
 
-    @asynccontextmanager
-    async def retrieve_content(
-        self, content_key: ContentKey, hash_tree_root: Hash32, concurrency: int = 3
-    ) -> AsyncIterator[ContentRetrievalAPI]:
-        content_retrieval = ContentRetrieval(
-            self, content_key, hash_tree_root, concurrency=concurrency,
-        )
-        with trio.move_on_after(300) as scope:
-            async with background_trio_service(content_retrieval):
-                yield content_retrieval
-
-        if scope.cancelled_caught:
-            self.logger.error("Timeout from retrieve content")
-
-    async def _get_hash_tree_root(
-        self,
-        content_key: ContentKey,
-        network_sample_size: int = 32,
-        score_threshold: float = 0.9,
-    ) -> Hash32:
-        content_id = content_key_to_content_id(content_key)
-        roots_from_local = set(
-            self.local_advertisement_db.get_hash_tree_roots_for_content_id(content_id)
-        )
-        if len(roots_from_local) == 1:
-            return first(roots_from_local)  # type: ignore
-        elif len(roots_from_local) > 1:
-            raise NotImplementedError(f"Multiple roots: roots={roots_from_local}")
-
-        roots_from_remote = set(
-            self.remote_advertisement_db.get_hash_tree_roots_for_content_id(content_id)
-        )
-        if len(roots_from_remote) == 1:
-            return first(roots_from_remote)  # type: ignore
-        elif len(roots_from_remote) > 1:
-            raise NotImplementedError(f"Multiple roots: roots={roots_from_remote}")
-
-        # We use a list here instead of a set to allow for duplicates of the
-        # same ad.  Under the *assumption* that nodes are correctly validating
-        # their advertisements, multiple of the same ad should count as
-        # independent votes.
-        candidate_ads: List[Advertisement] = []
-        async with self.stream_locations(content_key) as advertisements_aiter:
-            async for advertisement in advertisements_aiter:
-                candidate_ads.append(advertisement)
-                if len(candidate_ads) >= network_sample_size:
-                    break
-
-        if not candidate_ads:
-            raise Exception("Unable to find existing roots")
-
-        seen_roots = tuple(ad.hash_tree_root for ad in candidate_ads)
-        root_counts = collections.Counter(seen_roots)
-        for hash_tree_root, num_votes in root_counts.items():
-            score = num_votes / len(seen_roots)
-            if score >= score_threshold:
-                return hash_tree_root
-        else:
-            score_displays = "  ".join(
-                (
-                    f"{hash_tree_root.hex()}={int(num_votes * 100 / len(seen_roots))}"
-                    for hash_tree_root, num_votes in root_counts.items()
-                )
-            )
-            raise Exception(f"No roots scored high enough: {score_displays}")
-
-    async def get_content(
-        self,
-        content_key: ContentKey,
-        *,
-        hash_tree_root: Optional[Hash32] = None,
-        concurrency: int = 3,
-    ) -> Proof:
-        if hash_tree_root is None:
-            hash_tree_root = await self._get_hash_tree_root(content_key)
-
-        async def _feed_content_retrieval(
-            content_retrieval: ContentRetrievalAPI,
-        ) -> None:
-            stream_locations_ctx = self.stream_locations(
-                content_key, hash_tree_root=hash_tree_root, concurrency=concurrency,
-            )
-            async with stream_locations_ctx as advertisements_aiter:
-                async for advertisement in advertisements_aiter:
-                    if advertisement.node_id == self.local_node_id:
-                        continue
-                    await content_retrieval.node_queue.add(advertisement.node_id)
-
-        content_retrieval_ctx = self.retrieve_content(
-            content_key, hash_tree_root, concurrency=concurrency,
-        )
-        async with content_retrieval_ctx as content_retrieval:
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(_feed_content_retrieval, content_retrieval)
-
-                proof = await content_retrieval.wait_content_proof()
-
-                nursery.cancel_scope.cancel()
-                return proof
-
-    async def advertise(
-        self,
-        node_id: NodeID,
-        *,
-        advertisements: Collection[Advertisement],
-        endpoint: Optional[Endpoint] = None,
-    ) -> AckPayload:
-        if not all(ad.is_valid for ad in advertisements):
-            raise Exception("Cannot send invalid advertisements")
-        if endpoint is None:
-            endpoint = await self.network.endpoint_for_node_id(node_id)
-
-        advertisement_batches = partition_advertisements(
-            advertisements, max_payload_size=MAX_PAYLOAD_SIZE,
-        )
-        responses = tuple(
-            [
-                await self.client.advertise(node_id, endpoint, advertisements=batch)
-                for batch in advertisement_batches
-            ]
-        )
-
-        for batch, response in zip(advertisement_batches, responses):
-            if len(batch) != len(response.payload.acked):
-                raise ValidationError(
-                    f"Invalid response: acked={len(response.payload.acked)}  "
-                    f"expected={len(batch)}"
-                )
-
-        advertisement_radius = min(
-            response.payload.advertisement_radius for response in responses
-        )
-        acked = tuple(
-            was_acked for response in responses for was_acked in response.payload.acked
-        )
-        return AckPayload(advertisement_radius, acked)
-
-    async def locate(
-        self,
-        node_id: NodeID,
-        *,
-        content_key: ContentKey,
-        endpoint: Optional[Endpoint] = None,
-        request_id: Optional[bytes] = None,
-    ) -> Tuple[Advertisement, ...]:
-        stream_locate_ctx = self.stream_locate(
-            node_id, content_key=content_key, endpoint=endpoint, request_id=request_id,
-        )
-        async with stream_locate_ctx as advertisement_aiter:
-            return tuple([advertisement async for advertisement in advertisement_aiter])
-
-    @asynccontextmanager
-    async def stream_locate(
-        self,
-        node_id: NodeID,
-        *,
-        content_key: ContentKey,
-        endpoint: Optional[Endpoint] = None,
-        request_id: Optional[bytes] = None,
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[Advertisement]]:
-        async def _feed_advertisements(
-            send_channel: trio.abc.SendChannel[Advertisement],
-        ) -> None:
-            nonlocal endpoint
-
-            if endpoint is None:
-                endpoint = await self.network.endpoint_for_node_id(node_id)
-
-            stream_locate_ctx = self.client.stream_locate(
-                node_id,
-                content_key=content_key,
-                endpoint=endpoint,
-                request_id=request_id,
-            )
-            async with send_channel:
-                async with stream_locate_ctx as response_aiter:
-                    seen_totals = set()
-
-                    async for response in response_aiter:
-                        seen_totals.add(response.message.payload.total)
-
-                        if response.message.payload.total == 0:
-                            raise ValidationError("Invalid message total: total=0")
-                        elif len(seen_totals) != 1:
-                            raise ValidationError(
-                                f"Inconsisten message totals: {sorted(tuple(seen_totals))}"
-                            )
-
-                        advertisements = response.message.payload.locations
-
-                        if not all(
-                            advertisement.is_valid for advertisement in advertisements
-                        ):
-                            raise ValidationError(
-                                f"Response contains invalid advertisements: "
-                                f"advertisements={advertisements}"
-                            )
-
-                        unexpected_content_keys = tuple(
-                            sorted(
-                                set(
-                                    advertisement.content_key
-                                    for advertisement in advertisements
-                                    if advertisement.content_key != content_key
-                                )
-                            )
-                        )
-                        if unexpected_content_keys:
-                            raise ValidationError(
-                                f"Response contains unerquested content keys: "
-                                f"content_keys={unexpected_content_keys}"
-                            )
-
-                        for advertisement in response.message.payload.locations:
-                            await send_channel.send(advertisement)
-
-        send_channel, receive_channel = trio.open_memory_channel[Advertisement](32)
-
-        with trio.move_on_after(300) as scope:
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(_feed_advertisements, send_channel)
-
-                async with receive_channel:
-                    yield receive_channel
-
-                nursery.cancel_scope.cancel()
-
-        if scope.cancelled_caught:
-            self.logger.error("Timeout from `stream_locate`")
-
-    @asynccontextmanager
-    async def stream_locations(
-        self,
-        content_key: ContentKey,
-        *,
-        hash_tree_root: Optional[Hash32] = None,
-        concurrency: int = 3,
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[Advertisement]]:
-        content_id = content_key_to_content_id(content_key)
-
-        async def _feed_advertisements_from_db(
-            advertisement_db: AdvertisementDatabaseAPI,
-            ad_send_channel: trio.abc.SendChannel[Advertisement],
-        ) -> None:
-            advertisements = tuple(
-                take(
-                    32,
-                    advertisement_db.query(
-                        content_key=content_key, hash_tree_root=hash_tree_root,
-                    ),
-                )
-            )
-            async with ad_send_channel:
-                for advertisement in advertisements:
-                    await ad_send_channel.send(advertisement)
-
-        async def _feed_candidate_nodes(
-            work_send_channel: trio.abc.SendChannel[NodeID],
-        ) -> None:
-            async with work_send_channel:
-                async with self.explore(content_id) as enr_aiter:
-                    async for enr in enr_aiter:
-                        if enr.node_id == self.local_node_id:
-                            continue
-                        await work_send_channel.send(enr.node_id)
-
-        async def _worker(
-            worker_id: int,
-            work_receive_channel: trio.abc.ReceiveChannel[NodeID],
-            ad_send_channel: trio.abc.SendChannel[Advertisement],
-        ) -> None:
-            async with ad_send_channel:
-                async for node_id in work_receive_channel:
-                    distance_to_content = compute_content_distance(node_id, content_id)
-                    try:
-                        advertisement_radius = await self.radius_tracker.get_advertisement_radius(
-                            node_id
-                        )
-                    except trio.TooSlowError:
-                        continue
-
-                    if distance_to_content > advertisement_radius:
-                        continue
-
-                    stream_locate_ctx = self.stream_locate(
-                        node_id, content_key=content_key,
-                    )
-                    try:
-                        async with stream_locate_ctx as advertisement_aiter:
-                            async for advertisement in advertisement_aiter:
-                                if hash_tree_root is not None:
-                                    if advertisement.hash_tree_root != hash_tree_root:
-                                        continue
-                                await ad_send_channel.send(advertisement)
-                    except (trio.TooSlowError, MissingEndpointFields):
-                        continue
-
-        work_send_channel, work_receive_channel = trio.open_memory_channel[NodeID](
-            concurrency
-        )
-        ad_send_channel, ad_receive_channel = trio.open_memory_channel[Advertisement](
-            32
-        )
-
-        with trio.move_on_after(300) as scope:
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(
-                    _feed_advertisements_from_db,
-                    self.remote_advertisement_db,
-                    ad_send_channel.clone(),
-                )
-                nursery.start_soon(
-                    _feed_advertisements_from_db,
-                    self.local_advertisement_db,
-                    ad_send_channel.clone(),
-                )
-                nursery.start_soon(_feed_candidate_nodes, work_send_channel)
-
-                for worker_id in range(concurrency):
-                    nursery.start_soon(
-                        _worker,
-                        worker_id,
-                        work_receive_channel,
-                        ad_send_channel.clone(),
-                    )
-                await ad_send_channel.aclose()
-
-                async with ad_receive_channel:
-                    yield ad_receive_channel
-
-                nursery.cancel_scope.cancel()
-
-        if scope.cancelled_caught:
-            self.logger.error("Timeout from `stream_locate`")
-
-    async def broadcast(
-        self, advertisement: Advertisement, redundancy_factor: int = 3
-    ) -> Tuple[NodeID, ...]:
-        self.logger.debug("Broadcasting: advertisement=%s", advertisement)
-        start_at = trio.current_time()
-        acked_nodes: Set[NodeID] = set()
-
-        # Use the redundancy_factor also as the concurrency limit
-        lock = trio.Semaphore(redundancy_factor)
-        condition = trio.Condition()
-
-        num_tried = 0
-
-        async def _do_advertise(node_id: NodeID) -> None:
-            nonlocal acked_nodes
-            nonlocal num_tried
-
-            async with lock:
-                if len(acked_nodes) >= redundancy_factor:
-                    return
-
-                # verify we haven't recently sent this node the same advertisement
-                if self.broadcast_log.was_logged(node_id, advertisement):
-                    return
-
-                # verify the node should be interested in the advertisement based
-                # on their advertisement radius.
-                try:
-                    advertisement_radius = await self.radius_tracker.get_advertisement_radius(
-                        node_id,
-                    )
-                except trio.TooSlowError:
-                    return
-
-                distance_to_content = compute_content_distance(
-                    node_id, advertisement.content_id
-                )
-
-                if distance_to_content > advertisement_radius:
-                    return
-
-                num_tried += 1
-
-                # attempt to send the advertisement to the node.
-                try:
-                    ack_payload = await self.advertise(
-                        node_id, advertisements=(advertisement,)
-                    )
-                except trio.TooSlowError:
-                    self.logger.debug(
-                        "Broadcast timeout: node_id=%s  advertisement=%s",
-                        node_id.hex(),
-                        advertisement,
-                    )
-                    return
-                except MissingEndpointFields:
-                    self.logger.debug(
-                        "Unreachable node: node_id=%s  advertisement=%s",
-                        node_id.hex(),
-                        advertisement,
-                    )
-                    return
-                else:
-                    if all(ack_payload.acked):
-                        self.logger.debug(
-                            "Broadcast successful: node_id=%s  advertisement=%s",
-                            node_id.hex(),
-                            advertisement,
-                        )
-                        # log the broadcast
-                        acked_nodes.add(node_id)
-                    self.broadcast_log.log(node_id, advertisement)
-                finally:
-                    async with condition:
-                        condition.notify_all()
-
-        async with trio.open_nursery() as nursery:
-
-            async def _source_nodes_for_broadcast() -> None:
-                async with self.explore(advertisement.content_id) as enr_aiter:
-                    async for enr in enr_aiter:
-                        if enr.node_id == self.local_node_id:
-                            continue
-
-                        if len(acked_nodes) >= redundancy_factor:
-                            break
-
-                        nursery.start_soon(_do_advertise, enr.node_id)
-
-            nursery.start_soon(_source_nodes_for_broadcast)
-
-            # exit as soon as there are either no more child tasks or we have
-            # successfully broadcast to enough nodes.
-            while nursery.child_tasks and len(acked_nodes) < redundancy_factor:
-                with trio.move_on_after(1):
-                    async with condition:
-                        await condition.wait()
-
-        elapsed = trio.current_time() - start_at
-        self.logger.debug(
-            "Broadcast: acked=%d  tried=%d  elapsed=%0.2f",
-            len(acked_nodes),
-            num_tried,
-            elapsed,
-        )
-
-        return tuple(acked_nodes)
-
     #
     # Long Running Processes
     #
-    async def _periodically_report_status(self) -> None:
-        if self.remote_advertisement_manager.max_advertisement_count is None:
-            # this fixes a type hinting error below since this value is Optional[int]
-            raise Exception("Invalid")
-        if self.commons_content_manager.max_size is None:
-            # this fixes a type hinting error below since this value is Optional[int]
-            raise Exception("Invalid")
-
-        async for _ in every(5, initial_delay=5):
-            num_remote_ads = self.remote_advertisement_db.count()
-            max_remote_ads = self.remote_advertisement_manager.max_advertisement_count
-            remote_ad_capacity = 100 * num_remote_ads / max_remote_ads
-
-            commons_size = self.commons_content_storage.total_size()
-            commons_max_size = self.commons_content_manager.max_size
-            commons_capacity = 100 * commons_size / commons_max_size
-
-            radius_display = humanize_advertisement_radius(
-                self.remote_advertisement_manager.advertisement_radius
-            )
-            self.logger.info(
-                "status: commons=%d (%s/%s %.1f%%)  pinned=%d (%s)  local-ads=%d  "
-                "remote-ads=%d/%d (%.1f%%)  radius=%.2f",
-                len(self.commons_content_storage),
-                humanize_bytes(commons_size),
-                humanize_bytes(commons_max_size),
-                commons_capacity,
-                len(self.pinned_content_storage),
-                humanize_bytes(self.pinned_content_storage.total_size()),
-                self.local_advertisement_db.count(),
-                num_remote_ads,
-                max_remote_ads,
-                remote_ad_capacity,
-                radius_display,
-            )
-
     async def _periodically_report_routing_table(self) -> None:
         async for _ in every(30, initial_delay=30):
             non_empty_buckets = tuple(

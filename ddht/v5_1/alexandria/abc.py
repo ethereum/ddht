@@ -32,17 +32,15 @@ from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
 from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.constants import ONE_HOUR
 from ddht.v5_1.alexandria.messages import (
-    AckMessage,
     AlexandriaMessage,
     ContentMessage,
     FoundNodesMessage,
-    LocationsMessage,
     PongMessage,
     TAlexandriaMessage,
 )
 from ddht.v5_1.alexandria.partials.chunking import MissingSegment
 from ddht.v5_1.alexandria.partials.proof import Proof
-from ddht.v5_1.alexandria.payloads import AckPayload, PongPayload
+from ddht.v5_1.alexandria.payloads import PongPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 
 
@@ -361,51 +359,6 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> None:
         ...
 
-    @abstractmethod
-    async def send_advertisements(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisements: Sequence[Advertisement],
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        ...
-
-    @abstractmethod
-    async def send_ack(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisement_radius: int,
-        acked: Tuple[bool, ...],
-        request_id: bytes,
-    ) -> None:
-        ...
-
-    @abstractmethod
-    async def send_locate(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        content_key: ContentKey,
-        request_id: bytes,
-    ) -> bytes:
-        ...
-
-    @abstractmethod
-    async def send_locations(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisements: Sequence[Advertisement],
-        request_id: bytes,
-    ) -> int:
-        ...
-
     #
     # High Level Request/Response
     #
@@ -444,38 +397,6 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
     ) -> ContentMessage:
         ...
 
-    @abstractmethod
-    async def advertise(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisements: Collection[Advertisement],
-    ) -> AckMessage:
-        ...
-
-    @abstractmethod
-    async def locate(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        content_key: ContentKey,
-        request_id: Optional[bytes] = None,
-    ) -> Tuple[InboundMessage[LocationsMessage], ...]:
-        ...
-
-    @abstractmethod
-    def stream_locate(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        content_key: ContentKey,
-        request_id: Optional[bytes] = None,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]]:
-        ...
-
 
 class ContentRetrievalAPI(ServiceAPI):
     content_key: ContentKey
@@ -498,15 +419,6 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
 
     radius_tracker: RadiusTrackerAPI
     broadcast_log: BroadcastLogAPI
-
-    local_advertisement_db: AdvertisementDatabaseAPI
-    local_advertisement_manager: AdvertisementManagerAPI
-
-    remote_advertisement_db: AdvertisementDatabaseAPI
-    remote_advertisement_manager: AdvertisementManagerAPI
-
-    advertisement_provider: AdvertisementProviderAPI
-    advertisement_collector: AdvertisementCollectorAPI
 
     content_validator: ContentValidatorAPI
 
@@ -609,64 +521,6 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    def retrieve_content(
-        self, content_key: ContentKey, hash_tree_root: Hash32
-    ) -> AsyncContextManager[ContentRetrievalAPI]:
-        ...
-
-    @abstractmethod
-    async def get_content(
-        self,
-        content_key: ContentKey,
-        *,
-        hash_tree_root: Optional[Hash32] = None,
-        concurrency: int = 3,
-    ) -> Proof:
-        ...
-
-    @abstractmethod
-    async def advertise(
-        self,
-        node_id: NodeID,
-        *,
-        advertisements: Collection[Advertisement],
-        endpoint: Optional[Endpoint] = None,
-    ) -> AckPayload:
-        ...
-
-    @abstractmethod
-    async def locate(
-        self,
-        node_id: NodeID,
-        *,
-        content_key: ContentKey,
-        endpoint: Optional[Endpoint] = None,
-        request_id: Optional[bytes] = None,
-    ) -> Tuple[Advertisement, ...]:
-        ...
-
-    @abstractmethod
-    def stream_locate(
-        self,
-        node_id: NodeID,
-        *,
-        content_key: ContentKey,
-        endpoint: Optional[Endpoint] = None,
-        request_id: Optional[bytes] = None,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[Advertisement]]:
-        ...
-
-    @abstractmethod
-    def stream_locations(
-        self,
-        content_key: ContentKey,
-        *,
-        hash_tree_root: Optional[Hash32] = None,
-        concurrency: int = 3,
-    ) -> AsyncContextManager[trio.abc.ReceiveChannel[Advertisement]]:
-        ...
-
-    @abstractmethod
     def recursive_find_nodes(
         self, target: Union[NodeID, ContentID],
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
@@ -676,10 +530,4 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     def explore(
         self, target: Union[NodeID, ContentID], concurrency: int = 3,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
-        ...
-
-    @abstractmethod
-    async def broadcast(
-        self, advertisement: Advertisement, redundancy_factor: int = 3
-    ) -> Tuple[NodeID, ...]:
         ...

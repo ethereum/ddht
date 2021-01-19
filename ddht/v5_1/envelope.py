@@ -72,6 +72,7 @@ class EnvelopeDecoder(Service):
                             "Failed to decode datagram %s from %s",
                             datagram.hex(),
                             endpoint,
+                            exc_info=True,
                         )
                     else:
                         try:

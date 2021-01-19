@@ -137,7 +137,7 @@ class Application(BaseApplication):
         self.logger.info(
             "Local ENR       : seq=%d enr=%s",
             enr_manager.enr.sequence_number,
-            enr_manager.enr,
+            repr(enr_manager.enr),
         )
 
         self.manager.run_daemon_child_service(self.network)
