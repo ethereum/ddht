@@ -12,7 +12,7 @@ REQUEST_RESPONSE_TIMEOUT = 10
 FOUND_NODES_MAX_PAYLOAD_SIZE = DISCOVERY_MAX_PACKET_SIZE - 200
 
 
-DEFAULT_BOOTNODES: Tuple[str, ...] = (
+DEFAULT_BOOTNODES_ORIG: Tuple[str, ...] = (
     # DDHT: Alice
     "enr:-IS4QNIktXW8LPFA2B5n8jbF6fwScqUnO59gyZyg7CExFPHOO5z7nHBUjqbtbuS7Mk6Z2TL3eZiECpGmYCeGPlJzrLIDgmlkgnY0gmlwhC1PSnGJc2VjcDI1NmsxoQLvfEFi6FaFI7bp7Cw8yfZ17AdDwceRSQH7BxL5VhUNd4N1ZHCCdl8",  # noqa: E501
     # DDHT: Bob
@@ -28,13 +28,23 @@ DEFAULT_BOOTNODES: Tuple[str, ...] = (
 )
 
 
+DEFAULT_BOOTNODES: Tuple[str, ...] = (
+    # 94.63.192.187:30303
+    # "enr:-IS4QMKRqKacvGacwsChKkhY9OWyRAJvCkUG3mTlM-9DOtqcS7Zr7vVkf6s20ju6wCMNFE_ivWwYYp1CqA_ybJ9R_O8DgmlkgnY0gmlwhF4_wLuJc2VjcDI1NmsxoQLhZcNMi9TtZ9RxmjGNVG83YFyWQnyVdKr74_qXl7mbb4N1ZHCCdl8",  # noqa: E501
+    # 192.168.1.112:30303
+    "enr:-IS4QAVuwe64nAc-Lki-UHRUdpHzAB5xX_Uff0aQDBjIXgMlS7U7WjJ0h0Gja3-YTTTMTt6S5GG0doViOVYPMpYb2goDgmlkgnY0gmlwhMCoAXCJc2VjcDI1NmsxoQLhZcNMi9TtZ9RxmjGNVG83YFyWQnyVdKr74_qXl7mbb4N1ZHCCdl8",  # noqa: E501
+)
+
+
 PACKET_VERSION_1 = b"\x00\x01"
 
 ID_NONCE_SIGNATURE_PREFIX = b"discovery v5 identity proof"
 
 HEADER_PACKET_SIZE = 23
 
-PROTOCOL_ID = b"discv5"
+# PROTOCOL_ID = b"discv5"
+# XXX: Must be the same length as "discv5"
+PROTOCOL_ID = b"notdv5"
 
 WHO_ARE_YOU_PACKET_SIZE = 24
 
