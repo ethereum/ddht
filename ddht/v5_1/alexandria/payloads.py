@@ -3,7 +3,6 @@ from typing import NamedTuple, Sequence, Tuple
 from eth_enr import ENR, ENRAPI
 import rlp
 
-from ddht.v5_1.alexandria.advertisements import Advertisement
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
@@ -37,29 +36,11 @@ class FoundNodesPayload(NamedTuple):
         return cls(total, encoded_enrs)
 
 
-class GetContentPayload(NamedTuple):
+class FindContentPayload(NamedTuple):
     content_key: ContentKey
-    start_chunk_index: int
-    max_chunks: int
 
 
-class ContentPayload(NamedTuple):
-    is_proof: bool
+class FoundContentPayload(NamedTuple):
+    is_content: bool
+    encoded_enrs: Tuple[bytes, ...]
     payload: bytes
-
-
-AdvertisePayload = Tuple[Advertisement, ...]
-
-
-class AckPayload(NamedTuple):
-    advertisement_radius: int
-    acked: Tuple[bool, ...]
-
-
-class LocatePayload(NamedTuple):
-    content_key: ContentKey
-
-
-class LocationsPayload(NamedTuple):
-    total: int
-    locations: Tuple[Advertisement, ...]

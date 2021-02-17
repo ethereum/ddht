@@ -8,18 +8,18 @@ from ssz.exceptions import DeserializationError
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
 from ddht.v5_1.alexandria.payloads import (
-    ContentPayload,
+    FoundContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
-    GetContentPayload,
+    FindContentPayload,
     PingPayload,
     PongPayload,
 )
 from ddht.v5_1.alexandria.sedes import (
-    ContentSedes,
+    FoundContentSedes,
     FindNodesSedes,
     FoundNodesSedes,
-    GetContentSedes,
+    FindContentSedes,
     PingSedes,
     PongSedes,
 )
@@ -148,23 +148,23 @@ class FoundNodesMessage(AlexandriaMessage[FoundNodesPayload]):
 
 
 @register
-class GetContentMessage(AlexandriaMessage[GetContentPayload]):
+class FindContentMessage(AlexandriaMessage[FindContentPayload]):
     message_id = 5
     type = AlexandriaMessageType.REQUEST
-    sedes = GetContentSedes
-    payload_type = GetContentPayload
+    sedes = FindContentSedes
+    payload_type = FindContentPayload
 
-    payload: GetContentPayload
+    payload: FindContentPayload
 
 
 @register
-class ContentMessage(AlexandriaMessage[ContentPayload]):
+class FoundContentMessage(AlexandriaMessage[FoundContentPayload]):
     message_id = 6
     type = AlexandriaMessageType.RESPONSE
-    sedes = ContentSedes
-    payload_type = ContentPayload
+    sedes = FoundContentSedes
+    payload_type = FoundContentPayload
 
-    payload: ContentPayload
+    payload: FoundContentPayload
 
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:

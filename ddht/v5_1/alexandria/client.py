@@ -33,20 +33,20 @@ from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID, MAX_PAYLOAD_S
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
     AlexandriaMessageType,
-    ContentMessage,
+    FoundContentMessage,
     FindNodesMessage,
     FoundNodesMessage,
-    GetContentMessage,
+    FindContentMessage,
     PingMessage,
     PongMessage,
     TAlexandriaMessage,
     decode_message,
 )
 from ddht.v5_1.alexandria.payloads import (
-    ContentPayload,
+    FoundContentPayload,
     FindNodesPayload,
     FoundNodesPayload,
-    GetContentPayload,
+    FindContentPayload,
     PingPayload,
     PongPayload,
 )
@@ -354,7 +354,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
 
         return num_batches
 
-    async def send_get_content(
+    async def send_find_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
@@ -364,23 +364,26 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
-        message = GetContentMessage(
-            GetContentPayload(content_key, start_chunk_index, max_chunks)
+        message = FindContentMessage(
+            FindContentPayload(content_key)
         )
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
         )
 
-    async def send_content(
+    async def send_found_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
         is_proof: bool,
-        payload: bytes,
+        enrs: Sequence[ENRAPI, ...] = None,
+        payload: bytes = None,
         request_id: bytes,
     ) -> None:
-        message = ContentMessage(ContentPayload(is_proof, payload))
+        if enrs is None and payload is None:
+            raise TypeError("Must provide either ENR records or a payload")
+        message = FoundContentMessage(FoundContentPayload(is_proof, payload))
         return await self._send_response(
             node_id, endpoint, message, request_id=request_id
         )
@@ -451,21 +454,19 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
 
             return responses
 
-    async def get_content(
+    async def find_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         request_id: Optional[bytes] = None,
-    ) -> ContentMessage:
-        request = GetContentMessage(
-            GetContentPayload(content_key, start_chunk_index, max_chunks)
+    ) -> FoundContentMessage:
+        request = FindContentMessage(
+            FindContentPayload(content_key)
         )
         response = await self._request(
-            node_id, endpoint, request, ContentMessage, request_id
+            node_id, endpoint, request, FoundContentMessage, request_id
         )
         return response
 
