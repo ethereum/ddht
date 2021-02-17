@@ -12,8 +12,8 @@ from async_generator import asynccontextmanager
 from async_service import Service, background_trio_service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
-from eth_typing import Hash32, NodeID
-from eth_utils import ValidationError, get_extended_debug_logger
+from eth_typing import NodeID
+from eth_utils import get_extended_debug_logger
 from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
@@ -28,9 +28,7 @@ from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.constants import MAX_RADIUS
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
-from ddht.v5_1.alexandria.partials.proof import Proof, compute_proof, validate_proof
 from ddht.v5_1.alexandria.payloads import PongPayload
-from ddht.v5_1.alexandria.sedes import content_sedes
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.explorer import Explorer
@@ -217,17 +215,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         if scope.cancelled_caught:
             self.logger.error("Timeout from explore")
 
-    async def get_content_proof(
+    async def find_content(
         self,
         node_id: NodeID,
         *,
-        hash_tree_root: Hash32,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
-    ) -> Proof:
+    ) -> FindContentPayload:
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
 
@@ -235,30 +230,16 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             node_id,
             endpoint,
             content_key=content_key,
-            start_chunk_index=start_chunk_index,
-            max_chunks=max_chunks,
             request_id=request_id,
         )
-        if response.payload.is_proof:
-            proof = Proof.deserialize(
-                data=response.payload.payload, sedes=content_sedes,
-            )
-        else:
-            # TODO: computationally expensive
-            proof = compute_proof(
-                content=response.payload.payload, sedes=content_sedes,
-            )
+        return response.payload
 
-        # TODO: computationally expensive
-        if not proof.get_hash_tree_root() == hash_tree_root:
-            raise ValidationError(
-                f"Received proof has incorrect `hash_tree_root`: "
-                f"{proof.get_hash_tree_root().hex()}"
-            )
-
-        # TODO: computationally expensive
-        validate_proof(proof)
-        return proof
+    async def recursive_find_content(
+        self,
+        *,
+        content_key: ContentKey,
+    ) -> bytes:
+        ...
 
     #
     # Long Running Processes
