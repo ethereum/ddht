@@ -28,7 +28,7 @@ from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.constants import MAX_RADIUS
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
-from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.alexandria.payloads import PongPayload, FoundContentPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.explorer import Explorer
@@ -222,11 +222,11 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         content_key: ContentKey,
         endpoint: Optional[Endpoint] = None,
         request_id: Optional[bytes] = None,
-    ) -> FindContentPayload:
+    ) -> FoundContentPayload:
         if endpoint is None:
             endpoint = await self.network.endpoint_for_node_id(node_id)
 
-        response = await self.client.get_content(
+        response = await self.client.find_content(
             node_id,
             endpoint,
             content_key=content_key,

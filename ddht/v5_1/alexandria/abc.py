@@ -1,13 +1,10 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import (
     Any,
     AsyncContextManager,
     Collection,
-    ContextManager,
-    Iterable,
     Optional,
     Sequence,
-    Sized,
     Tuple,
     Type,
     Union,
@@ -16,119 +13,26 @@ from typing import (
 from async_service import ServiceAPI
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_keys import keys
-from eth_typing import Hash32, NodeID
+from eth_typing import NodeID
 import trio
 
 from ddht.abc import (
-    EventAPI,
     RequestTrackerAPI,
-    ResourceQueueAPI,
     RoutingTableAPI,
     SubscriptionManagerAPI,
 )
 from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
-from ddht.v5_1.alexandria.advertisements import Advertisement
-from ddht.v5_1.alexandria.constants import ONE_HOUR
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
-    ContentMessage,
+    FoundContentMessage,
     FoundNodesMessage,
     PongMessage,
     TAlexandriaMessage,
 )
-from ddht.v5_1.alexandria.partials.chunking import MissingSegment
-from ddht.v5_1.alexandria.partials.proof import Proof
-from ddht.v5_1.alexandria.payloads import PongPayload
+from ddht.v5_1.alexandria.payloads import PongPayload, FoundContentPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
-
-
-class ContentStorageAPI(Sized):
-    @abstractmethod
-    def total_size(self) -> int:
-        ...
-
-    @abstractmethod
-    def has_content(self, content_key: ContentKey) -> bool:
-        ...
-
-    @abstractmethod
-    def get_content(self, content_key: ContentKey) -> bytes:
-        ...
-
-    @abstractmethod
-    def set_content(
-        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
-    ) -> None:
-        ...
-
-    @abstractmethod
-    def delete_content(self, content_key: ContentKey) -> None:
-        ...
-
-    @abstractmethod
-    def enumerate_keys(
-        self,
-        start_key: Optional[ContentKey] = None,
-        end_key: Optional[ContentKey] = None,
-    ) -> Iterable[ContentKey]:
-        ...
-
-    @abstractmethod
-    def atomic(self) -> ContextManager["ContentStorageAPI"]:
-        ...
-
-    @abstractmethod
-    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
-        ...
-
-    @abstractmethod
-    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
-        ...
-
-
-class BroadcastLogAPI(ABC):
-    @abstractmethod
-    def log(self, node_id: NodeID, advertisement: Advertisement) -> None:
-        ...
-
-    @abstractmethod
-    def was_logged(
-        self, node_id: NodeID, advertisement: Advertisement, max_age: int = ONE_HOUR
-    ) -> bool:
-        ...
-
-    @property
-    @abstractmethod
-    def cache_size(self) -> Optional[int]:
-        ...
-
-    @property
-    @abstractmethod
-    def count(self) -> int:
-        ...
-
-
-class ContentValidatorAPI(ABC):
-    @abstractmethod
-    async def validate_content(self, content_key: ContentKey, content: bytes) -> None:
-        ...
-
-    async def validate_header(self, content_key: ContentKey, content: bytes) -> None:
-        ...
-
-
-class ContentProviderAPI(ServiceAPI):
-    @abstractmethod
-    async def ready(self) -> None:
-        ...
-
-
-class AdvertisementProviderAPI(ServiceAPI):
-    @abstractmethod
-    async def ready(self) -> None:
-        ...
 
 
 class RadiusTrackerAPI(ServiceAPI):
@@ -138,126 +42,6 @@ class RadiusTrackerAPI(ServiceAPI):
 
     @abstractmethod
     async def get_advertisement_radius(self, node_id: NodeID) -> int:
-        ...
-
-
-class AdvertisementDatabaseAPI(ABC):
-    @abstractmethod
-    def exists(self, advertisement: Advertisement) -> bool:
-        ...
-
-    @abstractmethod
-    def add(self, advertisement: Advertisement) -> None:
-        ...
-
-    @abstractmethod
-    def remove(self, advertisement: Advertisement) -> bool:
-        ...
-
-    @abstractmethod
-    def query(
-        self,
-        node_id: Optional[NodeID] = None,
-        content_id: Optional[ContentID] = None,
-        content_key: Optional[bytes] = None,
-        hash_tree_root: Optional[Hash32] = None,
-    ) -> Iterable[Advertisement]:
-        ...
-
-    @abstractmethod
-    def closest(self, node_id: NodeID) -> Iterable[Advertisement]:
-        ...
-
-    @abstractmethod
-    def furthest(self, node_id: NodeID) -> Iterable[Advertisement]:
-        ...
-
-    @abstractmethod
-    def get_hash_tree_roots_for_content_id(
-        self, content_id: ContentID
-    ) -> Iterable[Hash32]:
-        ...
-
-    @abstractmethod
-    def count(self) -> int:
-        ...
-
-    @abstractmethod
-    def expired(self) -> Iterable[Advertisement]:
-        ...
-
-
-class ContentManagerAPI(ServiceAPI):
-    content_storage: ContentStorageAPI
-    max_size: Optional[int]
-
-    @property
-    @abstractmethod
-    def content_radius(self) -> int:
-        ...
-
-    @property
-    @abstractmethod
-    def is_full(self) -> bool:
-        ...
-
-    @abstractmethod
-    async def process_content(self, content_key: ContentKey, content: bytes) -> None:
-        ...
-
-
-class AdvertisementCollectorAPI(ServiceAPI):
-    new_advertisement: EventAPI[Advertisement]
-
-    @abstractmethod
-    async def ready(self) -> None:
-        ...
-
-    @abstractmethod
-    def check_interest(self, advertisement: Advertisement) -> bool:
-        ...
-
-    @abstractmethod
-    async def validate_advertisement(self, advertisement: Advertisement) -> None:
-        ...
-
-    @abstractmethod
-    async def handle_advertisement(self, advertisement: Advertisement) -> bool:
-        ...
-
-
-class AdvertisementManagerAPI(ServiceAPI):
-    advertisement_db: AdvertisementDatabaseAPI
-    max_advertisement_count: Optional[int]
-
-    @property
-    @abstractmethod
-    def advertisement_radius(self) -> int:
-        ...
-
-    @abstractmethod
-    async def purge_expired_ads(self) -> None:
-        ...
-
-    @abstractmethod
-    async def purge_distant_ads(self) -> None:
-        ...
-
-    @abstractmethod
-    async def ready(self) -> None:
-        ...
-
-
-class ContentCollectorAPI(ServiceAPI):
-    content_manager: ContentManagerAPI
-
-    @property
-    @abstractmethod
-    def content_storage(self) -> ContentStorageAPI:
-        ...
-
-    @abstractmethod
-    async def ready(self) -> None:
         ...
 
 
@@ -335,7 +119,7 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def send_get_content(
+    async def send_find_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
@@ -348,13 +132,13 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def send_content(
+    async def send_found_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        is_proof: bool,
-        payload: bytes,
+        enrs: Optional[Sequence[ENRAPI]] = None,
+        content: Optional[bytes] = None,
         request_id: bytes,
     ) -> None:
         ...
@@ -385,29 +169,14 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def get_content(
+    async def find_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         request_id: Optional[bytes] = None,
-    ) -> ContentMessage:
-        ...
-
-
-class ContentRetrievalAPI(ServiceAPI):
-    content_key: ContentKey
-    content_id: ContentID
-    hash_tree_root: Hash32
-
-    node_queue: ResourceQueueAPI[NodeID]
-    segment_queue: ResourceQueueAPI[MissingSegment]
-
-    @abstractmethod
-    async def wait_content_proof(self) -> Proof:
+    ) -> FoundContentMessage:
         ...
 
 
@@ -418,18 +187,6 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     max_advertisement_count: int
 
     radius_tracker: RadiusTrackerAPI
-    broadcast_log: BroadcastLogAPI
-
-    content_validator: ContentValidatorAPI
-
-    content_storage: ContentStorageAPI
-    content_provider: ContentProviderAPI
-
-    commons_content_storage: ContentStorageAPI
-    commons_content_manager: ContentManagerAPI
-
-    pinned_content_storage: ContentStorageAPI
-    pinned_content_manager: ContentManagerAPI
 
     @abstractmethod
     async def routing_table_ready(self) -> None:
@@ -507,19 +264,6 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     ) -> Tuple[ENRAPI, ...]:
         ...
 
-    async def get_content_proof(
-        self,
-        node_id: NodeID,
-        *,
-        hash_tree_root: Hash32,
-        content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
-        endpoint: Optional[Endpoint] = None,
-        request_id: Optional[bytes] = None,
-    ) -> Proof:
-        ...
-
     @abstractmethod
     def recursive_find_nodes(
         self, target: Union[NodeID, ContentID],
@@ -530,4 +274,23 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     def explore(
         self, target: Union[NodeID, ContentID], concurrency: int = 3,
     ) -> AsyncContextManager[trio.abc.ReceiveChannel[ENRAPI]]:
+        ...
+
+    @abstractmethod
+    async def find_content(
+        self,
+        node_id: NodeID,
+        *,
+        content_key: ContentKey,
+        endpoint: Optional[Endpoint] = None,
+        request_id: Optional[bytes] = None,
+    ) -> FoundContentPayload:
+        ...
+
+    @abstractmethod
+    async def recursive_find_content(
+        self,
+        *,
+        content_key: ContentKey,
+    ) -> bytes:
         ...

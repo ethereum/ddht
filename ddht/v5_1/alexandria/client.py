@@ -18,6 +18,7 @@ from eth_enr import ENRAPI
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import ValidationError, get_extended_debug_logger
+import rlp
 import trio
 
 from ddht.base_message import InboundMessage
@@ -376,14 +377,31 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        is_proof: bool,
-        enrs: Sequence[ENRAPI, ...] = None,
-        payload: bytes = None,
+        enrs: Optional[Sequence[ENRAPI]] = None,
+        content: Optional[bytes] = None,
         request_id: bytes,
     ) -> None:
-        if enrs is None and payload is None:
-            raise TypeError("Must provide either ENR records or a payload")
-        message = FoundContentMessage(FoundContentPayload(is_proof, payload))
+        enrs_payload: Tuple[bytes, ...]
+        content_payload: bytes
+
+        if enrs is None and content is None:
+            raise TypeError("Must provide either ENR records or content")
+        elif enrs is not None and content is not None:
+            raise TypeError("Must provide either ENR records or content, not both")
+        elif enrs is None:
+            is_content = True
+            content_payload = content  # type: ignore
+            enrs_payload = ()
+        elif content is None:
+            is_content = False
+            content_payload = b''
+            enrs_payload = tuple(rlp.encode(enr) for enr in enrs)
+        else:
+            raise Exception("unreachable")
+
+        message = FoundContentMessage(
+            FoundContentPayload(is_content, enrs_payload, content_payload)
+        )
         return await self._send_response(
             node_id, endpoint, message, request_id=request_id
         )

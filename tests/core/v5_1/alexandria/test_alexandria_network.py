@@ -1,7 +1,6 @@
 from contextlib import AsyncExitStack
 
 from eth_enr.tools.factories import ENRFactory
-from eth_utils import ValidationError
 import pytest
 import trio
 
@@ -9,23 +8,11 @@ from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.kademlia import (
     KademliaRoutingTable,
     at_log_distance,
-    compute_distance,
     compute_log_distance,
 )
-from ddht.tools.factories.alexandria import AdvertisementFactory
-from ddht.tools.factories.content import ContentFactory
-from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
-from ddht.v5_1.alexandria.constants import MAX_PAYLOAD_SIZE
-from ddht.v5_1.alexandria.content import compute_content_distance
 from ddht.v5_1.alexandria.messages import (
-    AdvertiseMessage,
     FindNodesMessage,
-    GetContentMessage,
-    LocateMessage,
 )
-from ddht.v5_1.alexandria.partials.proof import compute_proof, validate_proof
-from ddht.v5_1.alexandria.payloads import AckPayload
-from ddht.v5_1.alexandria.sedes import content_sedes
 
 
 @pytest.mark.trio
