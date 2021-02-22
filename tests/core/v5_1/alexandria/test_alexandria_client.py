@@ -7,9 +7,9 @@ import trio
 from ddht.kademlia import KademliaRoutingTable
 from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID
 from ddht.v5_1.alexandria.messages import (
-    FoundContentMessage,
-    FindNodesMessage,
     FindContentMessage,
+    FindNodesMessage,
+    FoundContentMessage,
     PingMessage,
     PongMessage,
     decode_message,
@@ -363,9 +363,7 @@ async def test_alexandria_client_send_get_content(
 
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
         await alice_alexandria_client.send_get_content(
-            bob.node_id,
-            bob.endpoint,
-            content_key=content_key,
+            bob.node_id, bob.endpoint, content_key=content_key,
         )
         with trio.fail_after(1):
             talk_response = await subscription.receive()

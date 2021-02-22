@@ -8,18 +8,18 @@ from ssz.exceptions import DeserializationError
 from ddht.constants import UINT8_TO_BYTES
 from ddht.exceptions import DecodingError
 from ddht.v5_1.alexandria.payloads import (
-    FoundContentPayload,
-    FindNodesPayload,
-    FoundNodesPayload,
     FindContentPayload,
+    FindNodesPayload,
+    FoundContentPayload,
+    FoundNodesPayload,
     PingPayload,
     PongPayload,
 )
 from ddht.v5_1.alexandria.sedes import (
-    FoundContentSedes,
-    FindNodesSedes,
-    FoundNodesSedes,
     FindContentSedes,
+    FindNodesSedes,
+    FoundContentSedes,
+    FoundNodesSedes,
     PingSedes,
     PongSedes,
 )

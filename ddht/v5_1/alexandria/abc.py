@@ -16,11 +16,7 @@ from eth_keys import keys
 from eth_typing import NodeID
 import trio
 
-from ddht.abc import (
-    RequestTrackerAPI,
-    RoutingTableAPI,
-    SubscriptionManagerAPI,
-)
+from ddht.abc import RequestTrackerAPI, RoutingTableAPI, SubscriptionManagerAPI
 from ddht.base_message import InboundMessage
 from ddht.endpoint import Endpoint
 from ddht.v5_1.abc import NetworkAPI, TalkProtocolAPI
@@ -31,7 +27,7 @@ from ddht.v5_1.alexandria.messages import (
     PongMessage,
     TAlexandriaMessage,
 )
-from ddht.v5_1.alexandria.payloads import PongPayload, FoundContentPayload
+from ddht.v5_1.alexandria.payloads import FoundContentPayload, PongPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 
 
@@ -288,9 +284,5 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def recursive_find_content(
-        self,
-        *,
-        content_key: ContentKey,
-    ) -> bytes:
+    async def recursive_find_content(self, *, content_key: ContentKey,) -> bytes:
         ...

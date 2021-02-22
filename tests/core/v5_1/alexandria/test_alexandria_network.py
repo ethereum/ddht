@@ -5,14 +5,8 @@ import pytest
 import trio
 
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
-from ddht.kademlia import (
-    KademliaRoutingTable,
-    at_log_distance,
-    compute_log_distance,
-)
-from ddht.v5_1.alexandria.messages import (
-    FindNodesMessage,
-)
+from ddht.kademlia import KademliaRoutingTable, at_log_distance, compute_log_distance
+from ddht.v5_1.alexandria.messages import FindNodesMessage
 
 
 @pytest.mark.trio

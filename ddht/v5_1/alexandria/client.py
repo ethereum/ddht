@@ -34,20 +34,20 @@ from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID, MAX_PAYLOAD_S
 from ddht.v5_1.alexandria.messages import (
     AlexandriaMessage,
     AlexandriaMessageType,
-    FoundContentMessage,
-    FindNodesMessage,
-    FoundNodesMessage,
     FindContentMessage,
+    FindNodesMessage,
+    FoundContentMessage,
+    FoundNodesMessage,
     PingMessage,
     PongMessage,
     TAlexandriaMessage,
     decode_message,
 )
 from ddht.v5_1.alexandria.payloads import (
-    FoundContentPayload,
-    FindNodesPayload,
-    FoundNodesPayload,
     FindContentPayload,
+    FindNodesPayload,
+    FoundContentPayload,
+    FoundNodesPayload,
     PingPayload,
     PongPayload,
 )
@@ -365,9 +365,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
-        message = FindContentMessage(
-            FindContentPayload(content_key)
-        )
+        message = FindContentMessage(FindContentPayload(content_key))
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
         )
@@ -394,7 +392,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
             enrs_payload = ()
         elif content is None:
             is_content = False
-            content_payload = b''
+            content_payload = b""
             enrs_payload = tuple(rlp.encode(enr) for enr in enrs)
         else:
             raise Exception("unreachable")
@@ -480,9 +478,7 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         content_key: ContentKey,
         request_id: Optional[bytes] = None,
     ) -> FoundContentMessage:
-        request = FindContentMessage(
-            FindContentPayload(content_key)
-        )
+        request = FindContentMessage(FindContentPayload(content_key))
         response = await self._request(
             node_id, endpoint, request, FoundContentMessage, request_id
         )
