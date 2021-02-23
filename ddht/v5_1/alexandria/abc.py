@@ -3,8 +3,11 @@ from typing import (
     Any,
     AsyncContextManager,
     Collection,
+    ContextManager,
+    Iterable,
     Optional,
     Sequence,
+    Sized,
     Tuple,
     Type,
     Union,
@@ -29,6 +32,50 @@ from ddht.v5_1.alexandria.messages import (
 )
 from ddht.v5_1.alexandria.payloads import FoundContentPayload, PongPayload
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
+
+
+class ContentStorageAPI(Sized):
+    @abstractmethod
+    def total_size(self) -> int:
+        ...
+
+    @abstractmethod
+    def has_content(self, content_key: ContentKey) -> bool:
+        ...
+
+    @abstractmethod
+    def get_content(self, content_key: ContentKey) -> bytes:
+        ...
+
+    @abstractmethod
+    def set_content(
+        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
+    ) -> None:
+        ...
+
+    @abstractmethod
+    def delete_content(self, content_key: ContentKey) -> None:
+        ...
+
+    @abstractmethod
+    def enumerate_keys(
+        self,
+        start_key: Optional[ContentKey] = None,
+        end_key: Optional[ContentKey] = None,
+    ) -> Iterable[ContentKey]:
+        ...
+
+    @abstractmethod
+    def atomic(self) -> ContextManager["ContentStorageAPI"]:
+        ...
+
+    @abstractmethod
+    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
+        ...
+
+    @abstractmethod
+    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
+        ...
 
 
 class RadiusTrackerAPI(ServiceAPI):

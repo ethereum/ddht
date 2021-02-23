@@ -13,7 +13,7 @@ from async_service import Service, background_trio_service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils import get_extended_debug_logger
+from eth_utils import get_extended_debug_logger, ValidationError
 from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
@@ -29,6 +29,7 @@ from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.constants import MAX_RADIUS
 from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
 from ddht.v5_1.alexandria.payloads import FoundContentPayload, PongPayload
+from ddht.v5_1.alexandria.seeker import Seeker
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
 from ddht.v5_1.constants import ROUTING_TABLE_KEEP_ALIVE
 from ddht.v5_1.explorer import Explorer
@@ -229,10 +230,22 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         response = await self.client.find_content(
             node_id, endpoint, content_key=content_key, request_id=request_id,
         )
+        if response.payload.is_content and response.payload.encoded_enrs:
+            raise ValidationError("Content response with non-empty ENR payload")
+        elif response.payload.is_content and not response.payload.content:
+            raise ValidationError("Content response with empty content")
+
         return response.payload
 
-    async def recursive_find_content(self, *, content_key: ContentKey,) -> bytes:
-        ...
+    @asynccontextmanager
+    async def recursive_find_content(self,
+                                     *,
+                                     content_key: ContentKey,
+                                     ) -> AsyncIterator[trio.abc.ReceiveChannel[bytes]]:
+        seeker = Seeker(self, content_key)
+
+        async with background_trio_service(seeker):
+            yield seeker.content_receive
 
     #
     # Long Running Processes

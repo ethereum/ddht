@@ -1,8 +1,4 @@
-import sqlite3
-
 import pytest
-
-from ddht.v5_1.alexandria.advertisement_db import create_tables
 
 
 @pytest.fixture
@@ -27,14 +23,3 @@ async def alice_alexandria_network(alice, alice_network):
 async def bob_alexandria_network(bob, bob_network):
     async with bob.alexandria.network(bob_network) as bob_alexandria:
         yield bob_alexandria
-
-
-@pytest.fixture
-def base_conn():
-    return sqlite3.connect(":memory:")
-
-
-@pytest.fixture
-def conn(base_conn):
-    create_tables(base_conn)
-    return base_conn
