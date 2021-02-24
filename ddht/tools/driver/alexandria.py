@@ -25,8 +25,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
     def __init__(self, node: NodeAPI) -> None:
         self.node = node
-        self.commons_content_storage = ContentStorage.memory()
-        self.pinned_content_storage = ContentStorage.memory()
+        self.storage = ContentStorage.memory()
         self._lock = NamedLock()
 
     @property
@@ -68,7 +67,9 @@ class AlexandriaNode(AlexandriaNodeAPI):
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
                 alexandria_network = AlexandriaNetwork(
-                    network=network, bootnodes=bootnodes,
+                    network=network,
+                    bootnodes=bootnodes,
+                    storag=self.storage,
                 )
                 async with background_trio_service(alexandria_network):
                     await alexandria_network.ready()

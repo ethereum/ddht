@@ -24,10 +24,15 @@ from ddht.endpoint import Endpoint
 from ddht.kademlia import KademliaRoutingTable, at_log_distance
 from ddht.token_bucket import TokenBucket
 from ddht.v5_1.abc import NetworkAPI
-from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI
+from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.constants import MAX_RADIUS
-from ddht.v5_1.alexandria.messages import FindNodesMessage, PingMessage, PongMessage
+from ddht.v5_1.alexandria.messages import (
+    FindNodesMessage,
+    PingMessage,
+    PongMessage,
+    FindContentMessage,
+)
 from ddht.v5_1.alexandria.payloads import FoundContentPayload, PongPayload
 from ddht.v5_1.alexandria.seeker import Seeker
 from ddht.v5_1.alexandria.typing import ContentID, ContentKey
@@ -40,7 +45,10 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # Delegate to the AlexandriaClient for determining `protocol_id`
     protocol_id = AlexandriaClient.protocol_id
 
-    def __init__(self, network: NetworkAPI, bootnodes: Collection[ENRAPI],) -> None:
+    def __init__(self,
+                 network: NetworkAPI,
+                 bootnodes: Collection[ENRAPI],
+                 storage: ContentStorageAPI) -> None:
         self.logger = get_extended_debug_logger("ddht.Alexandria")
 
         self._bootnodes = tuple(bootnodes)
@@ -56,6 +64,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         self._ping_handler_ready = trio.Event()
         self._find_nodes_handler_ready = trio.Event()
+
+        self.storage = storage
 
     async def routing_table_ready(self) -> None:
         await self._routing_table_ready.wait()
@@ -247,6 +257,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         async with background_trio_service(seeker):
             yield seeker.content_receive
 
+    async def retrieve_content(self,
+                               *,
+                               content_key: ContentKey) -> bytes:
+        async with self.recursive_find_content as content_aiter:
+            async for content in content_aiter:
+                # TODO: validate that it's the right content
+                return content
+
     #
     # Long Running Processes
     #
@@ -285,56 +303,92 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 self.routing_table.update(enr.node_id)
                 self._routing_table_ready.set()
 
+    def _source_nodes(self,
+                      distances: Tuple[int, ...]) -> Tuple[ENRAPI, ...]:
+        response_enrs: List[ENRAPI] = []
+        unique_distances = set(distances)
+        if len(unique_distances) != len(distances):
+            raise ValidationError("duplicate distances")
+        elif not distances:
+            raise ValidationError("empty distances")
+        elif any(
+            distance > self.routing_table.num_buckets for distance in distances
+        ):
+            raise ValidationError("invalid distances")
+
+        for distance in distances:
+            if distance == 0:
+                response_enrs.append(self.enr_manager.enr)
+            elif distance <= self.routing_table.num_buckets:
+                node_ids_at_distance = self.routing_table.get_nodes_at_log_distance(
+                    distance,
+                )
+                for node_id in node_ids_at_distance:
+                    response_enrs.append(self.enr_db.get_enr(node_id))
+            else:
+                raise Exception("Should be unreachable")
+
+        return tuple(response_enrs)
+
     async def _serve_find_nodes(self) -> None:
         async with self.client.subscribe(FindNodesMessage) as subscription:
             self._find_nodes_handler_ready.set()
 
             async for request in subscription:
-                response_enrs: List[ENRAPI] = []
-                distances = set(request.message.payload.distances)
-                if len(distances) != len(request.message.payload.distances):
+                try:
+                    response_enrs = self._source_nodes(request.message.payload.distances)
+                except ValidationError as err:
                     self.logger.debug(
-                        "Ignoring invalid FindNodesMessage from %s@%s: duplicate distances",
+                        "Ignoring invalid FindNodesMessage from %s@%s: %s",
                         request.sender_node_id.hex(),
                         request.sender_endpoint,
+                        err,
                     )
-                    continue
-                elif not distances:
-                    self.logger.debug(
-                        "Ignoring invalid FindNodesMessage from %s@%s: empty distances",
-                        request.sender_node_id.hex(),
+                else:
+                    await self.client.send_found_nodes(
+                        request.sender_node_id,
                         request.sender_endpoint,
+                        enrs=response_enrs,
+                        request_id=request.request_id,
                     )
-                    continue
-                elif any(
-                    distance > self.routing_table.num_buckets for distance in distances
-                ):
-                    self.logger.debug(
-                        "Ignoring invalid FindNodesMessage from %s@%s: distances: %s",
-                        request.sender_node_id.hex(),
-                        request.sender_endpoint,
-                        distances,
-                    )
-                    continue
 
-                for distance in distances:
-                    if distance == 0:
-                        response_enrs.append(self.enr_manager.enr)
-                    elif distance <= self.routing_table.num_buckets:
-                        node_ids_at_distance = self.routing_table.get_nodes_at_log_distance(
-                            distance,
+    async def _serve_find_content(self) -> None:
+        async with self.client.subscribe(FindContentMessage) as subscription:
+            self._find_content_handler_ready.set()
+
+            async for request in subscription:
+                # if content in storage, serve it....
+                # else serve ENR records that we know of which are *closest*
+                content_key = request.message.payload.content_key
+
+                if self.storage.has_content(content_key):
+                    content = self.storage.get_content(content_key)
+
+                    await self.client.send_found_content(
+                        request.sender_node_id,
+                        request.sender_endpoint,
+                        enrs=None,
+                        content=content,
+                        request_id=request.request_id,
+                    )
+                else:
+                    try:
+                        response_enrs = self._source_nodes(request.message.payload.distances)
+                    except ValidationError as err:
+                        self.logger.debug(
+                            "Ignoring invalid FindNodesMessage from %s@%s: %s",
+                            request.sender_node_id.hex(),
+                            request.sender_endpoint,
+                            err,
                         )
-                        for node_id in node_ids_at_distance:
-                            response_enrs.append(self.enr_db.get_enr(node_id))
                     else:
-                        raise Exception("Should be unreachable")
-
-                await self.client.send_found_nodes(
-                    request.sender_node_id,
-                    request.sender_endpoint,
-                    enrs=response_enrs,
-                    request_id=request.request_id,
-                )
+                        await self.client.send_found_content(
+                            request.sender_node_id,
+                            request.sender_endpoint,
+                            enrs=response_enrs,
+                            content=None,
+                            request_id=request.request_id,
+                        )
 
     async def _ping_oldest_routing_table_entry(self) -> None:
         await self._routing_table_ready.wait()
