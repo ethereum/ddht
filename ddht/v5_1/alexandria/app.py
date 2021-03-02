@@ -3,7 +3,9 @@ import argparse
 from ddht.app import BaseApplication
 from ddht.boot_info import BootInfo
 from ddht.v5_1.alexandria.boot_info import AlexandriaBootInfo
+from ddht.v5_1.alexandria.content_storage import ContentStorage
 from ddht.v5_1.alexandria.network import AlexandriaNetwork
+from ddht.v5_1.alexandria.rpc_handlers import get_alexandria_rpc_handlers
 from ddht.v5_1.alexandria.xdg import get_xdg_alexandria_root
 from ddht.v5_1.app import Application
 
@@ -27,6 +29,7 @@ class AlexandriaApplication(BaseApplication):
         alexandria_network = AlexandriaNetwork(
             network=self.base_protocol_app.network,
             bootnodes=self._alexandria_boot_info.bootnodes,
+            storage=ContentStorage.memory(),
         )
 
         self.manager.run_daemon_child_service(alexandria_network)
@@ -34,5 +37,10 @@ class AlexandriaApplication(BaseApplication):
         self.logger.info("Starting Alexandria...")
         self.logger.info("Root Directory         : %s", xdg_alexandria_root)
         await alexandria_network.ready()
+
+        if self._boot_info.is_rpc_enabled:
+            self.base_protocol_app.rpc_server.add_handers(
+                get_alexandria_rpc_handlers(alexandria_network)
+            )
 
         await self.manager.wait_finished()

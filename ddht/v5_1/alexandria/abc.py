@@ -168,8 +168,6 @@ class AlexandriaClientAPI(ServiceAPI, TalkProtocolAPI):
         endpoint: Endpoint,
         *,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         ...

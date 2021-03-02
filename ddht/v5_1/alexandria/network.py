@@ -64,6 +64,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
         self._ping_handler_ready = trio.Event()
         self._find_nodes_handler_ready = trio.Event()
+        self._find_content_handler_ready = trio.Event()
 
         self.storage = storage
 
@@ -73,6 +74,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     async def ready(self) -> None:
         await self._ping_handler_ready.wait()
         await self._find_nodes_handler_ready.wait()
+        await self._find_content_handler_ready.wait()
 
     @property
     def network(self) -> NetworkAPI:
@@ -98,6 +100,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.manager.run_daemon_task(self._manage_routing_table)
         self.manager.run_daemon_task(self._pong_when_pinged)
         self.manager.run_daemon_task(self._serve_find_nodes)
+        self.manager.run_daemon_task(self._serve_find_content)
 
         # Child services
         self.manager.run_daemon_child_service(self.client)
@@ -249,7 +252,6 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
     @asynccontextmanager
     async def recursive_find_content(self,
-                                     *,
                                      content_key: ContentKey,
                                      ) -> AsyncIterator[trio.abc.ReceiveChannel[bytes]]:
         seeker = Seeker(self, content_key)
@@ -258,9 +260,8 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
             yield seeker.content_receive
 
     async def retrieve_content(self,
-                               *,
                                content_key: ContentKey) -> bytes:
-        async with self.recursive_find_content as content_aiter:
+        async with self.recursive_find_content(content_key) as content_aiter:
             async for content in content_aiter:
                 # TODO: validate that it's the right content
                 return content

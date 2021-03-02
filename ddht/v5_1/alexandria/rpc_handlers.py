@@ -32,7 +32,7 @@ class AddContentHandler(RPCHandler[Tuple[ContentKey, bytes], None]):
 
     async def do_call(self, params: Tuple[ContentKey, bytes]) -> None:
         content_key, content = params
-        await self._storage.set_content(content_key, content)
+        self._storage.set_content(content_key, content)
 
 
 class GetContentHandler(RPCHandler[ContentKey, str]):
@@ -108,7 +108,7 @@ class RetrieveContentHandler(RPCHandler[ContentKey, str]):
             return encode_hex(content)
 
         try:
-            content = await self._network.get_content(content_key)
+            content = await self._network.retrieve_content(content_key)
         except trio.TooSlowError as err:
             raise RPCError(
                 f"Timeout retrieving content: content_key={content_key.hex()}"

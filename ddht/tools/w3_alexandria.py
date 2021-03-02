@@ -19,16 +19,11 @@ from ddht.v5_1.alexandria.typing import ContentKey
 class RPC:
     # core
     getContent = RPCEndpoint("alexandria_getContent")
-
-    # commons
-    getCommonsContent = RPCEndpoint("alexandria_getCommonsContent")
-    addCommonsContent = RPCEndpoint("alexandria_addCommonsContent")
-    deleteCommonsContent = RPCEndpoint("alexandria_deleteCommonsContent")
+    retrieveContent = RPCEndpoint("alexandria_retrieveContent")
 
     # pinned
-    getPinnedContent = RPCEndpoint("alexandria_getPinnedContent")
-    addPinnedContent = RPCEndpoint("alexandria_addPinnedContent")
-    deletePinnedContent = RPCEndpoint("alexandria_deletePinnedContent")
+    addContent = RPCEndpoint("alexandria_addContent")
+    deleteContent = RPCEndpoint("alexandria_deleteContent")
 
 
 #

@@ -21,7 +21,7 @@ PongSedes = Container(field_sedes=(uint32, uint256))
 FindNodesSedes = Container(field_sedes=(List(uint16, max_length=256),))
 FoundNodesSedes = Container(field_sedes=(uint8, List(byte_list, max_length=32)))
 
-FindContentSedes = Container(field_sedes=(byte_list, uint32, uint16))
+FindContentSedes = Container(field_sedes=(byte_list,))
 FoundContentSedes = Container(
     field_sedes=(boolean, List(byte_list, max_length=32), byte_list)
 )

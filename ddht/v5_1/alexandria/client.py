@@ -361,8 +361,6 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
         endpoint: Endpoint,
         *,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
         message = FindContentMessage(FindContentPayload(content_key))

@@ -356,13 +356,13 @@ async def test_client_request_response_find_nodes_found_nodes(
 
 
 @pytest.mark.trio
-async def test_alexandria_client_send_get_content(
+async def test_alexandria_client_send_find_content(
     bob, bob_network, alice_alexandria_client
 ):
     content_key = b"test-content-key"
 
     async with bob_network.dispatcher.subscribe(TalkRequestMessage) as subscription:
-        await alice_alexandria_client.send_get_content(
+        await alice_alexandria_client.send_find_content(
             bob.node_id, bob.endpoint, content_key=content_key,
         )
         with trio.fail_after(1):
@@ -373,16 +373,16 @@ async def test_alexandria_client_send_get_content(
 
 
 @pytest.mark.trio
-async def test_alexandria_client_send_content(
+async def test_alexandria_client_send_found_content(
     bob, bob_network, alice_alexandria_client
 ):
 
     async with bob_network.dispatcher.subscribe(TalkResponseMessage) as subscription:
-        await alice_alexandria_client.send_content(
+        await alice_alexandria_client.send_found_content(
             bob.node_id,
             bob.endpoint,
             enrs=None,
-            payload=b"test-payload",
+            content=b"test-payload",
             request_id=b"\x01",
         )
         with trio.fail_after(1):
@@ -390,4 +390,4 @@ async def test_alexandria_client_send_content(
         message = decode_message(talk_response.message.payload)
         assert isinstance(message, FoundContentMessage)
         assert message.payload.is_content is True
-        assert message.payload.payload == b"test-payload"
+        assert message.payload.content == b"test-payload"
