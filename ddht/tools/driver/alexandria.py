@@ -69,7 +69,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
                 alexandria_network = AlexandriaNetwork(
                     network=network,
                     bootnodes=bootnodes,
-                    storag=self.storage,
+                    storage=self.storage,
                 )
                 async with background_trio_service(alexandria_network):
                     await alexandria_network.ready()

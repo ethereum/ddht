@@ -27,6 +27,7 @@ from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.constants import MAX_RADIUS
+from ddht.v5_1.alexandria.content import content_key_to_content_id, compute_content_distance
 from ddht.v5_1.alexandria.messages import (
     FindNodesMessage,
     PingMessage,
@@ -373,8 +374,10 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                         request_id=request.request_id,
                     )
                 else:
+                    content_id = content_key_to_content_id(content_key)
+                    distance = compute_content_distance(self.local_node_id, content_id)
                     try:
-                        response_enrs = self._source_nodes(request.message.payload.distances)
+                        response_enrs = self._source_nodes((distance,))
                     except ValidationError as err:
                         self.logger.debug(
                             "Ignoring invalid FindNodesMessage from %s@%s: %s",

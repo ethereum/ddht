@@ -228,6 +228,7 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
     max_advertisement_count: int
 
     radius_tracker: RadiusTrackerAPI
+    storage: ContentStorageAPI
 
     @abstractmethod
     async def routing_table_ready(self) -> None:
