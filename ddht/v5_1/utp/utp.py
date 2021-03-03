@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 from enum import IntEnum
+import io
 import struct
-from typing import NamedTuple, Iterable, Tuple, Sequence, Any
+from typing import NamedTuple, Iterable, Tuple, Sequence, Any, Optional
 
 from async_service import Service
 from eth_utils import to_tuple
 from eth_utils.toolz import sliding_window
+import trio
 
 from ddht._utils import caboose
 from ddht.exceptions import DecodingError
@@ -243,21 +245,95 @@ class Packet(NamedTuple):
         return cls(header, data)
 
 
-class UTPStream(trio.abc.HalfCloseableStream):
-    def __init__(self,
-                 connection_id
+class ConnectionInfo(NamedTuple):
+    send_id: int
+    receive_id: int
 
-    async def send_eof(self) -> None:
-        ...
 
-    async def aclose(self) -> None:
-        ...
+class UTPSendStream(trio.abc.SendStream):
+    outbound_receive: trio.abc.ReceiveChannel
+
+    def __init__(self) -> None:
+        (
+            self._outbound_send,
+            self.outbound_receive,
+        ) = trio.open_memory_channel[Packet](0)
 
     async def send_all(self, data: bytes) -> None:
-        ...
+        await self._outbound_send.send(data)
+
+
+class UTPReceiveStream(trio.abc.ReceiveStream):
+    inbound_send: trio.abc.SendChannel
+
+    def __init__(self) -> None:
+        self._buffer = io.BytesIO()
+
+        (
+            self.inbound_send,
+            self._inbound_receive,
+        ) = trio.open_memory_channel[Packet](256)
 
     async def receive_some(self, max_bytes: Optional[int] = None) -> bytes:
-        ...
+        self._buffer.seek(0)
+
+        data = self._buffer.read(max_bytes)
+
+        while len(data) < max_bytes:
+            try:
+                data += self._inbound_receive.receive_nowait()
+            except trio.WouldBlock:
+                if data:
+                    break
+                else:
+                    data += await self._inbound_receive.receive()
+
+        if len(data) > max_bytes:
+            remainder = data[max_bytes:]
+            data = data[:max_bytes]
+
+            # The only way we can end up with `remainder` data is if we read
+            # new data in over the stream.  In this case, we can know that
+            # we've read all information from the buffer and that any extra
+            # information should be written to the front of the buffer, and the
+            # buffer truncated down to the new size of however much remainder
+            # data was left.
+            self._buffer.seek(0)
+            self._buffer.write(remainder)
+            self._buffer.truncate(len(remainder))
+            self._buffer.seek(0)
+
+        return data
+
+
+async def run_send_stream(stream: UTPSendStream,
+                          packet_send: trio.abc.SendChannel[Packet],
+                          ) -> None:
+    sequence_number = 0
+    last_acked_number = 0
+
+    async with stream.outbound_receive as outbound_receive:
+        async for payload in outbound_receive:
+            pass
+
+
+async def run_receive_stream(stream: UTPReceiveStream,
+                             packet_receive: trio.abc.ReceiveStream[Packet],
+                             ) -> None:
+    sequence_number = 0
+    last_acked_number = 0
+
+    async with stream.inbound_send as inbound_send:
+        async for packet in packet_receive:
+            if packet
+            if packet.header.type is PacketType.DATA:
+
+
+
+async def run_stream(stream: trio.StapledStream) -> None:
+    async with trio.open_nursery() as nursery:
+        nursery.start_soon(run_send_stream, stream.send_stream)
+        nursery.start_soon(run_receive_stream, stream.receive_stream)
 
 
 class UTP(Service, UTPAPI):
@@ -265,7 +341,7 @@ class UTP(Service, UTPAPI):
 
     def __init__(self, network: NetworkAPI) -> None:
         self.network = network
-        self._connections = Dict[int, UTPStream]
+        self._connections: Dict[int, UTPStream] = {}
 
     @asynccontextmanager
     async def open_connection(self,
@@ -293,5 +369,4 @@ class UTP(Service, UTPAPI):
                     pass
 
     async def _handle_packet(self, packet: Packet) -> None:
-
-    def open_connection(self, connection_id: int) ->
+        ...
