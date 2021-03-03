@@ -52,9 +52,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
 
     @asynccontextmanager
     async def network(
-        self,
-        network: Optional[NetworkAPI] = None,
-        bootnodes: Collection[ENRAPI] = (),
+        self, network: Optional[NetworkAPI] = None, bootnodes: Collection[ENRAPI] = (),
     ) -> AsyncIterator[AlexandriaNetworkAPI]:
         network_context: AsyncContextManager[NetworkAPI]
 
@@ -67,9 +65,7 @@ class AlexandriaNode(AlexandriaNodeAPI):
         async with self._lock.acquire("AlexandriaNode.network(...)"):
             async with network_context as network:
                 alexandria_network = AlexandriaNetwork(
-                    network=network,
-                    bootnodes=bootnodes,
-                    storage=self.storage,
+                    network=network, bootnodes=bootnodes, storage=self.storage,
                 )
                 async with background_trio_service(alexandria_network):
                     await alexandria_network.ready()

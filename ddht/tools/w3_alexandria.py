@@ -55,6 +55,7 @@ class AlexandriaModule(ModuleV2):  # type: ignore
     A web3.py module that exposes high level APIs for interacting with the
     discovery v5 network.
     """
+
     #
     # Live Content Retrieval
     #

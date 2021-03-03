@@ -330,5 +330,11 @@ class AlexandriaNetworkAPI(ServiceAPI, TalkProtocolAPI):
         ...
 
     @abstractmethod
-    async def recursive_find_content(self, *, content_key: ContentKey,) -> bytes:
+    def recursive_find_content(
+        self, content_key: ContentKey,
+    ) -> AsyncContextManager[trio.abc.ReceiveChannel[bytes]]:
+        ...
+
+    @abstractmethod
+    async def retrieve_content(self, content_key: ContentKey) -> bytes:
         ...

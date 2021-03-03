@@ -5,10 +5,7 @@ import trio
 
 from ddht.abc import RPCHandlerAPI
 from ddht.rpc import RPCError, RPCHandler, RPCRequest, extract_params
-from ddht.v5_1.alexandria.abc import (
-    AlexandriaNetworkAPI,
-    ContentStorageAPI,
-)
+from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.content_storage import ContentNotFound
 from ddht.v5_1.alexandria.typing import ContentKey
 from ddht.validation import validate_and_convert_hexstr, validate_params_length

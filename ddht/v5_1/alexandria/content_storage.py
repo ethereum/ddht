@@ -5,9 +5,7 @@ from typing import Any, ContextManager, Iterable, Iterator, Optional, Set, Tuple
 from eth_typing import NodeID
 
 from ddht.v5_1.alexandria.abc import ContentStorageAPI
-from ddht.v5_1.alexandria.content import (
-    content_key_to_content_id,
-)
+from ddht.v5_1.alexandria.content import content_key_to_content_id
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
@@ -164,17 +162,14 @@ STORAGE_INSERT_QUERY = """INSERT INTO storage
 
 
 def insert_content(
-    conn: sqlite3.Connection,
-    content_key: ContentKey,
-    content: bytes,
+    conn: sqlite3.Connection, content_key: ContentKey, content: bytes,
 ) -> None:
     content_id = content_key_to_content_id(content_key)
     # The high 64 bits of the content id for doing proximate queries
     short_content_id = int.from_bytes(content_id, "big") >> 193
     with conn:
         conn.execute(
-            STORAGE_INSERT_QUERY,
-            (content_key, short_content_id, content),
+            STORAGE_INSERT_QUERY, (content_key, short_content_id, content),
         )
 
 
@@ -206,7 +201,7 @@ def retrieve_content(conn: sqlite3.Connection, content_key: ContentKey) -> bytes
         raise ContentNotFound(f"No content found: content_key={content_key.hex()}")
 
     (content,) = row
-    return content
+    return content  # type: ignore
 
 
 DELETE_CONTENT_QUERY = """DELETE FROM storage WHERE storage.content_key = ?"""
@@ -280,16 +275,14 @@ def get_proximate_content_keys(
         yield content_key
 
 
-def get_total_storage_size(conn: sqlite3.Connection):
+def get_total_storage_size(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT sum(length(storage.content)) FROM storage").fetchone()
     (total_size,) = row
     return total_size or 0
 
 
 class ContentStorage(ContentStorageAPI):
-    def __init__(
-        self, conn: sqlite3.Connection
-    ) -> None:
+    def __init__(self, conn: sqlite3.Connection) -> None:
         create_tables(conn)
         self._conn = conn
 
@@ -297,8 +290,8 @@ class ContentStorage(ContentStorageAPI):
         return get_row_count(self._conn)
 
     @classmethod
-    def memory(cls) -> 'ContentStorageAPI':
-        conn = sqlite3.connect(':memory:')
+    def memory(cls) -> "ContentStorageAPI":
+        conn = sqlite3.connect(":memory:")
         return cls(conn)
 
     def has_content(self, content_key: ContentKey) -> bool:

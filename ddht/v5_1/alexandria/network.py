@@ -13,7 +13,7 @@ from async_service import Service, background_trio_service
 from eth_enr import ENRAPI, ENRManagerAPI, QueryableENRDatabaseAPI
 from eth_enr.exceptions import OldSequenceNumber
 from eth_typing import NodeID
-from eth_utils import get_extended_debug_logger, ValidationError
+from eth_utils import ValidationError, get_extended_debug_logger
 from eth_utils.toolz import cons, first
 from lru import LRU
 import trio
@@ -27,12 +27,15 @@ from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.client import AlexandriaClient
 from ddht.v5_1.alexandria.constants import MAX_RADIUS
-from ddht.v5_1.alexandria.content import content_key_to_content_id, compute_content_distance
+from ddht.v5_1.alexandria.content import (
+    compute_content_distance,
+    content_key_to_content_id,
+)
 from ddht.v5_1.alexandria.messages import (
+    FindContentMessage,
     FindNodesMessage,
     PingMessage,
     PongMessage,
-    FindContentMessage,
 )
 from ddht.v5_1.alexandria.payloads import FoundContentPayload, PongPayload
 from ddht.v5_1.alexandria.seeker import Seeker
@@ -46,10 +49,12 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
     # Delegate to the AlexandriaClient for determining `protocol_id`
     protocol_id = AlexandriaClient.protocol_id
 
-    def __init__(self,
-                 network: NetworkAPI,
-                 bootnodes: Collection[ENRAPI],
-                 storage: ContentStorageAPI) -> None:
+    def __init__(
+        self,
+        network: NetworkAPI,
+        bootnodes: Collection[ENRAPI],
+        storage: ContentStorageAPI,
+    ) -> None:
         self.logger = get_extended_debug_logger("ddht.Alexandria")
 
         self._bootnodes = tuple(bootnodes)
@@ -252,20 +257,17 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         return response.payload
 
     @asynccontextmanager
-    async def recursive_find_content(self,
-                                     content_key: ContentKey,
-                                     ) -> AsyncIterator[trio.abc.ReceiveChannel[bytes]]:
+    async def recursive_find_content(
+        self, content_key: ContentKey,
+    ) -> AsyncIterator[trio.abc.ReceiveChannel[bytes]]:
         seeker = Seeker(self, content_key)
 
         async with background_trio_service(seeker):
             yield seeker.content_receive
 
-    async def retrieve_content(self,
-                               content_key: ContentKey) -> bytes:
+    async def retrieve_content(self, content_key: ContentKey) -> bytes:
         async with self.recursive_find_content(content_key) as content_aiter:
-            async for content in content_aiter:
-                # TODO: validate that it's the right content
-                return content
+            return await content_aiter.receive()
 
     #
     # Long Running Processes
@@ -305,17 +307,14 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
                 self.routing_table.update(enr.node_id)
                 self._routing_table_ready.set()
 
-    def _source_nodes(self,
-                      distances: Tuple[int, ...]) -> Tuple[ENRAPI, ...]:
+    def _source_nodes(self, distances: Tuple[int, ...]) -> Tuple[ENRAPI, ...]:
         response_enrs: List[ENRAPI] = []
         unique_distances = set(distances)
         if len(unique_distances) != len(distances):
             raise ValidationError("duplicate distances")
         elif not distances:
             raise ValidationError("empty distances")
-        elif any(
-            distance > self.routing_table.num_buckets for distance in distances
-        ):
+        elif any(distance > self.routing_table.num_buckets for distance in distances):
             raise ValidationError("invalid distances")
 
         for distance in distances:
@@ -338,7 +337,9 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
 
             async for request in subscription:
                 try:
-                    response_enrs = self._source_nodes(request.message.payload.distances)
+                    response_enrs = self._source_nodes(
+                        request.message.payload.distances
+                    )
                 except ValidationError as err:
                     self.logger.debug(
                         "Ignoring invalid FindNodesMessage from %s@%s: %s",

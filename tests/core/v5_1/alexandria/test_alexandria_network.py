@@ -6,8 +6,11 @@ import trio
 
 from ddht.constants import ROUTING_TABLE_BUCKET_SIZE
 from ddht.kademlia import KademliaRoutingTable, at_log_distance, compute_log_distance
-from ddht.v5_1.alexandria.content import compute_content_distance, content_key_to_content_id
-from ddht.v5_1.alexandria.messages import FindNodesMessage, FindContentMessage
+from ddht.v5_1.alexandria.content import (
+    compute_content_distance,
+    content_key_to_content_id,
+)
+from ddht.v5_1.alexandria.messages import FindContentMessage, FindNodesMessage
 
 
 @pytest.mark.trio
@@ -158,7 +161,7 @@ async def test_alexandria_network_find_content_api(
     alice, bob, alice_alexandria_network, bob_alexandria_client
 ):
     response_enr = ENRFactory()
-    response_content = b'response-value'
+    response_content = b"response-value"
 
     async with bob_alexandria_client.subscribe(FindContentMessage) as subscription:
         async with trio.open_nursery() as nursery:
@@ -188,19 +191,17 @@ async def test_alexandria_network_find_content_api(
 
             with trio.fail_after(2):
                 response_a = await alice_alexandria_network.find_content(
-                    bob.node_id,
-                    content_key=b'test-key',
+                    bob.node_id, content_key=b"test-key",
                 )
 
             assert not response_a.is_content
-            assert response_a.content == b''
+            assert response_a.content == b""
             assert len(response_a.enrs) == 1
             assert response_a.enrs[0] == response_enr
 
             with trio.fail_after(2):
                 response_b = await alice_alexandria_network.find_content(
-                    bob.node_id,
-                    content_key=b'test-key',
+                    bob.node_id, content_key=b"test-key",
                 )
 
             assert response_b.is_content
@@ -219,7 +220,7 @@ async def test_alexandria_network_retrieve_content_api(
 
         # we need a content_key for which "alice" is the furthest from the content
         for i in range(4096):
-            content_key = b'key-%d' % i
+            content_key = b"key-%d" % i
             content_id = content_key_to_content_id(content_key)
             furthest_node_id = max(
                 all_node_ids,
@@ -231,9 +232,11 @@ async def test_alexandria_network_retrieve_content_api(
         # get the closest node and set the content key in their storage
         closest_network = min(
             networks,
-            key=lambda network: compute_content_distance(network.local_node_id, content_id),
+            key=lambda network: compute_content_distance(
+                network.local_node_id, content_id
+            ),
         )
-        closest_network.storage.set_content(content_key, b'content-value')
+        closest_network.storage.set_content(content_key, b"content-value")
 
         bootnodes = tuple(network.enr_manager.enr for network in networks)
         alice_network = await stack.enter_async_context(
@@ -248,4 +251,4 @@ async def test_alexandria_network_retrieve_content_api(
         with trio.fail_after(10):
             content = await alice_network.retrieve_content(content_key)
 
-        assert content == b'content-value'
+        assert content == b"content-value"

@@ -1,4 +1,4 @@
-from typing import Set, List
+from typing import List, Set
 
 from async_service import Service
 from eth_enr import ENRAPI
@@ -20,11 +20,13 @@ class Seeker(Service):
     _content: bytes
     _content_ready: trio.Event
 
-    def __init__(self,
-                 network: AlexandriaNetworkAPI,
-                 content_key: ContentKey,
-                 concurrency: int = 3) -> None:
-        self.logger = get_extended_debug_logger('ddht.Seeker')
+    def __init__(
+        self,
+        network: AlexandriaNetworkAPI,
+        content_key: ContentKey,
+        concurrency: int = 3,
+    ) -> None:
+        self.logger = get_extended_debug_logger("ddht.Seeker")
 
         self.concurrency = concurrency
 
@@ -41,13 +43,13 @@ class Seeker(Service):
             sorted_enr_send, sorted_enr_receive = trio.open_memory_channel[ENRAPI](0)
 
             self.manager.run_daemon_task(self._explore_for_enrs, raw_enr_send)
-            self.manager.run_daemon_task(self._collate, sorted_enr_send, raw_enr_receive)
+            self.manager.run_daemon_task(
+                self._collate, sorted_enr_send, raw_enr_receive
+            )
 
             for _ in range(self.concurrency):
                 self.manager.run_daemon_task(
-                    self._worker,
-                    raw_enr_send,
-                    sorted_enr_receive,
+                    self._worker, raw_enr_send, sorted_enr_receive,
                 )
 
             await self.manager.wait_finished()
@@ -55,16 +57,16 @@ class Seeker(Service):
     #
     # Machinery
     #
-    async def _explore_for_enrs(self,
-                                enr_send: trio.abc.SendChannel[ENRAPI]) -> None:
+    async def _explore_for_enrs(self, enr_send: trio.abc.SendChannel[ENRAPI]) -> None:
         async with self._network.explore(self.content_id) as enr_aiter:
             async for enr in enr_aiter:
                 await enr_send.send(enr)
 
-    async def _collate(self,
-                       enr_send: trio.abc.SendChannel[ENRAPI],
-                       enr_receive: trio.abc.ReceiveChannel[ENRAPI],
-                       ) -> None:
+    async def _collate(
+        self,
+        enr_send: trio.abc.SendChannel[ENRAPI],
+        enr_receive: trio.abc.ReceiveChannel[ENRAPI],
+    ) -> None:
         enr_buffer: List[ENRAPI] = []
         yielded_node_ids: Set[NodeID] = {self._network.local_node_id}
 
@@ -79,7 +81,7 @@ class Seeker(Service):
             # Next, empty any additional values that are in the channel buffer.
             while True:
                 try:
-                    enr = enr_receive.receive_nowait()
+                    enr = enr_receive.receive_nowait()  # type: ignore
                 except trio.WouldBlock:
                     break
                 else:
@@ -91,24 +93,31 @@ class Seeker(Service):
             enr_buffer = list(reduce_enrs(enr_buffer))
 
             # sort and pull off closest
-            closest_enr, *enr_buffer = list(sorted(
-                enr_buffer,
-                key=lambda enr: compute_distance(self._network.local_node_id, enr.node_id),
-            ))
+            closest_enr, *enr_buffer = list(
+                sorted(
+                    enr_buffer,
+                    key=lambda enr: compute_distance(
+                        self._network.local_node_id, enr.node_id
+                    ),
+                )
+            )
             yielded_node_ids.add(closest_enr.node_id)
             await enr_send.send(closest_enr)
 
-    async def _worker(self,
-                      enr_send: trio.abc.SendChannel[ENRAPI],
-                      enr_receive: trio.abc.ReceiveChannel[ENRAPI],
-                      ) -> None:
+    async def _worker(
+        self,
+        enr_send: trio.abc.SendChannel[ENRAPI],
+        enr_receive: trio.abc.ReceiveChannel[ENRAPI],
+    ) -> None:
         async for enr in enr_receive:
             self.logger.debug2(
                 "Seeking: content_key=%s  node_id=%s",
                 self.content_key.hex(),
                 enr.node_id.hex(),
             )
-            response = await self._network.find_content(enr.node_id, content_key=self.content_key)
+            response = await self._network.find_content(
+                enr.node_id, content_key=self.content_key
+            )
             if response.is_content:
                 self.logger.debug2(
                     "Got: content_key=%s  node_id=%s  content=%s",
@@ -122,7 +131,7 @@ class Seeker(Service):
                     "Redirect: content_key=%s  node_id=%s  enrs=%s",
                     self.content_key.hex(),
                     enr.node_id.hex(),
-                    '|'.join((enr.node_id.hex() for enr in response.enrs)),
+                    "|".join((enr.node_id.hex() for enr in response.enrs)),
                 )
                 for enr in response.enrs:
                     await enr_send.send(enr)
