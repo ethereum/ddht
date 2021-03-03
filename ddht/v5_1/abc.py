@@ -441,10 +441,12 @@ class NetworkProtocol(Protocol):
     routing_table: RoutingTableAPI
 
     @property
+    @abstractmethod
     def local_node_id(self) -> NodeID:
         ...
 
     @property
+    @abstractmethod
     def enr_db(self) -> QueryableENRDatabaseAPI:
         ...
 
