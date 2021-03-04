@@ -16,6 +16,8 @@ from ddht.v5_1.utp.abc import UTPAPI
 
 HEADER_BYTES = 20
 
+MAX_PACKET_DATA = 1100
+
 
 class Extension(ABC):
     id: int
@@ -245,36 +247,34 @@ class Packet(NamedTuple):
         return cls(header, data)
 
 
-class ConnectionInfo(NamedTuple):
-    send_id: int
-    receive_id: int
+class Connection(Service):
+    def __init__(self,
+                 send_id: int,
+                 receive_id: int,
+                 outbound_packet_send: trio.abc.SendChannel,
+                 inbound_packet_receive: trio.abc.SendChannel,
+                 ) -> None:
+        self.send_id = send_id
+        self.receive_id = receive_id
 
+        self._outbound_packet_send = outbound_packet_send
+        self._inbound_packet_receive = inbound_packet_receive
 
-class UTPSendStream(trio.abc.SendStream):
-    outbound_receive: trio.abc.ReceiveChannel
+        self.seq_nr = 1
+        self.ack_nr = None
 
-    def __init__(self) -> None:
         (
-            self._outbound_send,
-            self.outbound_receive,
+            self._outbound_data_send,
+            self._outbound_data_receive,
         ) = trio.open_memory_channel[Packet](0)
 
-    async def send_all(self, data: bytes) -> None:
-        await self._outbound_send.send(data)
-
-
-class UTPReceiveStream(trio.abc.ReceiveStream):
-    inbound_send: trio.abc.SendChannel
-
-    def __init__(self) -> None:
-        self._buffer = io.BytesIO()
-
         (
-            self.inbound_send,
-            self._inbound_receive,
+            self.inbound_data_send,
+            self._inbound_data_receive,
         ) = trio.open_memory_channel[Packet](256)
+        self._inbound_data_buffer = io.BytesIO()
 
-    async def receive_some(self, max_bytes: Optional[int] = None) -> bytes:
+    async def receive_some(self, max_bytes: int) -> bytes:
         self._buffer.seek(0)
 
         data = self._buffer.read(max_bytes)
@@ -304,6 +304,88 @@ class UTPReceiveStream(trio.abc.ReceiveStream):
             self._buffer.seek(0)
 
         return data
+
+    async def send_all(self, data: bytes) -> None:
+        await self._outbound_data_send.send(data)
+
+    async def run(self) -> None:
+        self.manager.run_daemon_task(self._handle_inbound_packets)
+        self.manager.run_daemon_task(self._handle_outbound_packets)
+
+        await self.manager.wait_finished()
+
+    #
+    # Long lived packet handlers
+    #
+    async def _handle_inbound_packets(self) -> None:
+        async with self._inbound_packet_receive as packet_receive:
+            async for packet in packet_receive:
+                if packet.header.type is PacketType.DATA:
+                    # data packet
+                    ...
+                elif packet.header.type is PacketType.FIN:
+                    # last packet
+                    ...
+                elif packet.header.type is PacketType.STATE:
+                    # ack packet
+                    ...
+                elif packet.header.type is PacketType.RESET:
+                    # hard termination
+                    ...
+                elif packet.header.type is PacketType.SYN:
+                    # initiation of the connection...  probably needs to be handled higher up...
+                    ...
+                else:
+                    raise Exception("Invariant: unknown packet type")
+
+    async def _handle_outbound_packets(self) -> None:
+        buffer = io.BytesIO()
+        async with self._outbound_packet_send as packet_send:
+            async with self._outbound_data_receive as data_receive:
+                while self.manager.is_running:
+                    if not buffer.tell():
+                        # block until there is data available
+                        buffer.write(await data_receive.receive())
+                    else:
+                        # yield to the event loop at least once per iteration
+                        await trio.lowlevel.checkpoint()
+
+                    # if there is more data immediately available and there is
+                    # room in the packet then we should include it.
+                    while buffer.tell() < MAX_PACKET_DATA:
+                        try:
+                            buffer.write(data_receive.receive_nowait())
+                        except trio.WouldBlock:
+                            break
+
+                    buffer.seek(0)
+                    data = buffer.read(MAX_PACKET_DATA)
+
+                    remainder = buffer.read()
+                    buffer.seek(0)
+                    buffer.write(remainder)
+                    buffer.truncate()
+
+                    header = PacketHeader(...)
+                    packet = Packet(header=header, data=datA)
+
+                    # TODO: congestion control goes here...
+                    await self._outbound_packet_send.send(packet)
+
+
+class ConnectionInfo(NamedTuple):
+    send_id: int
+    receive_id: int
+
+
+class UTPReceiveStream(trio.abc.ReceiveStream):
+    inbound_send: trio.abc.SendChannel
+
+    def __init__(self) -> None:
+        self._buffer = io.BytesIO()
+
+
+    async def receive_some(self, max_bytes: Optional[int] = None) -> bytes:
 
 
 async def run_send_stream(stream: UTPSendStream,
