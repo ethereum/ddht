@@ -1,9 +1,5 @@
-from contextlib import ExitStack
 import enum
-import pathlib
 import random
-import sqlite3
-import tempfile
 from typing import Optional
 
 from hypothesis import given, settings
@@ -21,27 +17,14 @@ from ddht.v5_1.alexandria.content_storage import (
     BatchDecommissioned,
     ContentAlreadyExists,
     ContentNotFound,
-    FileSystemContentStorage,
-    MemoryContentStorage,
+    ContentStorage,
 )
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
-@pytest.fixture()
-def filesystem_base_dir():
-    with tempfile.TemporaryDirectory() as base_dir:
-        yield pathlib.Path(base_dir)
-
-
-@pytest.fixture(params=("memory", "filesystem"))
-def base_storage(request):
-    if request.param == "memory":
-        return MemoryContentStorage()
-    elif request.param == "filesystem":
-        base_dir = request.getfixturevalue("filesystem_base_dir")
-        return FileSystemContentStorage(base_dir=base_dir)
-    else:
-        raise Exception(f"Unhandled parameter: {request.param}")
+@pytest.fixture
+def base_storage():
+    return ContentStorage.memory()
 
 
 @pytest.fixture(params=("base", "batch"))
@@ -419,78 +402,66 @@ def test_content_storage_atomic_batch_fuzzy(data):
     """
     Fuzz test the `ContentStorageAPI.atomic()` API.
     """
-    with ExitStack() as stack:
-        storage_class = data.draw(
-            st.sampled_from((MemoryContentStorage, FileSystemContentStorage))
-        )
-        if storage_class is MemoryContentStorage:
-            base_storage = MemoryContentStorage()
-        elif storage_class is FileSystemContentStorage:
-            base_dir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
-            base_storage = FileSystemContentStorage(
-                base_dir, sqlite3.connect(":memory:")
-            )
-        else:
-            raise Exception(f"Unhandled storage class: {storage_class}")
+    base_storage = ContentStorage.memory()
 
-        before_batch_actions = data.draw(actions_st)
-        during_batch_actions = data.draw(actions_st)
-        # throw about 5% of the time
-        should_throw = st.sampled_from((False,) * 19 + (True,))
+    before_batch_actions = data.draw(actions_st)
+    during_batch_actions = data.draw(actions_st)
+    # throw about 5% of the time
+    should_throw = st.sampled_from((False,) * 19 + (True,))
 
-        # storage_a is managed such that it should be equivalent to
-        # `base_storage` **after** the batch operations.
-        storage_a = MemoryContentStorage()
+    # storage_a is managed such that it should be equivalent to
+    # `base_storage` **after** the batch operations.
+    storage_a = ContentStorage.memory()
 
-        # storage_a is managed such that it should be equivalent to
-        # `base_storage` **during** the batch operations.
-        storage_b = MemoryContentStorage()
+    # storage_b is managed such that it should be equivalent to
+    # `base_storage` **during** the batch operations.
+    storage_b = ContentStorage.memory()
 
-        # pre-populate with a single known key so that `KNOWN` actions don't
-        # have to special case creating the first key.
-        known_keys = [b"sentinal"]
+    # pre-populate with a single known key so that `KNOWN` actions don't
+    # have to special case creating the first key.
+    known_keys = [b"sentinal"]
 
-        def apply_action_sequence(actions, *storages):
-            for action in actions:
-                if action in RANDOM_KEY_ACTIONS:
-                    content_key = data.draw(content_key_st)
-                    known_keys.append(content_key)
-                elif action in KNOWN_KEY_ACTIONS:
-                    content_key = data.draw(st.sampled_from(known_keys))
-                else:
-                    content_key = None
+    def apply_action_sequence(actions, *storages):
+        for action in actions:
+            if action in RANDOM_KEY_ACTIONS:
+                content_key = data.draw(content_key_st)
+                known_keys.append(content_key)
+            elif action in KNOWN_KEY_ACTIONS:
+                content_key = data.draw(st.sampled_from(known_keys))
+            else:
+                content_key = None
 
-                if action in SET_ACTIONS:
-                    content = data.draw(content_st)
-                else:
-                    content = None
+            if action in SET_ACTIONS:
+                content = data.draw(content_st)
+            else:
+                content = None
 
-                apply_action(action, content_key, content, *storages)
+            apply_action(action, content_key, content, *storages)
 
-        apply_action_sequence(before_batch_actions, base_storage, storage_a, storage_b)
+    apply_action_sequence(before_batch_actions, base_storage, storage_a, storage_b)
 
-        # should be the same before the batch
-        assert_storages_equal(base_storage, storage_a)
-        assert_storages_equal(base_storage, storage_b)
+    # should be the same before the batch
+    assert_storages_equal(base_storage, storage_a)
+    assert_storages_equal(base_storage, storage_b)
 
-        try:
-            with base_storage.atomic() as batch:
-                if should_throw:
-                    storages = (batch, storage_b)
-                else:
-                    storages = (batch, storage_a, storage_b)
+    try:
+        with base_storage.atomic() as batch:
+            if should_throw:
+                storages = (batch, storage_b)
+            else:
+                storages = (batch, storage_a, storage_b)
 
-                apply_action_sequence(during_batch_actions, *storages)
+            apply_action_sequence(during_batch_actions, *storages)
 
-                assert_storages_equal(batch, storage_b)
+            assert_storages_equal(batch, storage_b)
 
-                if should_throw:
-                    raise _RevertBatch
-        except _RevertBatch:
-            pass
+            if should_throw:
+                raise _RevertBatch
+    except _RevertBatch:
+        pass
 
-        # should be the same after the batch.
-        assert_storages_equal(base_storage, storage_a)
+    # should be the same after the batch.
+    assert_storages_equal(base_storage, storage_a)
 
 
 def test_content_storage_enumerate_keys(content_storage):

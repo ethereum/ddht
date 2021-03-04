@@ -18,6 +18,7 @@ from eth_enr import ENRAPI
 from eth_keys import keys
 from eth_typing import NodeID
 from eth_utils import ValidationError, get_extended_debug_logger
+import rlp
 import trio
 
 from ddht.base_message import InboundMessage
@@ -29,32 +30,24 @@ from ddht.request_tracker import RequestTracker
 from ddht.subscription_manager import SubscriptionManager
 from ddht.v5_1.abc import NetworkAPI
 from ddht.v5_1.alexandria.abc import AlexandriaClientAPI
-from ddht.v5_1.alexandria.advertisements import Advertisement, partition_advertisements
 from ddht.v5_1.alexandria.constants import ALEXANDRIA_PROTOCOL_ID, MAX_PAYLOAD_SIZE
 from ddht.v5_1.alexandria.messages import (
-    AckMessage,
-    AdvertiseMessage,
     AlexandriaMessage,
     AlexandriaMessageType,
-    ContentMessage,
+    FindContentMessage,
     FindNodesMessage,
+    FoundContentMessage,
     FoundNodesMessage,
-    GetContentMessage,
-    LocateMessage,
-    LocationsMessage,
     PingMessage,
     PongMessage,
     TAlexandriaMessage,
     decode_message,
 )
 from ddht.v5_1.alexandria.payloads import (
-    AckPayload,
-    ContentPayload,
+    FindContentPayload,
     FindNodesPayload,
+    FoundContentPayload,
     FoundNodesPayload,
-    GetContentPayload,
-    LocatePayload,
-    LocationsPayload,
     PingPayload,
     PongPayload,
 )
@@ -362,96 +355,50 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
 
         return num_batches
 
-    async def send_get_content(
+    async def send_find_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         request_id: Optional[bytes] = None,
     ) -> bytes:
-        message = GetContentMessage(
-            GetContentPayload(content_key, start_chunk_index, max_chunks)
-        )
+        message = FindContentMessage(FindContentPayload(content_key))
         return await self._send_request(
             node_id, endpoint, message, request_id=request_id
         )
 
-    async def send_content(
+    async def send_found_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
-        is_proof: bool,
-        payload: bytes,
+        enrs: Optional[Sequence[ENRAPI]] = None,
+        content: Optional[bytes] = None,
         request_id: bytes,
     ) -> None:
-        message = ContentMessage(ContentPayload(is_proof, payload))
+        enrs_payload: Tuple[bytes, ...]
+        content_payload: bytes
+
+        if enrs is None and content is None:
+            raise TypeError("Must provide either ENR records or content")
+        elif enrs is not None and content is not None:
+            raise TypeError("Must provide either ENR records or content, not both")
+        elif enrs is None:
+            content_payload = content  # type: ignore
+            enrs_payload = ()
+        elif content is None:
+            content_payload = b""
+            enrs_payload = tuple(rlp.encode(enr) for enr in enrs)
+        else:
+            raise Exception("unreachable")
+
+        message = FoundContentMessage(
+            FoundContentPayload(enrs_payload, content_payload)
+        )
         return await self._send_response(
             node_id, endpoint, message, request_id=request_id
         )
-
-    async def send_advertisements(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisements: Sequence[Advertisement],
-        request_id: Optional[bytes] = None,
-    ) -> bytes:
-        message = AdvertiseMessage(tuple(advertisements))
-        return await self._send_request(
-            node_id, endpoint, message, request_id=request_id
-        )
-
-    async def send_ack(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisement_radius: int,
-        acked: Tuple[bool, ...],
-        request_id: bytes,
-    ) -> None:
-        message = AckMessage(AckPayload(advertisement_radius, acked))
-        return await self._send_response(
-            node_id, endpoint, message, request_id=request_id
-        )
-
-    async def send_locate(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        content_key: ContentKey,
-        request_id: bytes,
-    ) -> bytes:
-        message = LocateMessage(LocatePayload(content_key))
-        return await self._send_request(
-            node_id, endpoint, message, request_id=request_id
-        )
-
-    async def send_locations(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisements: Sequence[Advertisement],
-        request_id: bytes,
-    ) -> int:
-        # Here we use a slightly smaller MAX_PAYLOAD_SIZE to account for the
-        # other fields in the message.
-        advertisement_batches = partition_advertisements(
-            advertisements, max_payload_size=MAX_PAYLOAD_SIZE - 8,
-        )
-        num_batches = len(advertisement_batches)
-        for batch in advertisement_batches:
-            message = LocationsMessage(LocationsPayload(num_batches, batch))
-            await self._send_response(node_id, endpoint, message, request_id=request_id)
-
-        return num_batches
 
     #
     # High Level Request/Response
@@ -519,87 +466,19 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
 
             return responses
 
-    async def get_content(
+    async def find_content(
         self,
         node_id: NodeID,
         endpoint: Endpoint,
         *,
         content_key: ContentKey,
-        start_chunk_index: int,
-        max_chunks: int,
         request_id: Optional[bytes] = None,
-    ) -> ContentMessage:
-        request = GetContentMessage(
-            GetContentPayload(content_key, start_chunk_index, max_chunks)
-        )
+    ) -> FoundContentMessage:
+        request = FindContentMessage(FindContentPayload(content_key))
         response = await self._request(
-            node_id, endpoint, request, ContentMessage, request_id
+            node_id, endpoint, request, FoundContentMessage, request_id
         )
         return response
-
-    async def advertise(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        advertisements: Collection[Advertisement],
-    ) -> AckMessage:
-        if not advertisements:
-            raise Exception("Must send at least one advertisement")
-        message = AdvertiseMessage(tuple(advertisements))
-        return await self._request(node_id, endpoint, message, AckMessage)
-
-    async def locate(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        content_key: ContentKey,
-        request_id: Optional[bytes] = None,
-    ) -> Tuple[InboundMessage[LocationsMessage], ...]:
-        stream_locate_ctx = self.stream_locate(
-            node_id, endpoint, content_key=content_key, request_id=request_id,
-        )
-        async with stream_locate_ctx as response_aiter:
-            return tuple([response async for response in response_aiter])
-
-    @asynccontextmanager
-    async def stream_locate(
-        self,
-        node_id: NodeID,
-        endpoint: Endpoint,
-        *,
-        content_key: ContentKey,
-        request_id: Optional[bytes] = None,
-    ) -> AsyncIterator[trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]]:
-        request = LocateMessage(LocatePayload(content_key))
-
-        async def _feed_responses(
-            send_channel: trio.abc.SendChannel[InboundMessage[LocationsMessage]],
-        ) -> None:
-            subscription: trio.abc.ReceiveChannel[InboundMessage[LocationsMessage]]
-            # unclear why `subscribe_request` isn't properly carrying the type information
-            async with self.subscribe_request(  # type: ignore
-                node_id, endpoint, request, LocationsMessage, request_id=request_id,
-            ) as subscription:
-                async with send_channel:
-                    head_response = await subscription.receive()
-                    await send_channel.send(head_response)
-                    total = head_response.message.payload.total
-                    for _ in range(total - 1):
-                        response = await subscription.receive()
-                        await send_channel.send(response)
-
-        send_channel, receive_channel = trio.open_memory_channel[
-            InboundMessage[LocationsMessage]
-        ](4)
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(_feed_responses, send_channel)
-
-            async with receive_channel:
-                yield receive_channel
-
-            nursery.cancel_scope.cancel()
 
     #
     # Long Running Processes to manage subscriptions

@@ -17,7 +17,6 @@ from ddht.v5_1.abc import (
     SessionAPI,
 )
 from ddht.v5_1.alexandria.abc import (
-    AdvertisementDatabaseAPI,
     AlexandriaClientAPI,
     AlexandriaNetworkAPI,
     ContentStorageAPI,
@@ -28,11 +27,7 @@ from ddht.v5_1.packets import AnyPacket
 
 
 class AlexandriaNodeAPI(ABC):
-    commons_content_storage: ContentStorageAPI
-    pinned_content_storage: ContentStorageAPI
-
-    local_advertisement_db: AdvertisementDatabaseAPI
-    remote_advertisement_db: AdvertisementDatabaseAPI
+    storage: ContentStorageAPI
 
     @property
     @abstractmethod

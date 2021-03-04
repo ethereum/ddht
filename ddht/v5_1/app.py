@@ -135,7 +135,7 @@ class Application(BaseApplication):
         self.logger.info("Listening on    : %s", listen_on)
         self.logger.info("Local Node ID   : %s", encode_hex(enr_manager.enr.node_id))
         self.logger.info(
-            "Local ENR       : seq=%d enr=%s",
+            "Local ENR       : seq=%d enr=%r",
             enr_manager.enr.sequence_number,
             enr_manager.enr,
         )

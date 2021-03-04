@@ -5,19 +5,15 @@ import trio
 
 from ddht.abc import RPCHandlerAPI
 from ddht.rpc import RPCError, RPCHandler, RPCRequest, extract_params
-from ddht.v5_1.alexandria.abc import (
-    AlexandriaNetworkAPI,
-    ContentManagerAPI,
-    ContentStorageAPI,
-)
+from ddht.v5_1.alexandria.abc import AlexandriaNetworkAPI, ContentStorageAPI
 from ddht.v5_1.alexandria.content_storage import ContentNotFound
 from ddht.v5_1.alexandria.typing import ContentKey
 from ddht.validation import validate_and_convert_hexstr, validate_params_length
 
 
 class AddContentHandler(RPCHandler[Tuple[ContentKey, bytes], None]):
-    def __init__(self, content_manager: ContentManagerAPI) -> None:
-        self._content_manager = content_manager
+    def __init__(self, storage: ContentStorageAPI) -> None:
+        self._storage = storage
 
     def extract_params(self, request: RPCRequest) -> Tuple[ContentKey, bytes]:
         raw_params = extract_params(request)
@@ -33,12 +29,12 @@ class AddContentHandler(RPCHandler[Tuple[ContentKey, bytes], None]):
 
     async def do_call(self, params: Tuple[ContentKey, bytes]) -> None:
         content_key, content = params
-        await self._content_manager.process_content(content_key, content)
+        self._storage.set_content(content_key, content)
 
 
 class GetContentHandler(RPCHandler[ContentKey, str]):
-    def __init__(self, content_storage: ContentStorageAPI) -> None:
-        self._content_storage = content_storage
+    def __init__(self, storage: ContentStorageAPI) -> None:
+        self._storage = storage
 
     def extract_params(self, request: RPCRequest) -> ContentKey:
         raw_params = extract_params(request)
@@ -53,7 +49,7 @@ class GetContentHandler(RPCHandler[ContentKey, str]):
     async def do_call(self, params: ContentKey) -> str:
         content_key = params
         try:
-            content = self._content_storage.get_content(content_key)
+            content = self._storage.get_content(content_key)
         except ContentNotFound as err:
             raise RPCError(str(err)) from err
         else:
@@ -61,8 +57,8 @@ class GetContentHandler(RPCHandler[ContentKey, str]):
 
 
 class DeleteContentHandler(RPCHandler[ContentKey, None]):
-    def __init__(self, content_storage: ContentStorageAPI) -> None:
-        self._content_storage = content_storage
+    def __init__(self, storage: ContentStorageAPI) -> None:
+        self._storage = storage
 
     def extract_params(self, request: RPCRequest) -> ContentKey:
         raw_params = extract_params(request)
@@ -77,7 +73,7 @@ class DeleteContentHandler(RPCHandler[ContentKey, None]):
     async def do_call(self, params: ContentKey) -> None:
         content_key = params
         try:
-            self._content_storage.delete_content(content_key)
+            self._storage.delete_content(content_key)
         except ContentNotFound as err:
             raise RPCError(str(err)) from err
 
@@ -102,27 +98,20 @@ class RetrieveContentHandler(RPCHandler[ContentKey, str]):
         content: bytes
 
         try:
-            content = self._network.pinned_content_storage.get_content(content_key)
+            content = self._network.storage.get_content(content_key)
         except ContentNotFound:
             pass
         else:
             return encode_hex(content)
 
         try:
-            content = self._network.commons_content_storage.get_content(content_key)
-        except ContentNotFound:
-            pass
-        else:
-            return encode_hex(content)
-
-        try:
-            proof = await self._network.get_content(content_key)
+            content = await self._network.retrieve_content(content_key)
         except trio.TooSlowError as err:
             raise RPCError(
                 f"Timeout retrieving content: content_key={content_key.hex()}"
             ) from err
         else:
-            return encode_hex(proof.get_content())
+            return encode_hex(content)
 
 
 @to_dict
@@ -130,30 +119,18 @@ def get_alexandria_rpc_handlers(
     network: AlexandriaNetworkAPI,
 ) -> Iterable[Tuple[str, RPCHandlerAPI]]:
     yield (
-        "alexandria_addPinnedContent",
-        AddContentHandler(network.pinned_content_manager),
-    )
-    yield (
-        "alexandria_addCommonsContent",
-        AddContentHandler(network.commons_content_manager),
-    )
-    yield (
-        "alexandria_getPinnedContent",
-        GetContentHandler(network.pinned_content_storage),
-    )
-    yield (
-        "alexandria_getCommonsContent",
-        GetContentHandler(network.commons_content_storage),
-    )
-    yield (
-        "alexandria_deletePinnedContent",
-        DeleteContentHandler(network.pinned_content_storage),
-    )
-    yield (
-        "alexandria_deleteCommonsContent",
-        DeleteContentHandler(network.commons_content_storage),
+        "alexandria_addContent",
+        AddContentHandler(network.storage),
     )
     yield (
         "alexandria_getContent",
+        GetContentHandler(network.storage),
+    )
+    yield (
+        "alexandria_deleteContent",
+        DeleteContentHandler(network.storage),
+    )
+    yield (
+        "alexandria_retrieveContent",
         RetrieveContentHandler(network),
     )

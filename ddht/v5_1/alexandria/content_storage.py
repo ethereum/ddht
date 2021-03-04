@@ -1,16 +1,11 @@
-import bisect
 import contextlib
-import pathlib
 import sqlite3
-from typing import Any, ContextManager, Dict, Iterable, Iterator, Optional, Set, Tuple
+from typing import Any, ContextManager, Iterable, Iterator, Optional, Set, Tuple
 
 from eth_typing import NodeID
 
 from ddht.v5_1.alexandria.abc import ContentStorageAPI
-from ddht.v5_1.alexandria.content import (
-    compute_content_distance,
-    content_key_to_content_id,
-)
+from ddht.v5_1.alexandria.content import content_key_to_content_id
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
@@ -32,7 +27,7 @@ class _AtomicBatch(ContentStorageAPI):
 
     def __init__(self, storage: ContentStorageAPI) -> None:
         self._storage = storage
-        self._batch = MemoryContentStorage()
+        self._batch = ContentStorage.memory()
         self._deleted = set()
         self.is_decommissioned = False
 
@@ -130,101 +125,11 @@ class _AtomicBatch(ContentStorageAPI):
         raise NotImplementedError("`total_size` not support")
 
 
-class MemoryContentStorage(ContentStorageAPI):
-    def __init__(self, db: Optional[Dict[ContentKey, bytes]] = None) -> None:
-        if db is None:
-            db = {}
-        self._db = db
-
-    def __len__(self) -> int:
-        return len(self._db)
-
-    def has_content(self, content_key: ContentKey) -> bool:
-        return content_key in self._db
-
-    def get_content(self, content_key: ContentKey) -> bytes:
-        try:
-            return self._db[content_key]
-        except KeyError:
-            raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
-
-    def set_content(
-        self, content_key: ContentKey, content: bytes, exists_ok: bool = False
-    ) -> None:
-        if content_key in self._db and exists_ok is False:
-            raise ContentAlreadyExists(
-                f"Content already exists for key: content_key={content_key.hex()}"
-            )
-        self._db[content_key] = content
-
-    def delete_content(self, content_key: ContentKey) -> None:
-        try:
-            del self._db[content_key]
-        except KeyError:
-            raise ContentNotFound(f"Not Found: content_key={content_key.hex()}")
-
-    def enumerate_keys(
-        self,
-        start_key: Optional[ContentKey] = None,
-        end_key: Optional[ContentKey] = None,
-    ) -> Iterator[ContentKey]:
-        all_keys = sorted(self._db.keys())
-
-        if start_key is None:
-            left = 0
-        else:
-            left = bisect.bisect_left(all_keys, start_key)
-
-        if end_key is None:
-            right = None
-        else:
-            right = bisect.bisect_right(all_keys, end_key)
-
-        yield from all_keys[left:right]
-
-    @contextlib.contextmanager
-    def atomic(self) -> Iterator[ContentStorageAPI]:
-        batch = _AtomicBatch(self)
-
-        yield batch
-
-        # It is possible that any of these lines could raise an exception which
-        # would leave us in an intermediate state.  The atomicity requirements
-        # for this API are not critical and thus we accept this as a complexity
-        # trade-off.
-        to_delete, to_write = batch.finalize()
-        for content_key in to_delete:
-            self.delete_content(content_key)
-        for content_key, content in to_write:
-            self.set_content(content_key, content, exists_ok=True)
-
-    def iter_furthest(self, target: NodeID) -> Iterable[ContentKey]:
-        yield from sorted(
-            self._db.keys(),
-            key=lambda content_key: compute_content_distance(
-                target, content_key_to_content_id(content_key)
-            ),
-            reverse=True,
-        )
-
-    def iter_closest(self, target: NodeID) -> Iterable[ContentKey]:
-        yield from sorted(
-            self._db.keys(),
-            key=lambda content_key: compute_content_distance(
-                target, content_key_to_content_id(content_key)
-            ),
-        )
-
-    def total_size(self) -> int:
-        return sum(len(content) for content in self._db.values())
-
-
 STORAGE_CREATE_STATEMENT = """CREATE TABLE storage (
     content_key BLOB NOT NULL PRIMARY KEY,
     short_content_id INTEGER NOT NULL,
-    size INTEGER NOT NULL,
-    path TEXT NOT NULL
-    CONSTRAINT _path_not_empty CHECK (length(path) > 0)
+    content BLOB NOT NULL
+    CONSTRAINT _content_not_empty CHECK (length(content) > 0)
 )
 """
 
@@ -250,26 +155,21 @@ STORAGE_INSERT_QUERY = """INSERT INTO storage
     (
         content_key,
         short_content_id,
-        size,
-        path
+        content
     )
-    VALUES (?, ?, ?, ?)
+    VALUES (?, ?, ?)
 """
 
 
 def insert_content(
-    conn: sqlite3.Connection,
-    content_key: ContentKey,
-    content_size: int,
-    path: pathlib.Path,
+    conn: sqlite3.Connection, content_key: ContentKey, content: bytes,
 ) -> None:
     content_id = content_key_to_content_id(content_key)
     # The high 64 bits of the content id for doing proximate queries
     short_content_id = int.from_bytes(content_id, "big") >> 193
     with conn:
         conn.execute(
-            STORAGE_INSERT_QUERY,
-            (content_key, short_content_id, content_size, str(path)),
+            STORAGE_INSERT_QUERY, (content_key, short_content_id, content),
         )
 
 
@@ -287,7 +187,7 @@ def check_content_exists(conn: sqlite3.Connection, content_key: ContentKey) -> b
 
 
 STORAGE_GET_PATH_QUERY = """SELECT
-    storage.path AS storage_path
+    storage.content AS storage_content
 
     FROM storage
     WHERE storage.content_key = ?
@@ -295,14 +195,13 @@ STORAGE_GET_PATH_QUERY = """SELECT
 """
 
 
-def get_content_path(conn: sqlite3.Connection, content_key: ContentKey) -> pathlib.Path:
+def retrieve_content(conn: sqlite3.Connection, content_key: ContentKey) -> bytes:
     row = conn.execute(STORAGE_GET_PATH_QUERY, (content_key,)).fetchone()
     if row is None:
         raise ContentNotFound(f"No content found: content_key={content_key.hex()}")
 
-    (raw_path,) = row
-    path = pathlib.Path(raw_path)
-    return path
+    (content,) = row
+    return content  # type: ignore
 
 
 DELETE_CONTENT_QUERY = """DELETE FROM storage WHERE storage.content_key = ?"""
@@ -376,35 +275,30 @@ def get_proximate_content_keys(
         yield content_key
 
 
-def get_total_content_size(conn: sqlite3.Connection) -> int:
-    row = conn.execute("SELECT sum(storage.size) FROM storage").fetchone()
+def get_total_storage_size(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT sum(length(storage.content)) FROM storage").fetchone()
     (total_size,) = row
     return total_size or 0
 
 
-class FileSystemContentStorage(ContentStorageAPI):
-    base_dir: pathlib.Path
-
-    def __init__(
-        self, base_dir: pathlib.Path, conn: Optional[sqlite3.Connection] = None
-    ) -> None:
-        if conn is None:
-            file_db_path = base_dir / "db.sqlite3"
-            conn = sqlite3.connect(file_db_path)
+class ContentStorage(ContentStorageAPI):
+    def __init__(self, conn: sqlite3.Connection) -> None:
         create_tables(conn)
         self._conn = conn
-        self.base_dir = base_dir.resolve()
 
     def __len__(self) -> int:
         return get_row_count(self._conn)
+
+    @classmethod
+    def memory(cls) -> "ContentStorageAPI":
+        conn = sqlite3.connect(":memory:")
+        return cls(conn)
 
     def has_content(self, content_key: ContentKey) -> bool:
         return check_content_exists(self._conn, content_key)
 
     def get_content(self, content_key: ContentKey) -> bytes:
-        content_path_rel = get_content_path(self._conn, content_key)
-        content_path = self.base_dir / content_path_rel
-        return content_path.read_bytes()
+        return retrieve_content(self._conn, content_key)
 
     def set_content(
         self, content_key: ContentKey, content: bytes, exists_ok: bool = False
@@ -419,33 +313,8 @@ class FileSystemContentStorage(ContentStorageAPI):
                 raise ContentAlreadyExists(
                     f"Content already exists for key: content_key={content_key.hex()}"
                 )
-        content_id = content_key_to_content_id(content_key)
-        content_id_hex = content_id.hex()
 
-        # For some content_id: 0xdeadbeef12345...
-        # The directory is: <base-dir>/de/ad/deadbeef1234...
-        content_path = (
-            self.base_dir / content_id_hex[:2] / content_id_hex[2:4] / content_id_hex
-        )
-        content_path_rel = content_path.relative_to(self.base_dir)
-
-        # Lazily create the directory structure
-        content_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # We have already checked that the file doesn't exist and that the
-        # `content_key` is not present in the database, however, there is the
-        # possibility for a race condition at the filesystem level where the
-        # file appears between the check and writing to it.  In the case of any
-        # error we want to avoid our filesystem and database being out-of-sync.
-        try:
-            with content_path.open("wb") as content_file:
-                content_file.write(content)
-
-            insert_content(self._conn, content_key, len(content), content_path_rel)
-        except Exception:
-            content_path.unlink(missing_ok=True)
-            delete_content(self._conn, content_key)
-            raise
+        insert_content(self._conn, content_key, content)
 
     def delete_content(self, content_key: ContentKey) -> None:
         was_deleted = delete_content(self._conn, content_key)
@@ -482,4 +351,4 @@ class FileSystemContentStorage(ContentStorageAPI):
         yield from get_proximate_content_keys(self._conn, target, reverse=False)
 
     def total_size(self) -> int:
-        return get_total_content_size(self._conn)
+        return get_total_storage_size(self._conn)

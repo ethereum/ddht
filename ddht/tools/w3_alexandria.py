@@ -1,8 +1,6 @@
 from typing import Any, Callable, Tuple
 
-from eth_typing import Hash32
 from eth_utils import decode_hex, encode_hex
-import rlp
 
 try:
     import web3  # noqa: F401
@@ -15,23 +13,17 @@ from web3.method import Method
 from web3.module import ModuleV2
 from web3.types import RPCEndpoint
 
-from ddht.v5_1.alexandria.rlp_sedes import BlockHeader
 from ddht.v5_1.alexandria.typing import ContentKey
 
 
 class RPC:
     # core
     getContent = RPCEndpoint("alexandria_getContent")
-
-    # commons
-    getCommonsContent = RPCEndpoint("alexandria_getCommonsContent")
-    addCommonsContent = RPCEndpoint("alexandria_addCommonsContent")
-    deleteCommonsContent = RPCEndpoint("alexandria_deleteCommonsContent")
+    retrieveContent = RPCEndpoint("alexandria_retrieveContent")
 
     # pinned
-    getPinnedContent = RPCEndpoint("alexandria_getPinnedContent")
-    addPinnedContent = RPCEndpoint("alexandria_addPinnedContent")
-    deletePinnedContent = RPCEndpoint("alexandria_deletePinnedContent")
+    addContent = RPCEndpoint("alexandria_addContent")
+    deleteContent = RPCEndpoint("alexandria_deleteContent")
 
 
 #
@@ -58,65 +50,32 @@ def content_key_and_content_munger(
     )
 
 
-def get_block_header_munger(module: Any, block_hash: Hash32) -> Tuple[HexStr]:
-    """
-    Normalizes the inputs JSON-RPC endpoints that take a 2-tuple of
-    `(ContentKey, bytes)`
-    """
-    return (encode_hex(b"\x01" + block_hash),)
-
-
-def decode_block_header(data: str) -> BlockHeader:
-    return rlp.decode(decode_hex(data), sedes=BlockHeader)  # type: ignore
-
-
 class AlexandriaModule(ModuleV2):  # type: ignore
     """
     A web3.py module that exposes high level APIs for interacting with the
     discovery v5 network.
     """
 
-    get_block_header: Method[Callable[[Hash32], BlockHeader]] = Method(
-        RPC.getContent,
-        result_formatters=lambda method, module: decode_block_header,
-        mungers=(get_block_header_munger,),
+    #
+    # Live Content Retrieval
+    #
+    retrieve_content: Method[Callable[[ContentKey], bytes]] = Method(
+        RPC.retrieveContent,
+        result_formatters=lambda method, module: decode_hex,
+        mungers=(content_key_munger,),
     )
 
     #
-    # Live Content Retrieval
+    # Local Storage
     #
     get_content: Method[Callable[[ContentKey], bytes]] = Method(
         RPC.getContent,
         result_formatters=lambda method, module: decode_hex,
         mungers=(content_key_munger,),
     )
-
-    #
-    # Commons
-    #
-    get_commons_content: Method[Callable[[ContentKey], bytes]] = Method(
-        RPC.getCommonsContent,
-        result_formatters=lambda method, module: decode_hex,
-        mungers=(content_key_munger,),
+    add_content: Method[Callable[[ContentKey], bytes]] = Method(
+        RPC.addContent, mungers=(content_key_and_content_munger,),
     )
-    add_commons_content: Method[Callable[[ContentKey], bytes]] = Method(
-        RPC.addCommonsContent, mungers=(content_key_and_content_munger,),
-    )
-    delete_commons_content: Method[Callable[[ContentKey], bytes]] = Method(
-        RPC.deleteCommonsContent, mungers=(content_key_munger,),
-    )
-
-    #
-    # Pinned
-    #
-    get_pinned_content: Method[Callable[[ContentKey], bytes]] = Method(
-        RPC.getPinnedContent,
-        result_formatters=lambda method, module: decode_hex,
-        mungers=(content_key_munger,),
-    )
-    add_pinned_content: Method[Callable[[ContentKey], bytes]] = Method(
-        RPC.addPinnedContent, mungers=(content_key_and_content_munger,),
-    )
-    delete_pinned_content: Method[Callable[[ContentKey], bytes]] = Method(
-        RPC.deletePinnedContent, mungers=(content_key_munger,),
+    delete_content: Method[Callable[[ContentKey], bytes]] = Method(
+        RPC.deleteContent, mungers=(content_key_munger,),
     )
