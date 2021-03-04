@@ -4,19 +4,19 @@ from hypothesis import strategies as st
 import rlp
 
 from ddht.v5_1.alexandria.messages import (
-    FindNodesMessage,
-    FoundNodesMessage,
     FindContentMessage,
+    FindNodesMessage,
     FoundContentMessage,
+    FoundNodesMessage,
     PingMessage,
     PongMessage,
     decode_message,
 )
 from ddht.v5_1.alexandria.payloads import (
-    FindNodesPayload,
-    FoundNodesPayload,
     FindContentPayload,
+    FindNodesPayload,
     FoundContentPayload,
+    FoundNodesPayload,
     PingPayload,
     PongPayload,
 )
@@ -70,9 +70,7 @@ def test_found_nodes_message_encoding_round_trip(num_enr_records):
     assert result.payload == message.payload
 
 
-@given(
-    content_key=st.binary(min_size=1, max_size=16),
-)
+@given(content_key=st.binary(min_size=1, max_size=16),)
 def test_find_content_message_encoding_round_trip(content_key):
     payload = FindContentPayload(content_key)
     message = FindContentMessage(payload)
@@ -90,7 +88,7 @@ def test_found_content_message_encoding_round_trip(data):
     else:
         num_enrs = data.draw(st.integers(min_value=0, max_value=3))
         enrs = tuple(ENRFactory() for _ in range(num_enrs))
-        content = b''
+        content = b""
 
     encoded_enrs = tuple(rlp.encode(enr) for enr in enrs)
     payload = FoundContentPayload(encoded_enrs, content)
