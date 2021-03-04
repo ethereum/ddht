@@ -166,6 +166,17 @@ class FoundContentMessage(AlexandriaMessage[FoundContentPayload]):
 
     payload: FoundContentPayload
 
+    @classmethod
+    def from_payload_args(
+        cls: Type[TAlexandriaMessage], payload_args: Any
+    ) -> TAlexandriaMessage:
+        # py-ssz uses an internal type for decoded `ssz.sedes.List` types that
+        # we don't need or want so we force it to a normal tuple type here.
+        ssz_wrapped_enrs, content = payload_args
+        enrs = tuple(ssz_wrapped_enrs)
+        payload = cls.payload_type(enrs, content)
+        return cls(payload)
+
 
 def decode_message(data: bytes) -> AlexandriaMessage[Any]:
     message_id = data[0]
