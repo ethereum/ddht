@@ -1,118 +1,22 @@
-from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from enum import IntEnum
 import io
 import struct
-from typing import NamedTuple, Iterable, Tuple, Sequence, Any, Optional
+from typing import NamedTuple, Tuple, AsyncIterator, Dict
 
 from async_service import Service
-from eth_utils import to_tuple
-from eth_utils.toolz import sliding_window
 import trio
 
-from ddht._utils import caboose
 from ddht.exceptions import DecodingError
-from ddht.v5_1.utp.abc import UTPAPI
+from ddht.v5_1.abc import NetworkAPI
+from ddht.v5_1.messages import TalkRequestMessage
+from ddht.v5_1.utp.abc import UTPAPI, ExtensionAPI
+from ddht.v5_1.utp.extensions import encode_extensions, decode_extensions
 
 
 HEADER_BYTES = 20
 
 MAX_PACKET_DATA = 1100
-
-
-class Extension(ABC):
-    id: int
-    data: bytes
-
-    @property
-    @abstractmethod
-    def length(self) -> int:
-        ...
-
-    @property
-    @abstractmethod
-    def __eq__(self, other: Any) -> bool:
-        ...
-
-
-class SelectiveAck(Extension):
-    id: int = 1
-
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-
-    @property
-    def length(self) -> int:
-        return len(self.data)
-
-    def __eq__(self, other: Any) -> bool:
-        if type(self) is not type(other):
-            return False
-        return self.data == other.data
-
-
-class UnknownExtension(Extension):
-    id: int
-
-    def __init__(self, extension_id: int, data: bytes) -> None:
-        self.id = extension_id
-        self.data = data
-
-    @property
-    def length(self) -> int:
-        return len(self.data)
-
-    def __eq__(self, other: Any) -> bool:
-        if type(self) is not type(other):
-            return False
-        return self.data == other.data and self.id == other.id
-
-
-def decode_extensions(first_extension_type: int,
-                      payload: bytes,
-                      ) -> Tuple[Tuple[Extension, ...], int]:
-    extensions = _decode_extensions(first_extension_type, payload)
-    offset = sum(2 + extension.length for extension in extensions)
-    return extensions, offset
-
-
-def encode_extensions(extensions: Sequence[Extension]) -> bytes:
-    return b''.join(_encode_extensions(extensions))
-
-
-def _encode_extensions(extensions: Sequence[Extension]) -> Iterable[bytes]:
-    if not extensions:
-        return
-
-    for extension, next_extension in sliding_window(2, caboose(extensions, None)):
-        if next_extension is None:
-            next_extension_id = 0
-        else:
-            next_extension_id = next_extension.id
-
-        yield b''.join((
-            next_extension_id.to_bytes(1, 'big'),
-            extension.length.to_bytes(1, 'big'),
-            extension.data,
-        ))
-
-
-@to_tuple
-def _decode_extensions(first_extension_type: int, payload: bytes) -> Iterable[Extension]:
-    extension_type = first_extension_type
-    offset = 0
-
-    while extension_type != 0:
-        next_extension_type = payload[offset]
-        extension_length = payload[offset + 1]
-        extension_data = payload[offset + 2:offset + 2 + extension_length]
-
-        if extension_type == 1:
-            yield SelectiveAck(extension_data)
-        else:
-            yield UnknownExtension(extension_type, extension_data)
-
-        extension_type = next_extension_type
-        offset += (2 + extension_length)
 
 
 class PacketType(IntEnum):
@@ -140,7 +44,7 @@ class PacketHeader(NamedTuple):
     """
     type: PacketType
     version: int
-    extensions: Tuple[Extension, ...]
+    extensions: Tuple[ExtensionAPI, ...]
     connection_id: bytes
     timestamp_microseconds: int
     timestamp_difference_microseconds: int
@@ -367,55 +271,10 @@ class Connection(Service):
                     buffer.truncate()
 
                     header = PacketHeader(...)
-                    packet = Packet(header=header, data=datA)
+                    packet = Packet(header=header, data=data)
 
                     # TODO: congestion control goes here...
-                    await self._outbound_packet_send.send(packet)
-
-
-class ConnectionInfo(NamedTuple):
-    send_id: int
-    receive_id: int
-
-
-class UTPReceiveStream(trio.abc.ReceiveStream):
-    inbound_send: trio.abc.SendChannel
-
-    def __init__(self) -> None:
-        self._buffer = io.BytesIO()
-
-
-    async def receive_some(self, max_bytes: Optional[int] = None) -> bytes:
-
-
-async def run_send_stream(stream: UTPSendStream,
-                          packet_send: trio.abc.SendChannel[Packet],
-                          ) -> None:
-    sequence_number = 0
-    last_acked_number = 0
-
-    async with stream.outbound_receive as outbound_receive:
-        async for payload in outbound_receive:
-            pass
-
-
-async def run_receive_stream(stream: UTPReceiveStream,
-                             packet_receive: trio.abc.ReceiveStream[Packet],
-                             ) -> None:
-    sequence_number = 0
-    last_acked_number = 0
-
-    async with stream.inbound_send as inbound_send:
-        async for packet in packet_receive:
-            if packet
-            if packet.header.type is PacketType.DATA:
-
-
-
-async def run_stream(stream: trio.StapledStream) -> None:
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(run_send_stream, stream.send_stream)
-        nursery.start_soon(run_receive_stream, stream.receive_stream)
+                    await packet_send.send(packet)
 
 
 class UTP(Service, UTPAPI):
@@ -423,18 +282,18 @@ class UTP(Service, UTPAPI):
 
     def __init__(self, network: NetworkAPI) -> None:
         self.network = network
-        self._connections: Dict[int, UTPStream] = {}
+        self._connections: Dict[int, Connection] = {}
 
     @asynccontextmanager
     async def open_connection(self,
                               connection_id: int,
-                              ) -> AsyncIterator[trio.abc.HalfCloseableStream]:
+                              ) -> AsyncIterator[Connection]:
         ...
 
     @asynccontextmanager
     async def receive_connection(self,
                                  connection_id: int,
-                                 ) -> AsyncContextManager[trio.abc.HalfCloseableStream]:
+                                 ) -> AsyncIterator[Connection]:
         ...
 
     async def run(self) -> None:
@@ -450,5 +309,10 @@ class UTP(Service, UTPAPI):
                 except DecodingError:
                     pass
 
+                # handle the packet
+
     async def _handle_packet(self, packet: Packet) -> None:
+        ...
+
+    async def _manage_connection(self, connection: Connection) -> None:
         ...
