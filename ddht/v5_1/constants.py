@@ -42,9 +42,7 @@ ID_NONCE_SIGNATURE_PREFIX = b"discovery v5 identity proof"
 
 HEADER_PACKET_SIZE = 23
 
-# PROTOCOL_ID = b"discv5"
-# XXX: Must be the same length as "discv5"
-PROTOCOL_ID = b"notdv5"
+PROTOCOL_ID = b"discv5"
 
 WHO_ARE_YOU_PACKET_SIZE = 24
 

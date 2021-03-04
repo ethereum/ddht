@@ -55,9 +55,6 @@ def _cli_args_to_boot_info_kwargs(args: argparse.Namespace) -> BootInfoKwargs:
     if args.listen_address is None:
         listen_on = None
     else:
-        import ipaddress
-
-        assert isinstance(args.listen_address, ipaddress.IPv4Address)
         listen_on = args.listen_address
 
     if args.bootnodes is None:

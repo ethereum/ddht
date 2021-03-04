@@ -135,9 +135,9 @@ class Application(BaseApplication):
         self.logger.info("Listening on    : %s", listen_on)
         self.logger.info("Local Node ID   : %s", encode_hex(enr_manager.enr.node_id))
         self.logger.info(
-            "Local ENR       : seq=%d enr=%s",
+            "Local ENR       : seq=%d enr=%r",
             enr_manager.enr.sequence_number,
-            repr(enr_manager.enr),
+            enr_manager.enr,
         )
 
         self.manager.run_daemon_child_service(self.network)

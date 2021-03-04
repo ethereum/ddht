@@ -41,9 +41,12 @@ class FindContentPayload(NamedTuple):
 
 
 class FoundContentPayload(NamedTuple):
-    is_content: bool
     encoded_enrs: Tuple[bytes, ...]
     content: bytes
+
+    @property
+    def is_content(self) -> bool:
+        return bool(self.content)
 
     @property
     def enrs(self) -> Tuple[ENRAPI]:

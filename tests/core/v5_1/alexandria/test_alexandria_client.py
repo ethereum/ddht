@@ -389,5 +389,5 @@ async def test_alexandria_client_send_found_content(
             talk_response = await subscription.receive()
         message = decode_message(talk_response.message.payload)
         assert isinstance(message, FoundContentMessage)
-        assert message.payload.is_content is True
         assert message.payload.content == b"test-payload"
+        assert message.payload.enrs == ()

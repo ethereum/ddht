@@ -413,7 +413,7 @@ def test_content_storage_atomic_batch_fuzzy(data):
     # `base_storage` **after** the batch operations.
     storage_a = ContentStorage.memory()
 
-    # storage_a is managed such that it should be equivalent to
+    # storage_b is managed such that it should be equivalent to
     # `base_storage` **during** the batch operations.
     storage_b = ContentStorage.memory()
 

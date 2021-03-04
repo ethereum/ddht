@@ -39,17 +39,29 @@ class Seeker(Service):
 
     async def run(self) -> None:
         async with self.content_receive, self._content_send:
-            raw_enr_send, raw_enr_receive = trio.open_memory_channel[ENRAPI](32)
-            sorted_enr_send, sorted_enr_receive = trio.open_memory_channel[ENRAPI](0)
+            # All ENR records that we might want to check will go through this
+            # channel.  It could have ENR records with duplicate `node_id`
+            # values and ENRs are not meaningfully ordered.
+            candidate_enr_send, candidate_enr_receive = trio.open_memory_channel[
+                ENRAPI
+            ](32)
 
-            self.manager.run_daemon_task(self._explore_for_enrs, raw_enr_send)
+            # This channel is fed from the `candidate_enr_XXX` channeels,
+            # sorting the available ENRs by proximity, removing duplicates, and
+            # only yield the closest unqueried record.
+            closest_enr_send, closest_enr_receive = trio.open_memory_channel[ENRAPI](0)
+
+            # This process feeds the `candidate_enr_XXX` channels
+            self.manager.run_daemon_task(self._explore_for_enrs, candidate_enr_send)
+
+            # This process consumes from `candidate_enr_XXX` and feeds `closest_enr_XXX`
             self.manager.run_daemon_task(
-                self._collate, sorted_enr_send, raw_enr_receive
+                self._collate, closest_enr_send, candidate_enr_receive
             )
 
             for _ in range(self.concurrency):
                 self.manager.run_daemon_task(
-                    self._worker, raw_enr_send, sorted_enr_receive,
+                    self._seek, candidate_enr_send, closest_enr_receive,
                 )
 
             await self.manager.wait_finished()
@@ -104,7 +116,7 @@ class Seeker(Service):
             yielded_node_ids.add(closest_enr.node_id)
             await enr_send.send(closest_enr)
 
-    async def _worker(
+    async def _seek(
         self,
         enr_send: trio.abc.SendChannel[ENRAPI],
         enr_receive: trio.abc.ReceiveChannel[ENRAPI],
