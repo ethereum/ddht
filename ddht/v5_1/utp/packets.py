@@ -1,10 +1,12 @@
 from enum import IntEnum
 import struct
-from typing import NamedTuple, Tuple
+from typing import Iterable, NamedTuple, Tuple
+
+from eth_utils import to_tuple
 
 from ddht.exceptions import DecodingError
 from ddht.v5_1.utp.abc import ExtensionAPI
-from ddht.v5_1.utp.extensions import encode_extensions, decode_extensions
+from ddht.v5_1.utp.extensions import encode_extensions, decode_extensions, SelectiveAck
 
 
 HEADER_BYTES = 20
@@ -13,10 +15,19 @@ MAX_PACKET_DATA = 1100
 
 
 class PacketType(IntEnum):
+    # data packet
     DATA = 0
+
+    # signal last packet and close connection
     FIN = 1
+
+    # ack packets
     STATE = 2
+
+    # force-close a connection
     RESET = 3
+
+    # initiate a new connection
     SYN = 4
 
 
@@ -44,6 +55,15 @@ class PacketHeader(NamedTuple):
     wnd_size: int
     seq_nr: int
     ack_nr: int
+
+    @property
+    @to_tuple
+    def acks(self) -> Iterable[int]:
+        yield self.ack_nr
+
+        for extension in self.extensions:
+            if isinstance(extension, SelectiveAck):
+                yield from extension.get_acks(self.ack_nr)
 
     def encode(self) -> bytes:
         packet_type_and_version = self.type ^ (self.version << 4)

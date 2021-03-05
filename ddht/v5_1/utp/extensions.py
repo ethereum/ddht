@@ -1,10 +1,25 @@
 from typing import Any, Tuple, Iterable, Sequence
 
 from eth_utils import to_tuple
-from eth_utils.toolz import sliding_window
+from eth_utils.toolz import sliding_window, partition
 
 from ddht._utils import caboose
 from ddht.v5_1.utp.abc import ExtensionAPI
+
+
+@to_tuple
+def _bytes_to_bitfield(data: bytes) -> Iterable[bool]:
+    for char in data:
+        for _ in range(8):
+            yield bool(char & 1)
+            char >>= 1
+
+
+def _bitfield_to_bytes(bitfield: Tuple[bool, ...]) -> bytes:
+    return bytes(
+        sum(2**idx for idx, bit in enumerate(segment) if bit)
+        for segment in partition(8, bitfield, False)
+    )
 
 
 class SelectiveAck(ExtensionAPI):
@@ -21,6 +36,13 @@ class SelectiveAck(ExtensionAPI):
         if type(self) is not type(other):
             return False
         return self.data == other.data
+
+    def get_acks(self, ack_nr: int) -> Tuple[int]:
+        bitfield = _bytes_to_bitfield(self.data)
+
+        for idx, bit in enumerate(bitfield, 2):
+            if bit:
+                yield ack_nr + idx
 
 
 class UnknownExtension(ExtensionAPI):
