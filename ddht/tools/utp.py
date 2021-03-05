@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 import secrets
 from typing import AsyncIterator, Tuple
 
@@ -9,8 +10,14 @@ import trio
 from ddht.v5_1.utp.connection import Connection
 
 
-async def staple(send_channel, receive_channel):
+logger = logging.getLogger('ddht.tools')
+
+
+async def staple(name: str,
+                 send_channel: trio.abc.SendChannel,
+                 receive_channel: trio.abc.ReceiveChannel):
     async for packet in receive_channel:
+        logger.debug('[%s]: packet=%s', name, packet)
         await send_channel.send(packet)
 
 
@@ -33,11 +40,13 @@ async def connection_pair(enr_a: ENRAPI,
 
         nursery.start_soon(
             staple,
+            'b-to-a',
             connection_a.inbound_packet_send,
             connection_b.outbound_packet_receive,
         )
         nursery.start_soon(
             staple,
+            'a-to-b',
             connection_b.inbound_packet_send,
             connection_a.outbound_packet_receive,
         )

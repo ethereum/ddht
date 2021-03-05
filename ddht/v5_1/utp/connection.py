@@ -9,6 +9,7 @@ import trio
 
 from ddht.v5_1.utp.ack import AckTracker
 from ddht.v5_1.utp.collator import DataCollator, Segment
+from ddht.v5_1.utp.extensions import SelectiveAck
 from ddht.v5_1.utp.typing import ConnectionID
 from ddht.v5_1.utp.packets import Packet, PacketHeader, MAX_PACKET_DATA, PacketType
 
@@ -63,6 +64,9 @@ class Connection(Service):
 
         self.state = EMBRIO
 
+        if abs(send_id - receive_id) != 1:
+            raise ValueError("Invalid connection ids")
+
         self.send_id = send_id
         self.receive_id = receive_id
 
@@ -77,7 +81,7 @@ class Connection(Service):
             self._inbound_packet_receive,
         ) = trio.open_memory_channel[Packet](256)
 
-        self.seq_nr = 1
+        self.seq_nr = 0
         self.acker = AckTracker()
 
         self._unacked_packet_buffer: Dict[int, Packet] = {}
@@ -96,6 +100,20 @@ class Connection(Service):
         self._inbound_data_buffer = io.BytesIO()
 
         self._receive_buffer = io.BytesIO()
+
+    def __str__(self) -> str:
+        return (
+            f"Connection(send_id={self.send_id} recv_id={self.receive_id} "
+            f"seq_nr={self.seq_nr} ack_nr={self.ack_nr})"
+        )
+
+    @property
+    def is_outbound(self) -> bool:
+        return self.send_id == self.receive_id + 1
+
+    @property
+    def is_inbound(self) -> bool:
+        return not self.is_outbound
 
     @property
     def ack_nr(self) -> Optional[int]:
@@ -144,6 +162,9 @@ class Connection(Service):
 
         self.manager.run_daemon_task(self._handle_outbound_data)
 
+        if self.is_outbound:
+            await self._send_packet(PacketType.SYN)
+
         await self.manager.wait_finished()
 
     #
@@ -164,9 +185,10 @@ class Connection(Service):
                     if self.status in {CONNECTED, CLOSING}:
                         if packet.header.seq_nr > self.max_seq_nr:
                             self.logger.debug(
-                                "Ignoring Packet: packet=%s  "
+                                "[%s] Ignoring Packet: packet=%s  "
                                 "reason=sequent-number-out-of-bounds  max-seq=%d  "
                                 "packet-seq=%d",
+                                self,
                                 packet,
                                 self.max_seq_nr,
                                 packet.header.seq_nr,
@@ -181,14 +203,15 @@ class Connection(Service):
                             await self._send_packet(PacketType.STATE)
                     else:
                         self.logger.debug(
-                            "Ignoring Packet: packet=%s  reason=invalid-state  state=%s",
+                            "[%s] Ignoring Packet: packet=%s  reason=invalid-state  state=%s",
+                            self,
                             packet,
                             self.state,
                         )
                 elif packet.header.type is PacketType.FIN:
                     # last packet
                     self.logger.debug(
-                        "Closing Connection: connection=%s  reason=FIN",
+                        "[%s] Closing Connection: reason=FIN",
                         self,
                     )
                     self.status = CLOSING
@@ -199,13 +222,14 @@ class Connection(Service):
                         self.state = CONNECTED
                     # ack packet
                     self.logger.debug(
-                        "Acking Packet: packet=%s",
+                        "[%s] Acking Packet: packet=%s",
+                        self,
                         packet,
                     )
                 elif packet.header.type is PacketType.RESET:
                     # hard termination
                     self.logger.debug(
-                        "Closing Connection: connection=%s  reason=RESET",
+                        "[%s] Closing Connection: reason=RESET",
                         self,
                     )
                     self.status = CLOSED
@@ -216,7 +240,8 @@ class Connection(Service):
                         self.status = SYN_RECEIVED
                     else:
                         self.logger.debug(
-                            "Ignoring Packet: packet=%s  reason=already-connected",
+                            "[%s] Ignoring Packet: packet=%s  reason=already-connected",
+                            self,
                             packet,
                         )
                 else:
@@ -235,7 +260,9 @@ class Connection(Service):
             self.seq_nr += 1
 
         if self.acker.acked:
-            raise NotImplementedError("Multi-ack not yet implemented")
+            extensions = (
+                SelectiveAck.from_unacked(self.ack_nr, self.acker.acked),
+            )
         else:
             extensions = ()
 

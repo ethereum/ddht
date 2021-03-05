@@ -37,6 +37,19 @@ class SelectiveAck(ExtensionAPI):
             return False
         return self.data == other.data
 
+    @classmethod
+    def from_unacked(cls, ack_nr: int, acked: Sequence[int]) -> 'SelectiveAck':
+        min_acked = min(acked)
+        max_acked = max(acked)
+        assert min_acked >= ack_nr + 2
+
+        bitfield = tuple(
+            seq_nr in acked
+            for seq_nr
+            in range(ack_nr + 2, max_acked + 1)
+        )
+        return cls(_bitfield_to_bytes(bitfield))
+
     def get_acks(self, ack_nr: int) -> Tuple[int]:
         bitfield = _bytes_to_bitfield(self.data)
 

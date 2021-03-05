@@ -152,6 +152,12 @@ class Packet(NamedTuple):
     header: PacketHeader
     data: bytes
 
+    def __str__(self) -> str:
+        return (
+            f"Packet(conn_id={self.header.connection_id}, "
+            f"seq_nr={self.header.seq_nr}, ack_nr={self.header.ack_nr})"
+        )
+
     def encode(self) -> bytes:
         header_bytes = self.header.encode()
         return header_bytes + self.data
