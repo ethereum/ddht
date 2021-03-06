@@ -86,8 +86,6 @@ class Connection(Service):
 
         self._unacked_packet_buffer: Dict[int, Packet] = {}
 
-        self._collator = DataCollator()
-
         (
             self._outbound_data_send,
             self._outbound_data_receive,
@@ -100,6 +98,9 @@ class Connection(Service):
         self._inbound_data_buffer = io.BytesIO()
 
         self._receive_buffer = io.BytesIO()
+
+        self._send_lock = trio.Lock()
+        self._receive_lock = trio.Lock()
 
     def __str__(self) -> str:
         return (
@@ -117,55 +118,67 @@ class Connection(Service):
 
     @property
     def ack_nr(self) -> Optional[int]:
-        if self.acker.ack_nr == 0:
+        try:
+            return self.acker.ack_nr
+        except AttributeError:
+            # TODO: ugly
             return None
-        else:
-            return self.acker.ack_nr - 1
 
     async def receive_some(self, max_bytes: int) -> bytes:
-        self._receive_buffer.seek(0)
+        async with self._receive_lock:
+            self.logger.debug2(
+                "[%s] reading data: max-bytes=%d  buffered=%d",
+                self,
+                max_bytes,
+                len(self._receive_buffer.getvalue()),
+            )
+            self._receive_buffer.seek(0)
 
-        data = self._receive_buffer.read(max_bytes)
+            data = self._receive_buffer.read(max_bytes)
 
-        while len(data) < max_bytes:
-            try:
-                data += self._inbound_data_receive.receive_nowait()
-            except trio.WouldBlock:
-                if data:
+            if not data:
+                data = await self._inbound_data_receive.receive()
+
+            while True:
+                try:
+                    data += self._inbound_data_receive.receive_nowait()
+                except trio.WouldBlock:
                     break
-                else:
-                    data += await self._inbound_data_receive.receive()
 
-        if len(data) > max_bytes:
-            remainder = data[max_bytes:]
-            data = data[:max_bytes]
+            if len(data) > max_bytes:
+                remainder = data[max_bytes:]
+                data = data[:max_bytes]
 
-            # The only way we can end up with `remainder` data is if we read
-            # new data in over the stream.  In this case, we can know that
-            # we've read all information from the buffer and that any extra
-            # information should be written to the front of the buffer, and the
-            # buffer truncated down to the new size of however much remainder
-            # data was left.
-            self._receive_buffer.seek(0)
-            self._receive_buffer.write(remainder)
-            self._receive_buffer.truncate(len(remainder))
-            self._receive_buffer.seek(0)
+                # The only way we can end up with `remainder` data is if we read
+                # new data in over the stream.  In this case, we can know that
+                # we've read all information from the buffer and that any extra
+                # information should be written to the front of the buffer, and the
+                # buffer truncated down to the new size of however much remainder
+                # data was left.
+                self._receive_buffer.seek(0)
+                self._receive_buffer.write(remainder)
+                self._receive_buffer.truncate(len(remainder))
+                self._receive_buffer.seek(0)
 
-        return data
+            return data
 
     async def send_all(self, data: bytes) -> None:
-        await self._outbound_data_send.send(data)
+        async with self._send_lock:
+            data_view = memoryview(data)
+            for idx in range(0, len(data), MAX_PACKET_DATA):
+                await self._outbound_data_send.send(data_view[idx: idx + MAX_PACKET_DATA])
 
     async def run(self) -> None:
-        self.manager.run_daemon_task(self._handle_inbound_packets)
-        self.manager.run_daemon_task(self._handle_outbound_packets)
+        async with self._outbound_data_send:
+            self.manager.run_daemon_task(self._handle_inbound_packets)
+            self.manager.run_daemon_task(self._handle_outbound_packets)
 
-        self.manager.run_daemon_task(self._handle_outbound_data)
+            self.manager.run_daemon_task(self._handle_outbound_data)
 
-        if self.is_outbound:
-            await self._send_packet(PacketType.SYN)
+            if self.is_outbound:
+                await self._send_packet(PacketType.SYN)
 
-        await self.manager.wait_finished()
+            await self.manager.wait_finished()
 
     #
     # Long lived packet handlers
@@ -173,7 +186,13 @@ class Connection(Service):
     async def _handle_inbound_packets(self) -> None:
         async with self._inbound_packet_receive as packet_receive:
             async for packet in packet_receive:
+                ack_nr_was_none = self.ack_nr is None
                 acked = self.acker.ack(packet.header.seq_nr)
+
+                if self.ack_nr is not None and ack_nr_was_none:
+                    self.logger.debug("[%s] setting collator: packet=%s", self, packet)
+                    self._collator = DataCollator(self.ack_nr + 1)
+
                 for seq_nr in acked:
                     self._unacked_packet_buffer.pop(seq_nr, None)
 
@@ -194,6 +213,12 @@ class Connection(Service):
                                 packet.header.seq_nr,
                             )
                         else:
+                            self.logger.debug(
+                                "[%s] Feeding Data: packet=%s  seq_nr=%d",
+                                self,
+                                packet,
+                                self._collator.seq_nr,
+                            )
                             segment = Segment(packet.header.seq_nr, packet.data)
                             data_chunks = self._collator.collate(segment)
 
@@ -275,7 +300,7 @@ class Connection(Service):
             timestamp_difference_microseconds=4321,
             wnd_size=1024,
             seq_nr=self.seq_nr,
-            ack_nr=self.ack_nr,
+            ack_nr=self.ack_nr or 0,
         )
         packet = Packet(header, data)
         self._unacked_packet_buffer[self.seq_nr] = packet
@@ -283,53 +308,24 @@ class Connection(Service):
 
     async def _handle_outbound_packets(self) -> None:
         buffer = io.BytesIO()
-        async with self._outbound_data_receive as data_receive:
-            while self.manager.is_running:
-                if not buffer.tell():
-                    # block until there is data available
-                    buffer.write(await data_receive.receive())
-                else:
-                    # yield to the event loop at least once per iteration
-                    await trio.lowlevel.checkpoint()
+        try:
+            async with self._outbound_data_receive as data_receive:
+                while self.manager.is_running:
+                    if not buffer.tell():
+                        # block until there is data available
+                        buffer.write(await data_receive.receive())
+                    else:
+                        # yield to the event loop at least once per iteration
+                        await trio.lowlevel.checkpoint()
 
-                # if there is more data immediately available and there is
-                # room in the packet then we should include it.
-                while buffer.tell() < MAX_PACKET_DATA:
-                    try:
-                        buffer.write(data_receive.receive_nowait())
-                    except trio.WouldBlock:
-                        break
+                    # if there is more data immediately available and there is
+                    # room in the packet then we should include it.
+                    while buffer.tell() < MAX_PACKET_DATA:
+                        try:
+                            buffer.write(data_receive.receive_nowait())
+                        except trio.WouldBlock:
+                            break
 
-                buffer.seek(0)
-                data = buffer.read(MAX_PACKET_DATA)
-
-                remainder = buffer.read()
-                buffer.seek(0)
-                buffer.write(remainder)
-                buffer.truncate()
-
-                await self._send_packet(PacketType.DATA, data)
-
-    async def _handle_outbound_data(self) -> None:
-        buffer = io.BytesIO()
-
-        async with self._outbound_data_receive as data_receive:
-            while self.manager.is_running:
-                # If the outbound buffer is empty, block until there is data to
-                # be sent
-                if buffer.tell() == 0:
-                    buffer.write(await data_receive.receive())
-
-                # If the buffer is under the current maximum packet size,
-                # attempt to fill it with data from the channel.
-                while buffer.tell() < MAX_PACKET_DATA:
-                    try:
-                        buffer.write(data_receive.receive_nowait())
-                    except trio.WouldBlock:
-                        break
-
-                # If we have data in the buffer, send
-                while buffer.tell():
                     buffer.seek(0)
                     data = buffer.read(MAX_PACKET_DATA)
 
@@ -338,12 +334,47 @@ class Connection(Service):
                     buffer.write(remainder)
                     buffer.truncate()
 
-                    await self._send_packet(PacketType.DATA, data=data)
+                    await self._send_packet(PacketType.DATA, data)
+        except trio.ClosedResourceError:
+            pass
 
-                    # Breaking from the send loop here gives us a chance to
-                    # send a full packet when we only have a partial packet
-                    # buffered.  If there is more data ready to be sent it will
-                    # be gathered.  Otherwise, the incomplete packet will be
-                    # sent on the next pass through the full loop.
-                    if buffer.tell() < MAX_PACKET_DATA:
-                        break
+    async def _handle_outbound_data(self) -> None:
+        buffer = io.BytesIO()
+
+        try:
+            async with self._outbound_data_receive as data_receive:
+                while self.manager.is_running:
+                    # If the outbound buffer is empty, block until there is data to
+                    # be sent
+                    if buffer.tell() == 0:
+                        buffer.write(await data_receive.receive())
+
+                    # If the buffer is under the current maximum packet size,
+                    # attempt to fill it with data from the channel.
+                    while buffer.tell() < MAX_PACKET_DATA:
+                        try:
+                            buffer.write(data_receive.receive_nowait())
+                        except trio.WouldBlock:
+                            break
+
+                    # If we have data in the buffer, send
+                    while buffer.tell():
+                        buffer.seek(0)
+                        data = buffer.read(MAX_PACKET_DATA)
+
+                        remainder = buffer.read()
+                        buffer.seek(0)
+                        buffer.write(remainder)
+                        buffer.truncate()
+
+                        await self._send_packet(PacketType.DATA, data=data)
+
+                        # Breaking from the send loop here gives us a chance to
+                        # send a full packet when we only have a partial packet
+                        # buffered.  If there is more data ready to be sent it will
+                        # be gathered.  Otherwise, the incomplete packet will be
+                        # sent on the next pass through the full loop.
+                        if buffer.tell() < MAX_PACKET_DATA:
+                            break
+        except trio.ClosedResourceError:
+            pass

@@ -11,10 +11,10 @@ class Segment(NamedTuple):
 
 
 class DataCollator:
-    ack_nr: int
+    seq_nr: int
 
-    def __init__(self) -> None:
-        self.ack_nr = 0
+    def __init__(self, seq_nr: int) -> None:
+        self.seq_nr = seq_nr
         self._buffer: Deque[Segment] = collections.deque()
         self._buffer_seqs: Set[int] = set()
 
@@ -22,16 +22,16 @@ class DataCollator:
     def collate(self, segment: Segment) -> Iterable[bytes]:
         if segment.seq_nr in self._buffer_seqs:
             raise ValidationError("Invalid: segment=%s  reason=duplicate-seq-nr", segment)
-        elif segment.seq_nr == self.ack_nr:
+        elif segment.seq_nr == self.seq_nr:
             # this is the next packet, yield it directly
             yield segment.data
-            self.ack_nr += 1
+            self.seq_nr += 1
         else:
             bisect.insort(self._buffer, segment)
             self._buffer_seqs.add(segment.seq_nr)
 
-        while self._buffer and self._buffer[0].seq_nr == self.ack_nr:
+        while self._buffer and self._buffer[0].seq_nr == self.seq_nr:
             segment = self._buffer.popleft()
-            self._buffer_seqs.remove(self.ack_nr)
-            self.ack_nr += 1
+            self._buffer_seqs.remove(self.seq_nr)
+            self.seq_nr += 1
             yield segment.data

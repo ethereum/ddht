@@ -29,8 +29,8 @@ async def connection_pair(enr_a: ENRAPI,
         base_connection_id = secrets.randbelow(65536)
         connection_a = Connection(
             node_id=enr_a.node_id,
-            send_id=base_connection_id,
-            receive_id=base_connection_id + 1,
+            send_id=base_connection_id + 1,
+            receive_id=base_connection_id,
         )
         connection_b = Connection(
             node_id=enr_b.node_id,
@@ -54,3 +54,5 @@ async def connection_pair(enr_a: ENRAPI,
         async with background_trio_service(connection_a):
             async with background_trio_service(connection_b):
                 yield (connection_a, connection_b)
+
+        nursery.cancel_scope.cancel()
