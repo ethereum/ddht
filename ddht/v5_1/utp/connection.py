@@ -96,6 +96,8 @@ class Connection(Service):
 
         self._send_lock = trio.Lock()
 
+        self._send_ready = trio.Event()
+
     def __str__(self) -> str:
         return (
             f"Connection("
@@ -135,6 +137,8 @@ class Connection(Service):
         return await self._data_buffer.receive_some(max_bytes)
 
     async def send_all(self, data: bytes) -> None:
+        await self._send_ready.wait()
+
         async with self._send_lock:
             data_view = memoryview(data)
             for idx in range(0, len(data), MAX_PACKET_DATA):
@@ -159,21 +163,34 @@ class Connection(Service):
     async def _handle_inbound_packets(self) -> None:
         async with self._inbound_packet_receive as packet_receive:
             while self.manager.is_running:
-                first_packet = await packet_receive.receive()
-                if self.is_inbound and first_packet.header.type is not PacketType.SYN:
-                    self.logger.info("[%s] First Packet: packet=%s", self, first_packet)
-                    continue
-                elif self.is_outbound and first_packet.header.type is not PacketType.STATE:
-                    self.logger.info("[%s] First Packet: packet=%s", self, first_packet)
-                    continue
+                packet = await packet_receive.receive()
+
+                if self.is_inbound:
+                    if self.status is EMBRIO and packet.header.type is PacketType.SYN:
+                        self.acker.ack(packet.header.seq_nr)
+                        self._collator = DataCollator(packet.header.seq_nr + 1)
+                        await self._handle_packet(packet)
+                        break
+                    else:
+                        self.logger.info(
+                            "[%s] Ignoring Packet: packet=%s  reason=invalid-first-packet",
+                            self,
+                            packet,
+                        )
+                elif self.is_outbound:
+                    if self.status is SYN_SENT and packet.header.type is PacketType.STATE:
+                        self.acker.ack(packet.header.seq_nr)
+                        self._collator = DataCollator(packet.header.seq_nr + 1)
+                        await self._handle_packet(packet)
+                        break
+                    else:
+                        self.logger.info(
+                            "[%s] Ignoring Packet: packet=%s  reason=invalid-first-packet",
+                            self,
+                            packet,
+                        )
                 else:
-                    self._collator = DataCollator(first_packet.header.seq_nr + 1)
-                    self.acker.ack(first_packet.header.seq_nr)
-
-                    await self._handle_packet(first_packet)
-                    await self._send_packet(PacketType.STATE)
-
-                    break
+                    raise Exception("Invariant")
 
             async for packet in packet_receive:
                 # Local packet `ack` tracking
@@ -206,6 +223,7 @@ class Connection(Service):
             # data packet
             if self.status in {SYN_RECEIVED, SYN_SENT}:
                 self.status = CONNECTED
+                self._send_ready.set()
 
             if self.status in {CONNECTED, CLOSING}:
                 if packet.header.seq_nr > self.max_seq_nr:
@@ -252,6 +270,7 @@ class Connection(Service):
             # ack packet
             if self.status in {SYN_SENT, SYN_RECEIVED}:
                 self.status = CONNECTED
+                self._send_ready.set()
         elif packet.header.type is PacketType.RESET:
             # hard termination
             self.logger.debug(
@@ -265,6 +284,7 @@ class Connection(Service):
             if self.status is EMBRIO:
                 self.status = SYN_RECEIVED
                 await self._send_packet(PacketType.STATE)
+                self._send_ready.set()
             else:
                 self.logger.debug(
                     "[%s] Ignoring Packet: packet=%s  reason=already-connected",

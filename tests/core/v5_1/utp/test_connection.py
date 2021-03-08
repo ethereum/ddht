@@ -7,50 +7,32 @@ from ddht.tools.factories.content import ContentFactory
 from ddht.tools.utp import connection_pair
 
 
-@pytest.mark.trio
-async def test_connection_one_direction():
-    enr_a = ENRFactory()
-    enr_b = ENRFactory()
-    async with connection_pair(enr_a, enr_b) as (conn_a, conn_b):
-        await conn_a.send_all(b'test-payload')
+async def _do_data_transfer(sender, receiver, payload, chunk_size=1024):
+    await sender.send_all(payload)
+
+    result = b''
+    while len(result) < len(payload):
         with trio.fail_after(2):
-            result = await conn_b.receive_some(12)
-        assert result == b'test-payload'
+            result += await receiver.receive_some(1024)
+            assert result == payload[:len(result)]
 
-        content_b = ContentFactory(4096)
-        await conn_a.send_all(content_b)
-
-        # since this payload takes a few packets to transmit, we need to give
-        # the loop a few rounds to buffer the data.
-        for _ in range(50):
-            await trio.lowlevel.checkpoint()
-
-        with trio.fail_after(2):
-            result_b = await conn_b.receive_some(4096)
-        assert result_b == content_b
+    assert result == payload
 
 
 @pytest.mark.trio
-async def test_connection_reverse_direction():
+async def test_connection_data_transfer_outbound():
     enr_a = ENRFactory()
     enr_b = ENRFactory()
     async with connection_pair(enr_a, enr_b) as (conn_a, conn_b):
-        await conn_b.send_all(b'test-payload')
-        with trio.fail_after(2):
-            result = await conn_b.receive_some(12)
-        assert result == b'test-payload'
+        await _do_data_transfer(conn_a, conn_b, ContentFactory(4096))
 
-        content_b = ContentFactory(4096)
-        await conn_b.send_all(content_b)
 
-        # since this payload takes a few packets to transmit, we need to give
-        # the loop a few rounds to buffer the data.
-        for _ in range(50):
-            await trio.lowlevel.checkpoint()
-
-        with trio.fail_after(2):
-            result_b = await conn_a.receive_some(4096)
-        assert result_b == content_b
+@pytest.mark.trio
+async def test_connection_data_transfer_inbound():
+    enr_a = ENRFactory()
+    enr_b = ENRFactory()
+    async with connection_pair(enr_a, enr_b) as (conn_a, conn_b):
+        await _do_data_transfer(conn_b, conn_a, ContentFactory(4096))
 
 
 # @pytest.mark.trio
