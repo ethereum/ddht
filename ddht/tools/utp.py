@@ -1,23 +1,23 @@
 from contextlib import asynccontextmanager
-import logging
 import secrets
 from typing import AsyncIterator, Tuple
 
 from async_service import background_trio_service
 from eth_enr import ENRAPI
+from eth_utils import get_extended_debug_logger
 import trio
 
 from ddht.v5_1.utp.connection import Connection
 
 
-logger = logging.getLogger('ddht.tools')
+logger = get_extended_debug_logger('ddht.tools')
 
 
 async def staple(name: str,
                  send_channel: trio.abc.SendChannel,
                  receive_channel: trio.abc.ReceiveChannel):
     async for packet in receive_channel:
-        logger.debug('[%s]: packet=%s', name, packet)
+        logger.debug2('[%s]: packet=%s', name, packet)
         try:
             await send_channel.send(packet)
         except trio.BrokenResourceError:

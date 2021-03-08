@@ -1,3 +1,4 @@
+import collections
 import enum
 import io
 from typing import Dict, Optional
@@ -9,6 +10,7 @@ import trio
 
 from ddht.v5_1.utp.ack import AckTracker
 from ddht.v5_1.utp.collator import DataCollator, Segment
+from ddht.v5_1.utp.data_buffer import DataBuffer
 from ddht.v5_1.utp.extensions import SelectiveAck
 from ddht.v5_1.utp.typing import ConnectionID
 from ddht.v5_1.utp.packets import Packet, PacketHeader, MAX_PACKET_DATA, PacketType
@@ -51,7 +53,7 @@ class Connection(Service):
 
     node_id: NodeID
 
-    status: ConnectionStatus
+    _status: ConnectionStatus
 
     max_seq_nr: int = MAX_SEQ_NR
 
@@ -62,15 +64,13 @@ class Connection(Service):
                  ) -> None:
         self.logger = get_extended_debug_logger('ddht.utp.Connection')
 
-        self.state = EMBRIO
-
         if abs(send_id - receive_id) != 1:
             raise ValueError("Invalid connection ids")
 
         self.send_id = send_id
         self.receive_id = receive_id
 
-        self.status = EMBRIO
+        self._status = EMBRIO
 
         (
             self._outbound_packet_send,
@@ -91,16 +91,10 @@ class Connection(Service):
             self._outbound_data_receive,
         ) = trio.open_memory_channel[Packet](0)
 
-        (
-            self._inbound_data_send,
-            self._inbound_data_receive,
-        ) = trio.open_memory_channel[bytes](256)
-        self._inbound_data_buffer = io.BytesIO()
-
-        self._receive_buffer = io.BytesIO()
+        self._data_buffer = DataBuffer()
+        self._receive_buffer = collections.deque()
 
         self._send_lock = trio.Lock()
-        self._receive_lock = trio.Lock()
 
     def __str__(self) -> str:
         return (
@@ -128,45 +122,17 @@ class Connection(Service):
             # TODO: ugly
             return None
 
+    @property
+    def status(self) -> ConnectionStatus:
+        return self._status
+
+    @status.setter
+    def status(self, value: ConnectionStatus) -> None:
+        self.logger.debug("[%s] status: %s -> %s", self, self._status.name, value.name)
+        self._status = value
+
     async def receive_some(self, max_bytes: int) -> bytes:
-        async with self._receive_lock:
-            self.logger.debug2(
-                "[%s] reading data: max-bytes=%d  buffered=%d",
-                self,
-                max_bytes,
-                len(self._receive_buffer.getvalue()),
-            )
-            self._receive_buffer.seek(0)
-
-            data = self._receive_buffer.read(max_bytes)
-
-            if not data:
-                data = await self._inbound_data_receive.receive()
-            else:
-                await trio.lowlevel.checkpoint()
-
-            while True:
-                try:
-                    data += self._inbound_data_receive.receive_nowait()
-                except trio.WouldBlock:
-                    break
-
-            if len(data) > max_bytes:
-                remainder = data[max_bytes:]
-                data = data[:max_bytes]
-
-                # The only way we can end up with `remainder` data is if we read
-                # new data in over the stream.  In this case, we can know that
-                # we've read all information from the buffer and that any extra
-                # information should be written to the front of the buffer, and the
-                # buffer truncated down to the new size of however much remainder
-                # data was left.
-                self._receive_buffer.seek(0)
-                self._receive_buffer.write(remainder)
-                self._receive_buffer.truncate(len(remainder))
-                self._receive_buffer.seek(0)
-
-            return data
+        return await self._data_buffer.receive_some(max_bytes)
 
     async def send_all(self, data: bytes) -> None:
         async with self._send_lock:
@@ -182,6 +148,7 @@ class Connection(Service):
             self.manager.run_daemon_task(self._handle_outbound_data)
 
             if self.is_outbound:
+                self.status = ConnectionStatus.SYN_SENT
                 await self._send_packet(PacketType.SYN)
 
             await self.manager.wait_finished()
@@ -218,23 +185,26 @@ class Connection(Service):
 
                 await self._handle_packet(packet)
 
+                if self.acker.missing_seq_nr:
+                    self.logger.info(
+                        "[%s] Missing Packets: seq_nrs=%s",
+                        self,
+                        self.acker.missing_seq_nr,
+                    )
+
                 if packet.header.extensions:
-                    self.logger.info("[%s] Lost Packet: lost=%s", self, packet.header.extensions[0].get_lost(packet.header.ack_nr))
                     for seq_nr in packet.header.extensions[0].get_lost(packet.header.ack_nr):
                         packet_to_resend = self._unacked_packet_buffer[seq_nr]
                         self.logger.info("[%s] Resending: packet=%s", self, packet_to_resend)
                         await self._outbound_packet_send.send(packet_to_resend)
                         break
 
-                if packet.header.type is PacketType.DATA:
-                    await self._send_packet(PacketType.STATE)
-
     async def _handle_packet(self, packet: Packet) -> None:
         self.logger.debug("[%s] Handling Packet: packet=%s", self, packet)
 
         if packet.header.type is PacketType.DATA:
             # data packet
-            if self.status is SYN_RECEIVED:
+            if self.status in {SYN_RECEIVED, SYN_SENT}:
                 self.status = CONNECTED
 
             if self.status in {CONNECTED, CLOSING}:
@@ -250,10 +220,16 @@ class Connection(Service):
                     )
                 else:
                     segment = Segment(packet.header.seq_nr, packet.data)
-                    data_chunks = self._collator.collate(segment)
+                    chunks = self._collator.collate(segment)
 
-                    for chunk in data_chunks:
-                        await self._inbound_data_send.send(segment.data)
+                    if chunks:
+                        self.logger.debug(
+                            "[%s] New Data: num_chunks=%d",
+                            self,
+                            len(chunks),
+                        )
+
+                    await self._data_buffer.write(chunks)
 
                     await self._send_packet(PacketType.STATE)
             else:
@@ -261,7 +237,7 @@ class Connection(Service):
                     "[%s] Ignoring Packet: packet=%s  reason=invalid-state  state=%s",
                     self,
                     packet,
-                    self.state,
+                    self.status,
                 )
         elif packet.header.type is PacketType.FIN:
             # last packet
@@ -274,8 +250,8 @@ class Connection(Service):
             await self._send_packet(PacketType.STATE)
         elif packet.header.type is PacketType.STATE:
             # ack packet
-            if self.state is SYN_SENT:
-                self.state = CONNECTED
+            if self.status in {SYN_SENT, SYN_RECEIVED}:
+                self.status = CONNECTED
         elif packet.header.type is PacketType.RESET:
             # hard termination
             self.logger.debug(
