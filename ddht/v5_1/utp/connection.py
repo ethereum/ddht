@@ -264,6 +264,7 @@ class Connection(Service):
             # first packet over the connection
             if self.status is EMBRIO:
                 self.status = SYN_RECEIVED
+                await self._send_packet(PacketType.STATE)
             else:
                 self.logger.debug(
                     "[%s] Ignoring Packet: packet=%s  reason=already-connected",
