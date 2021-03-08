@@ -31,6 +31,36 @@ async def test_connection():
 
 
 @pytest.mark.trio
+async def test_connection_retransmission_of_lost_packets():
+    enr_a = ENRFactory()
+    enr_b = ENRFactory()
+
+    async with connection_pair(enr_a, enr_b) as (conn_a, conn_b):
+        payload = ContentFactory(32 * 1024)
+        await conn_a.send_all(payload)
+
+        with trio.fail_after(10):
+            result_head = await conn_b.receive_some(1024)
+
+        with trio.fail_after(10):
+            lost_packet = await conn_a.outbound_packet_receive.receive()
+            conn_a.logger.info('LOST PACKET: packet=%s', lost_packet)
+
+        with trio.fail_after(10):
+            result_tails = []
+            remaining_bytes = 31 * 1024
+            for _ in range(100):
+                chunk = await conn_b.receive_some(1024)
+                remaining_bytes -= len(chunk)
+                result_tails.append(chunk)
+                if not remaining_bytes:
+                    break
+
+        result = result_head + b''.join((result_tails))
+        assert result == payload
+
+
+@pytest.mark.trio
 async def test_connection_bitrate():
     enr_a = ENRFactory()
     enr_b = ENRFactory()

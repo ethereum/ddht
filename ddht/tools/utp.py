@@ -18,7 +18,10 @@ async def staple(name: str,
                  receive_channel: trio.abc.ReceiveChannel):
     async for packet in receive_channel:
         logger.debug('[%s]: packet=%s', name, packet)
-        await send_channel.send(packet)
+        try:
+            await send_channel.send(packet)
+        except trio.BrokenResourceError:
+            break
 
 
 @asynccontextmanager

@@ -104,8 +104,12 @@ class Connection(Service):
 
     def __str__(self) -> str:
         return (
-            f"Connection(send_id={self.send_id} recv_id={self.receive_id} "
-            f"seq_nr={self.seq_nr} ack_nr={self.ack_nr})"
+            f"Connection("
+            f"id={self.send_id}|{self.receive_id} "
+            f"seq_nr={self.seq_nr} "
+            f"ack_nr={self.ack_nr} "
+            f"dial={'in' if self.is_inbound else 'out'}"
+            f")"
         )
 
     @property
@@ -138,6 +142,8 @@ class Connection(Service):
 
             if not data:
                 data = await self._inbound_data_receive.receive()
+            else:
+                await trio.lowlevel.checkpoint()
 
             while True:
                 try:
@@ -185,92 +191,111 @@ class Connection(Service):
     #
     async def _handle_inbound_packets(self) -> None:
         async with self._inbound_packet_receive as packet_receive:
+            while self.manager.is_running:
+                first_packet = await packet_receive.receive()
+                if self.is_inbound and first_packet.header.type is not PacketType.SYN:
+                    self.logger.info("[%s] First Packet: packet=%s", self, first_packet)
+                    continue
+                elif self.is_outbound and first_packet.header.type is not PacketType.STATE:
+                    self.logger.info("[%s] First Packet: packet=%s", self, first_packet)
+                    continue
+                else:
+                    self._collator = DataCollator(first_packet.header.seq_nr + 1)
+                    self.acker.ack(first_packet.header.seq_nr)
+
+                    await self._handle_packet(first_packet)
+                    await self._send_packet(PacketType.STATE)
+
+                    break
+
             async for packet in packet_receive:
-                ack_nr_was_none = self.ack_nr is None
-                acked = self.acker.ack(packet.header.seq_nr)
+                # Local packet `ack` tracking
+                self.acker.ack(packet.header.seq_nr)
 
-                if self.ack_nr is not None and ack_nr_was_none:
-                    self.logger.debug("[%s] setting collator: packet=%s", self, packet)
-                    self._collator = DataCollator(self.ack_nr + 1)
-
-                for seq_nr in acked:
+                # Process remote acks
+                for seq_nr in packet.header.acks:
                     self._unacked_packet_buffer.pop(seq_nr, None)
 
+                await self._handle_packet(packet)
+
+                if packet.header.extensions:
+                    self.logger.info("[%s] Lost Packet: lost=%s", self, packet.header.extensions[0].get_lost(packet.header.ack_nr))
+                    for seq_nr in packet.header.extensions[0].get_lost(packet.header.ack_nr):
+                        packet_to_resend = self._unacked_packet_buffer[seq_nr]
+                        self.logger.info("[%s] Resending: packet=%s", self, packet_to_resend)
+                        await self._outbound_packet_send.send(packet_to_resend)
+                        break
+
                 if packet.header.type is PacketType.DATA:
-                    # data packet
-                    if self.status is SYN_RECEIVED:
-                        self.status = CONNECTED
-
-                    if self.status in {CONNECTED, CLOSING}:
-                        if packet.header.seq_nr > self.max_seq_nr:
-                            self.logger.debug(
-                                "[%s] Ignoring Packet: packet=%s  "
-                                "reason=sequent-number-out-of-bounds  max-seq=%d  "
-                                "packet-seq=%d",
-                                self,
-                                packet,
-                                self.max_seq_nr,
-                                packet.header.seq_nr,
-                            )
-                        else:
-                            self.logger.debug(
-                                "[%s] Feeding Data: packet=%s  seq_nr=%d",
-                                self,
-                                packet,
-                                self._collator.seq_nr,
-                            )
-                            segment = Segment(packet.header.seq_nr, packet.data)
-                            data_chunks = self._collator.collate(segment)
-
-                            for chunk in data_chunks:
-                                await self._inbound_data_send.send(segment.data)
-
-                            await self._send_packet(PacketType.STATE)
-                    else:
-                        self.logger.debug(
-                            "[%s] Ignoring Packet: packet=%s  reason=invalid-state  state=%s",
-                            self,
-                            packet,
-                            self.state,
-                        )
-                elif packet.header.type is PacketType.FIN:
-                    # last packet
-                    self.logger.debug(
-                        "[%s] Closing Connection: reason=FIN",
-                        self,
-                    )
-                    self.status = CLOSING
-                    self.max_seq_nr = packet.header.seq_nr
                     await self._send_packet(PacketType.STATE)
-                elif packet.header.type is PacketType.STATE:
-                    if self.state is SYN_SENT:
-                        self.state = CONNECTED
-                    # ack packet
+
+    async def _handle_packet(self, packet: Packet) -> None:
+        self.logger.debug("[%s] Handling Packet: packet=%s", self, packet)
+
+        if packet.header.type is PacketType.DATA:
+            # data packet
+            if self.status is SYN_RECEIVED:
+                self.status = CONNECTED
+
+            if self.status in {CONNECTED, CLOSING}:
+                if packet.header.seq_nr > self.max_seq_nr:
                     self.logger.debug(
-                        "[%s] Acking Packet: packet=%s",
+                        "[%s] Ignoring Packet: packet=%s  "
+                        "reason=sequent-number-out-of-bounds  max-seq=%d  "
+                        "packet-seq=%d",
                         self,
                         packet,
+                        self.max_seq_nr,
+                        packet.header.seq_nr,
                     )
-                elif packet.header.type is PacketType.RESET:
-                    # hard termination
-                    self.logger.debug(
-                        "[%s] Closing Connection: reason=RESET",
-                        self,
-                    )
-                    self.status = CLOSED
-                    self.manager.cancel()
-                elif packet.header.type is PacketType.SYN:
-                    # first packet over the connection
-                    if self.status is EMBRIO:
-                        self.status = SYN_RECEIVED
-                    else:
-                        self.logger.debug(
-                            "[%s] Ignoring Packet: packet=%s  reason=already-connected",
-                            self,
-                            packet,
-                        )
                 else:
-                    raise Exception("Invariant: unknown packet type")
+                    segment = Segment(packet.header.seq_nr, packet.data)
+                    data_chunks = self._collator.collate(segment)
+
+                    for chunk in data_chunks:
+                        await self._inbound_data_send.send(segment.data)
+
+                    await self._send_packet(PacketType.STATE)
+            else:
+                self.logger.debug(
+                    "[%s] Ignoring Packet: packet=%s  reason=invalid-state  state=%s",
+                    self,
+                    packet,
+                    self.state,
+                )
+        elif packet.header.type is PacketType.FIN:
+            # last packet
+            self.logger.debug(
+                "[%s] Closing Connection: reason=FIN",
+                self,
+            )
+            self.status = CLOSING
+            self.max_seq_nr = packet.header.seq_nr
+            await self._send_packet(PacketType.STATE)
+        elif packet.header.type is PacketType.STATE:
+            # ack packet
+            if self.state is SYN_SENT:
+                self.state = CONNECTED
+        elif packet.header.type is PacketType.RESET:
+            # hard termination
+            self.logger.debug(
+                "[%s] Closing Connection: reason=RESET",
+                self,
+            )
+            self.status = CLOSED
+            self.manager.cancel()
+        elif packet.header.type is PacketType.SYN:
+            # first packet over the connection
+            if self.status is EMBRIO:
+                self.status = SYN_RECEIVED
+            else:
+                self.logger.debug(
+                    "[%s] Ignoring Packet: packet=%s  reason=already-connected",
+                    self,
+                    packet,
+                )
+        else:
+            raise Exception("Invariant: unknown packet type")
 
     async def _send_packet(self,
                            packet_type: PacketType,
@@ -284,12 +309,17 @@ class Connection(Service):
         if data:
             self.seq_nr += 1
 
-        if self.acker.acked:
+        if self.acker.selective_acks:
             extensions = (
-                SelectiveAck.from_unacked(self.ack_nr, self.acker.acked),
+                SelectiveAck.from_acks(self.acker.ack_nr, self.acker.selective_acks),
             )
         else:
             extensions = ()
+
+        if self.ack_nr is None:
+            ack_nr = 0
+        else:
+            ack_nr = self.ack_nr
 
         header = PacketHeader(
             type=packet_type,
@@ -300,7 +330,7 @@ class Connection(Service):
             timestamp_difference_microseconds=4321,
             wnd_size=1024,
             seq_nr=self.seq_nr,
-            ack_nr=self.ack_nr or 0,
+            ack_nr=ack_nr,
         )
         packet = Packet(header, data)
         self._unacked_packet_buffer[self.seq_nr] = packet

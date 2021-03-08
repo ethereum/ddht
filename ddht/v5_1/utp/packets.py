@@ -154,7 +154,7 @@ class Packet(NamedTuple):
 
     def __str__(self) -> str:
         return (
-            f"Packet(type={self.header.type}, conn_id={self.header.connection_id}, "
+            f"Packet(type={self.header.type.name}, conn_id={self.header.connection_id}, "
             f"seq_nr={self.header.seq_nr}, ack_nr={self.header.ack_nr})"
         )
 

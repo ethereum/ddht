@@ -1,46 +1,46 @@
+import pytest
 from ddht.v5_1.utp.ack import AckTracker
 
 
 def test_ack_tracker():
     tracker = AckTracker()
 
-    assert tracker.ack_nr == 0
-    assert not tracker.acked
+    with pytest.raises(AttributeError):
+        tracker.ack_nr
 
-    res_a = tracker.ack(0)
-    assert res_a == (0,)
-    assert tracker.ack_nr == 1
+    tracker.ack(10)
 
-    res_b = tracker.ack(1)
-    assert res_b == (1,)
-    assert tracker.ack_nr == 2
+    assert tracker.ack_nr == 10
+    assert tracker.missing_seq_nr == ()
+    assert tracker.selective_acks == ()
 
-    assert not tracker.ack(0)
+    tracker.ack(11)
 
-    res_c = tracker.ack(3)
-    assert res_c == (3,)
+    assert tracker.ack_nr == 11
+    assert tracker.missing_seq_nr == ()
+    assert tracker.selective_acks == ()
 
-    res_d = tracker.ack(4)
-    assert res_d == (3, 4)
+    tracker.ack(10)
 
-    res_e = tracker.ack(6)
-    assert res_e == (3, 4, 6)
+    # no change
+    assert tracker.ack_nr == 11
+    assert tracker.missing_seq_nr == ()
+    assert tracker.selective_acks == ()
 
-    assert tracker.ack_nr == 2
+    tracker.ack(13)
 
-    res_f = tracker.ack(2)
-    assert res_f == (2, 3, 4, 6)
+    assert tracker.ack_nr == 11
+    assert tracker.missing_seq_nr == (12,)
+    assert tracker.selective_acks == (13,)
 
-    assert tracker.ack_nr == 5
-    assert tracker.acked == (6,)
+    tracker.ack(14)
 
-    res_g = tracker.ack(7)
-    assert res_g == (6, 7)
+    assert tracker.ack_nr == 11
+    assert tracker.missing_seq_nr == (12,)
+    assert tracker.selective_acks == (13, 14)
 
-    res_h = tracker.ack(5)
-    assert res_h == (5, 6, 7)
+    tracker.ack(12)
 
-    assert tracker.ack_nr == 8
-    assert tracker.acked == ()
-
-    assert not tracker.ack(0)
+    assert tracker.ack_nr == 14
+    assert tracker.missing_seq_nr == ()
+    assert tracker.selective_acks == ()

@@ -38,23 +38,33 @@ class SelectiveAck(ExtensionAPI):
         return self.data == other.data
 
     @classmethod
-    def from_unacked(cls, ack_nr: int, acked: Sequence[int]) -> 'SelectiveAck':
-        min_acked = min(acked)
-        max_acked = max(acked)
+    def from_acks(cls, ack_nr: int, selective_acks: Sequence[int]) -> 'SelectiveAck':
+        min_acked = min(selective_acks)
+        max_acked = max(selective_acks)
         assert min_acked >= ack_nr + 2
 
         bitfield = tuple(
-            seq_nr in acked
+            seq_nr in selective_acks
             for seq_nr
             in range(ack_nr + 2, max_acked + 1)
         )
         return cls(_bitfield_to_bytes(bitfield))
 
-    def get_acks(self, ack_nr: int) -> Tuple[int]:
+    @to_tuple
+    def get_acks(self, ack_nr: int) -> Iterable[int]:
         bitfield = _bytes_to_bitfield(self.data)
 
         for idx, bit in enumerate(bitfield, 2):
             if bit:
+                yield ack_nr + idx
+
+    @to_tuple
+    def get_lost(self, ack_nr: int) -> Iterable[int]:
+        bitfield = _bytes_to_bitfield(self.data)
+        yield ack_nr + 1
+
+        for idx, bit in enumerate(bitfield, 2):
+            if not bit:
                 yield ack_nr + idx
 
 
