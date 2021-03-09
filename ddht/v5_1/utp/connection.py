@@ -1,4 +1,3 @@
-import collections
 import enum
 import io
 from typing import Dict, Optional
@@ -72,6 +71,7 @@ class Connection(Service):
 
         self._status = EMBRIO
 
+        # Channels for sending and receiving packets.
         (
             self._outbound_packet_send,
             self.outbound_packet_receive,
@@ -81,19 +81,26 @@ class Connection(Service):
             self._inbound_packet_receive,
         ) = trio.open_memory_channel[Packet](256)
 
+        # The local sequence number
         self.seq_nr = 0
+
+        # Track which sequence numbers have been acked.
         self.acker = AckTracker()
 
+        # Packets we have sent which have not yet been acked.
         self._unacked_packet_buffer: Dict[int, Packet] = {}
 
+        # Buffer for outbound data
         (
             self._outbound_data_send,
             self._outbound_data_receive,
         ) = trio.open_memory_channel[Packet](0)
 
+        # Buffer for inbound data
         self._data_buffer = DataBuffer()
-        self._receive_buffer = collections.deque()
 
+        # Synchronization to ensure concurrent calls to `send_all` don't
+        # interleave their data.
         self._send_lock = trio.Lock()
 
         self._send_ready = trio.Event()
@@ -137,12 +144,10 @@ class Connection(Service):
         """
         Send the `FIN` packet to signal this connection is closing.
         """
-        if self.status in {CLOSING, CLOSED}:
-            raise TypeError("Cannot send data")
-
-        async with self._send_lock:
-            self.status = CLOSING
-            await self._send_packet(PacketType.FIN)
+        if self.status not in {CLOSING, CLOSED}:
+            async with self._send_lock:
+                self.status = CLOSING
+                await self._send_packet(PacketType.FIN)
 
     async def reset(self) -> None:
         """

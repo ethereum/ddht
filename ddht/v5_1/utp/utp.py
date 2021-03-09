@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Dict, Tuple
+import secrets
+from typing import AsyncIterator, Dict, Tuple, Optional
 
 from async_service import Service, background_trio_service
 from eth_typing import NodeID
@@ -19,19 +20,56 @@ class UTP(Service, UTPAPI):
 
     def __init__(self, network: NetworkAPI) -> None:
         self.network = network
+
+        network.add_talk_protocol(self)
+
         self._connections: Dict[Tuple[NodeID, ConnectionID], Connection] = {}
+        self._new_connection = trio.Condition()
 
     @asynccontextmanager
     async def open_connection(self,
-                              connection_id: int,
+                              node_id: NodeID,
+                              connection_id: Optional[int] = None,
                               ) -> AsyncIterator[Connection]:
-        ...
+        if connection_id is None:
+            connection_id = secrets.randbelow(65535)
+
+        connection = Connection(
+            node_id=node_id,
+            send_id=connection_id,
+            receive_id=connection_id + 1,
+        )
+        self.manager.run_task(self._manage_connection, connection)
+
+        async with background_trio_service(connection) as manager:
+            try:
+                yield connection
+            except Exception:
+                await connection.reset()
+            else:
+                await connection.finalize()
+                await manager.wait_finished()
 
     @asynccontextmanager
     async def receive_connection(self,
+                                 node_id: NodeID,
                                  connection_id: int,
                                  ) -> AsyncIterator[Connection]:
-        ...
+        key = (node_id, connection_id)
+        async with self._new_connection:
+            try:
+                connection = self._connections[key]
+            except KeyError:
+                await self._new_connection.wait()
+
+        async with background_trio_service(connection) as manager:
+            try:
+                yield connection
+            except Exception:
+                await connection.reset()
+            else:
+                await connection.finalize()
+                await manager.wait_finished()
 
     async def run(self) -> None:
         async with self.network.client.dispatcher.subscribe(
@@ -58,13 +96,15 @@ class UTP(Service, UTPAPI):
                     connection = self._connections[key]
                 except KeyError:
                     if packet.header.type is Packet.SYN:
-                        connection = Connection(
-                            node_id=request.sender_node_id,
-                            send_id=packet.header.connection_id,
-                            receive_id=packet.header.connection_id + 1,
-                        )
-                        self._connections[key] = connection
-                        self.manager.run_task(self._manage_connection, connection)
+                        async with self._new_connection:
+                            connection = Connection(
+                                node_id=request.sender_node_id,
+                                send_id=packet.header.connection_id,
+                                receive_id=packet.header.connection_id + 1,
+                            )
+                            self._connections[key] = connection
+                            self.manager.run_task(self._manage_connection, connection)
+                            self._new_connection.notify_all()
                     else:
                         self.logger.debug(
                             "Discarding Packet: packet=%s  reason=no-connection",
@@ -81,15 +121,14 @@ class UTP(Service, UTPAPI):
                     )
 
     async def _manage_connection(self, connection: Connection) -> None:
-        async with background_trio_service(connection):
-            async with connection.outbound_packet_receive as outbound_packet_receive:
-                async for packet in outbound_packet_receive:
-                    payload = packet.encode()
-                    endpoint = self.network.endpoint_for_node_id(connection.node_id)
+        async with connection.outbound_packet_receive as outbound_packet_receive:
+            async for packet in outbound_packet_receive:
+                payload = packet.encode()
+                endpoint = self.network.endpoint_for_node_id(connection.node_id)
 
-                    await self.network.client.send_talk_request(
-                        connection.node_id,
-                        endpoint,
-                        protocol_id=self.protocol_id,
-                        payload=payload,
-                    )
+                await self.network.client.send_talk_request(
+                    connection.node_id,
+                    endpoint,
+                    protocol_id=self.protocol_id,
+                    payload=payload,
+                )
