@@ -144,7 +144,7 @@ class Connection(Service):
             self.status = CLOSING
             await self._send_packet(PacketType.FIN)
 
-    def reset(self) -> None:
+    async def reset(self) -> None:
         """
         Send the `RESET` packet and force the connection closed.
         """
