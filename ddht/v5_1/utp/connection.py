@@ -133,6 +133,25 @@ class Connection(Service):
         self.logger.debug("[%s] status: %s -> %s", self, self._status.name, value.name)
         self._status = value
 
+    async def finalize(self) -> None:
+        """
+        Send the `FIN` packet to signal this connection is closing.
+        """
+        if self.status in {CLOSING, CLOSED}:
+            raise TypeError("Cannot send data")
+
+        async with self._send_lock:
+            self.status = CLOSING
+            await self._send_packet(PacketType.FIN)
+
+    def reset(self) -> None:
+        """
+        Send the `RESET` packet and force the connection closed.
+        """
+        await self._send_packet(PacketType.RESET)
+        self.status = CLOSED
+        self.manager.cancel()
+
     async def receive_some(self, max_bytes: int) -> bytes:
         return await self._data_buffer.receive_some(max_bytes)
 
@@ -140,6 +159,9 @@ class Connection(Service):
         await self._send_ready.wait()
 
         async with self._send_lock:
+            if self.status in {CLOSING, CLOSED, EMBRIO}:
+                raise TypeError("Cannot send data")
+
             data_view = memoryview(data)
             for idx in range(0, len(data), MAX_PACKET_DATA):
                 await self._outbound_data_send.send(data_view[idx: idx + MAX_PACKET_DATA])
