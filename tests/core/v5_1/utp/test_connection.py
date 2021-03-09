@@ -35,29 +35,15 @@ async def test_connection_data_transfer_inbound():
         await _do_data_transfer(conn_b, conn_a, ContentFactory(4096))
 
 
-# @pytest.mark.trio
-# async def test_connection_both_directions():
-#     enr_a = ENRFactory()
-#     enr_b = ENRFactory()
-#
-#     async def _do_read(connection, expected):
-#         actual = b''
-#         while len(actual) < len(expected):
-#             with trio.fail_after(2):
-#                 actual += await connection.receive_some(1024)
-#
-#         assert actual == expected
-#
-#     async with connection_pair(enr_a, enr_b) as (conn_a, conn_b):
-#         content_a = b'content-a:' + ContentFactory(2048)
-#         await conn_a.send_all(content_a)
-#
-#         content_b = b'content-b:' + ContentFactory(2048)
-#         await conn_b.send_all(content_b)
-#
-#         async with trio.open_nursery() as nursery:
-#             nursery.start_soon(_do_read, conn_a, content_b)
-#             nursery.start_soon(_do_read, conn_b, content_a)
+@pytest.mark.trio
+async def test_connection_data_transfer_bidirectional():
+    enr_a = ENRFactory()
+    enr_b = ENRFactory()
+    async with connection_pair(enr_a, enr_b) as (conn_a, conn_b):
+        with trio.fail_after(10):
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(_do_data_transfer, conn_b, conn_a, ContentFactory(32 * 1024))
+                nursery.start_soon(_do_data_transfer, conn_a, conn_b, ContentFactory(32 * 1024))
 
 
 @pytest.mark.trio
@@ -122,4 +108,9 @@ async def test_connection_bitrate():
             elapsed = end_at - start_at
             bitrate = (content_size * 8 / 1024 / 1024) / elapsed
             byterate = (content_size / 1024 / 1024) / elapsed
-            conn_a.logger.info("RESULT: elapsed=%0.2f  mbps=%0.2f  mBps=%0.2f", elapsed, bitrate, byterate)
+            conn_a.logger.info(
+                "RESULT: elapsed=%0.2f  mbps=%0.2f  mBps=%0.2f",
+                elapsed,
+                bitrate,
+                byterate,
+            )

@@ -170,6 +170,7 @@ class Connection(Service):
                         self.acker.ack(packet.header.seq_nr)
                         self._collator = DataCollator(packet.header.seq_nr + 1)
                         await self._handle_packet(packet)
+                        self._send_ready.set()
                         break
                     else:
                         self.logger.info(
@@ -182,6 +183,7 @@ class Connection(Service):
                         self.acker.ack(packet.header.seq_nr)
                         self._collator = DataCollator(packet.header.seq_nr + 1)
                         await self._handle_packet(packet)
+                        self._send_ready.set()
                         break
                     else:
                         self.logger.info(
@@ -223,7 +225,6 @@ class Connection(Service):
             # data packet
             if self.status in {SYN_RECEIVED, SYN_SENT}:
                 self.status = CONNECTED
-                self._send_ready.set()
 
             if self.status in {CONNECTED, CLOSING}:
                 if packet.header.seq_nr > self.max_seq_nr:
@@ -270,7 +271,6 @@ class Connection(Service):
             # ack packet
             if self.status in {SYN_SENT, SYN_RECEIVED}:
                 self.status = CONNECTED
-                self._send_ready.set()
         elif packet.header.type is PacketType.RESET:
             # hard termination
             self.logger.debug(
@@ -284,7 +284,6 @@ class Connection(Service):
             if self.status is EMBRIO:
                 self.status = SYN_RECEIVED
                 await self._send_packet(PacketType.STATE)
-                self._send_ready.set()
             else:
                 self.logger.debug(
                     "[%s] Ignoring Packet: packet=%s  reason=already-connected",
