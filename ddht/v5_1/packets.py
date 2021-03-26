@@ -244,12 +244,17 @@ class Packet(Generic[TAuthData]):
             auth_data_size,
         )
         authenticated_data = b"".join((iv, header.to_wire_bytes(), auth_data_bytes,))
-        message_cipher_text = aesgcm_encrypt(
-            key=initiator_key,
-            nonce=aes_gcm_nonce,
-            plain_text=message.to_bytes(),
-            authenticated_data=authenticated_data,
-        )
+        # if empty, don't use an encrypted empty bytestring as the message_cipher_text field
+        if message.to_bytes():
+            message_cipher_text = aesgcm_encrypt(
+                key=initiator_key,
+                nonce=aes_gcm_nonce,
+                plain_text=message.to_bytes(),
+                authenticated_data=authenticated_data,
+            )
+        else:
+            message_cipher_text = b""
+
         return cls(
             iv=iv,
             header=header,
