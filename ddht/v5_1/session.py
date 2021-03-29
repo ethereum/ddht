@@ -13,7 +13,12 @@ import trio
 
 from ddht._utils import humanize_node_id
 from ddht.abc import HandshakeSchemeAPI, HandshakeSchemeRegistryAPI
-from ddht.base_message import AnyInboundMessage, AnyOutboundMessage, BaseMessage
+from ddht.base_message import (
+    AnyInboundMessage,
+    AnyOutboundMessage,
+    BaseMessage,
+    EmptyMessage,
+)
 from ddht.endpoint import Endpoint
 from ddht.exceptions import DecryptionError, HandshakeFailure
 from ddht.message_registry import MessageTypeRegistry
@@ -203,11 +208,6 @@ class RandomMessage(BaseMessage):
 
     def to_bytes(self) -> bytes:
         return self.random_data
-
-
-class EmptyMessage(BaseMessage):
-    def to_bytes(self) -> bytes:
-        return b""
 
 
 #
