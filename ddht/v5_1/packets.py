@@ -10,7 +10,7 @@ from eth_typing import NodeID
 from eth_utils.toolz import take
 import rlp
 
-from ddht.base_message import BaseMessage
+from ddht.base_message import BaseMessage, EmptyMessage
 from ddht.constants import UINT8_TO_BYTES
 from ddht.encryption import aesctr_decrypt_stream, aesctr_encrypt, aesgcm_encrypt
 from ddht.exceptions import DecodingError
@@ -244,12 +244,18 @@ class Packet(Generic[TAuthData]):
             auth_data_size,
         )
         authenticated_data = b"".join((iv, header.to_wire_bytes(), auth_data_bytes,))
-        message_cipher_text = aesgcm_encrypt(
-            key=initiator_key,
-            nonce=aes_gcm_nonce,
-            plain_text=message.to_bytes(),
-            authenticated_data=authenticated_data,
-        )
+        # encrypted empty bytestring results in a bytestring,
+        # which we don't want if message is supposed to be empty
+        if type(message) is EmptyMessage:
+            message_cipher_text = b""
+        else:
+            message_cipher_text = aesgcm_encrypt(
+                key=initiator_key,
+                nonce=aes_gcm_nonce,
+                plain_text=message.to_bytes(),
+                authenticated_data=authenticated_data,
+            )
+
         return cls(
             iv=iv,
             header=header,
