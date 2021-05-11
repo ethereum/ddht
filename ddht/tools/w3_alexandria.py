@@ -10,7 +10,7 @@ except ImportError:
 
 from eth_typing import HexStr
 from web3.method import Method
-from web3.module import ModuleV2
+from web3.module import Module
 from web3.types import RPCEndpoint
 
 from ddht.v5_1.alexandria.typing import ContentKey
@@ -50,7 +50,7 @@ def content_key_and_content_munger(
     )
 
 
-class AlexandriaModule(ModuleV2):  # type: ignore
+class AlexandriaModule(Module):
     """
     A web3.py module that exposes high level APIs for interacting with the
     discovery v5 network.
