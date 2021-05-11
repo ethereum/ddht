@@ -1,6 +1,5 @@
-import logging
-
 from async_service import Service
+from eth_utils import get_extended_debug_logger
 import trio
 
 WAKEUP_INTERVAL = 2
@@ -9,7 +8,7 @@ DELAY_WARNING = 1
 
 
 class Canary(Service):
-    logger = logging.getLogger("ddht.Canary")
+    logger = get_extended_debug_logger("ddht.Canary")
 
     async def run(self) -> None:
         while True:
@@ -17,7 +16,7 @@ class Canary(Service):
             await trio.sleep(WAKEUP_INTERVAL)
             elapsed = trio.current_time() - start_at
             delay = elapsed - WAKEUP_INTERVAL
-            self.logger.debug("Loop monitoring task called; delay=%.3fs", delay)
+            self.logger.debug2("Loop monitoring task called; delay=%.3fs", delay)
 
             if delay < DELAY_DEBUG:
                 continue
