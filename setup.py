@@ -70,7 +70,7 @@ setup(
     install_requires=[
         "async-service>=0.1.0a9,<0.2",
         "cached-property>=1.5.1,<2",
-        "coincurve>=10.0.0,<11.0.0",
+        "coincurve>=15.0.0,<16.0.0",
         "cryptography>=3.0,<3.2",
         "eth-enr>=0.4.1,<0.5",
         "eth-hash[pycryptodome]>=0.1.4,<1",
