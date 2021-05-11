@@ -1,0 +1,1 @@
+Move noisy log "Loop monitoring task called" into debug2. Log out ENR items along with encoded ENR.

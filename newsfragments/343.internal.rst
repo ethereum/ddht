@@ -1,0 +1,2 @@
+Install web3 for lint tests, so that mypy notices problems. Upgrade coincurve. Upgrade web3 to
+5.19+ and handle the ModuleV2 rename.
