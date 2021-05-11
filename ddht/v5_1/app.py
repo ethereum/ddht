@@ -95,6 +95,8 @@ class Application(BaseApplication):
         listen_on_ip_address: AnyIPAddress
         if self._boot_info.listen_on is None:
             listen_on_ip_address = DEFAULT_LISTEN
+            if IP_V4_ADDRESS_ENR_KEY not in enr_manager.enr:
+                enr_manager.update((IP_V4_ADDRESS_ENR_KEY, listen_on_ip_address.packed))
         else:
             listen_on_ip_address = self._boot_info.listen_on
             # Update the ENR if an explicit listening address was provided
