@@ -28,12 +28,7 @@ DEFAULT_BOOTNODES_ORIG: Tuple[str, ...] = (
 )
 
 
-DEFAULT_BOOTNODES: Tuple[str, ...] = (
-    # 94.63.192.187:30303
-    # "enr:-IS4QMKRqKacvGacwsChKkhY9OWyRAJvCkUG3mTlM-9DOtqcS7Zr7vVkf6s20ju6wCMNFE_ivWwYYp1CqA_ybJ9R_O8DgmlkgnY0gmlwhF4_wLuJc2VjcDI1NmsxoQLhZcNMi9TtZ9RxmjGNVG83YFyWQnyVdKr74_qXl7mbb4N1ZHCCdl8",  # noqa: E501
-    # 192.168.1.112:30303
-    "enr:-IS4QAVuwe64nAc-Lki-UHRUdpHzAB5xX_Uff0aQDBjIXgMlS7U7WjJ0h0Gja3-YTTTMTt6S5GG0doViOVYPMpYb2goDgmlkgnY0gmlwhMCoAXCJc2VjcDI1NmsxoQLhZcNMi9TtZ9RxmjGNVG83YFyWQnyVdKr74_qXl7mbb4N1ZHCCdl8",  # noqa: E501
-)
+DEFAULT_BOOTNODES: Tuple[str, ...] = ()
 
 
 PACKET_VERSION_1 = b"\x00\x01"

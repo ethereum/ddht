@@ -25,7 +25,7 @@ from eth_enr.typing import ENR_KV
 from eth_typing import HexStr, NodeID
 from mypy_extensions import VarArg
 from web3.method import Method
-from web3.module import ModuleV2
+from web3.module import Module
 from web3.types import RPCEndpoint
 
 from ddht.rpc_handlers import BucketInfo as BucketInfoDict
@@ -313,8 +313,7 @@ def find_nodes_response_formatter(enr_reprs: Sequence[str]) -> Tuple[ENRAPI, ...
     return tuple(ENR.from_repr(enr_repr) for enr_repr in enr_reprs)
 
 
-# TODO: why does mypy think ModuleV2 is of `Any` type?
-class DiscoveryV5Module(ModuleV2):  # type: ignore
+class DiscoveryV5Module(Module):
     """
     A web3.py module that exposes high level APIs for interacting with the
     discovery v5 network.
