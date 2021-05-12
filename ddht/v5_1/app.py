@@ -102,6 +102,9 @@ class Application(BaseApplication):
             # Update the ENR if an explicit listening address was provided
             enr_manager.update((IP_V4_ADDRESS_ENR_KEY, listen_on_ip_address.packed))
 
+        if listen_on_ip_address.is_loopback:
+            raise Exception("Cannot bind to localhost. Must choose a different IP")
+
         listen_on = Endpoint(listen_on_ip_address.packed, self._boot_info.port)
 
         if self._boot_info.is_upnp_enabled:
