@@ -49,6 +49,7 @@ class SessionStatus(enum.Enum):
 class BaseSession(SessionAPI):
     _remote_node_id: NodeID
     _keys: SessionKeys
+    _last_message_received_at: Optional[float] = None
 
     _handshake_scheme_registry: HandshakeSchemeRegistryAPI = v51_handshake_scheme_registry
 
@@ -141,6 +142,17 @@ class BaseSession(SessionAPI):
     @property
     def timeout_at(self) -> float:
         return self.created_at + SESSION_IDLE_TIMEOUT
+
+    @property
+    def stale_at(self) -> float:
+        if self._last_message_received_at is None:
+            return self.created_at + SESSION_IDLE_TIMEOUT
+        else:
+            return self._last_message_received_at + SESSION_IDLE_TIMEOUT
+
+    @property
+    def is_stale(self) -> bool:
+        return self.stale_at <= trio.current_time()
 
     @property
     def local_enr(self) -> ENRAPI:
@@ -294,6 +306,7 @@ class SessionInitiator(BaseSession):
                     await self._events.packet_discarded.trigger((self, envelope))
                     return False
                 else:
+                    self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
                         AnyInboundMessage(
                             message=message,

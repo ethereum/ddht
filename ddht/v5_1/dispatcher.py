@@ -279,16 +279,33 @@ class Dispatcher(Service, DispatcherAPI):
         """
         Monitor for the session to timeout, removing it from the pool.
         """
-        with trio.move_on_after(SESSION_IDLE_TIMEOUT) as scope:
-            await session.await_handshake_completion()
-
-        if scope.cancelled_caught:
+        try:
+            with trio.fail_after(SESSION_IDLE_TIMEOUT):
+                await session.await_handshake_completion()
+        except trio.TooSlowError:
             try:
                 self._pool.remove_session(session.id)
             except SessionNotFound:
                 pass
             else:
                 await self._events.session_timeout.trigger(session)
+            return
+
+        while True:
+            await trio.sleep(SESSION_IDLE_TIMEOUT)
+
+            if session.id not in self._pool:
+                break
+            elif session.is_stale:
+                try:
+                    self._pool.remove_session(session.id)
+                except SessionNotFound:
+                    pass
+                else:
+                    self.logger.debug("Dropping %s: reason=stale", session)
+                    await self._events.session_timeout.trigger(session)
+                finally:
+                    break
 
     def _get_sessions_for_inbound_envelope(
         self, envelope: InboundEnvelope
