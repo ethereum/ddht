@@ -57,6 +57,9 @@ class Pool(PoolAPI):
         # callback to remove LRU evicted session from _sessions_by_endpoint
         self._sessions_by_endpoint[value.remote_endpoint].remove(value)
 
+    def __contains__(self, session_id: object) -> bool:
+        return session_id in self._sessions
+
     def remove_session(self, session_id: uuid.UUID) -> SessionAPI:
         try:
             session = self._sessions[session_id]

@@ -4,6 +4,7 @@ from typing import (
     Any,
     AsyncContextManager,
     Collection,
+    Container,
     NamedTuple,
     Optional,
     Protocol,
@@ -101,6 +102,27 @@ class SessionAPI(ABC):
     def timeout_at(self) -> float:
         ...
 
+    @property
+    @abstractmethod
+    def stale_at(self) -> float:
+        """
+        At what (trio) time will the session be "stale"?
+
+        A session becomes stale when the other peer has not sent any message
+        for SESSION_IDLE_TIMEOUT.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def is_stale(self) -> bool:
+        """
+        Is the current session stale?
+
+        See :meth:`~stale_at` for definition of stale.
+        """
+        ...
+
     #
     # Handshake Status
     #
@@ -183,7 +205,7 @@ class EventsAPI(ABC):
     topic_query_received: EventAPI[InboundMessage[TopicQueryMessage]]
 
 
-class PoolAPI(ABC):
+class PoolAPI(ABC, Container[uuid.UUID]):
     local_private_key: keys.PrivateKey
     local_node_id: NodeID
 
