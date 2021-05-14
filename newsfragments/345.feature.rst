@@ -1,0 +1,1 @@
+Drop peer session if no messages received for 60 seconds.

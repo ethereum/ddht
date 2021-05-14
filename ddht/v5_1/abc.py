@@ -104,22 +104,12 @@ class SessionAPI(ABC):
 
     @property
     @abstractmethod
-    def stale_at(self) -> float:
+    def is_stale(self) -> bool:
         """
-        At what (trio) time will the session be "stale"?
+        Is the current session "stale"?
 
         A session becomes stale when the other peer has not sent any message
         for SESSION_IDLE_TIMEOUT.
-        """
-        ...
-
-    @property
-    @abstractmethod
-    def is_stale(self) -> bool:
-        """
-        Is the current session stale?
-
-        See :meth:`~stale_at` for definition of stale.
         """
         ...
 
