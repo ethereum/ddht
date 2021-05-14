@@ -26,10 +26,18 @@ clean-pyc:
 lint:
 	tox -elint
 
+# Some lint can be auto-corrected. This job will do that and warn about the
+# others. It doesn't use tox, because tox is slow and heavy. Because docs are
+# always stale, this is probably stale, and you should update it to match the
+# tox.ini section on the 'lint' job.
 lint-roll:
+	# Front-load the auto-correcting tools like isort and black
 	isort ddht tests
 	black ddht tests
-	$(MAKE) lint
+	# Back-load the warning-only tools
+	mypy -p ddht --config-file mypy.ini
+	flake8 ddht tests
+	pydocstyle ddht tests
 
 test:
 	pytest tests
