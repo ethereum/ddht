@@ -50,6 +50,7 @@ class BaseSession(SessionAPI):
     _remote_node_id: NodeID
     _keys: SessionKeys
     _last_message_received_at: Optional[float] = None
+    _last_message_sent_at: Optional[float] = None
 
     _handshake_scheme_registry: HandshakeSchemeRegistryAPI = v51_handshake_scheme_registry
 
@@ -144,15 +145,17 @@ class BaseSession(SessionAPI):
         return self.created_at + SESSION_IDLE_TIMEOUT
 
     @property
-    def stale_at(self) -> float:
-        if self._last_message_received_at is None:
-            return self.created_at + SESSION_IDLE_TIMEOUT
-        else:
-            return self._last_message_received_at + SESSION_IDLE_TIMEOUT
-
-    @property
     def is_stale(self) -> bool:
-        return self.stale_at <= trio.current_time()
+        if self._last_message_sent_at is None:
+            return False
+        elif self._last_message_received_at is None:
+            stale_at = self.created_at + SESSION_IDLE_TIMEOUT
+        elif self._last_message_sent_at < self._last_message_received_at:
+            return False
+        else:
+            stale_at = self._last_message_received_at + SESSION_IDLE_TIMEOUT
+
+        return stale_at <= trio.current_time()
 
     @property
     def local_enr(self) -> ENRAPI:
@@ -263,6 +266,7 @@ class SessionInitiator(BaseSession):
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         self.logger.debug2("%s: handling outbound message: %s", self, message)
 
+        self._last_message_sent_at = trio.current_time()
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._events.packet_sent.trigger((self, envelope))
@@ -499,6 +503,7 @@ class SessionRecipient(BaseSession):
     async def handle_outbound_message(self, message: AnyOutboundMessage) -> None:
         self.logger.debug2("%s: handling outbound message: %s", self, message)
 
+        self._last_message_sent_at = trio.current_time()
         if self.is_after_handshake:
             envelope = self.prepare_envelope(message)
             await self._events.packet_sent.trigger((self, envelope))
@@ -537,6 +542,7 @@ class SessionRecipient(BaseSession):
                     await self._events.packet_discarded.trigger((self, envelope))
                     return False
                 else:
+                    self._last_message_received_at = trio.current_time()
                     await self._inbound_message_send_channel.send(
                         AnyInboundMessage(
                             message=message,
@@ -569,6 +575,7 @@ class SessionRecipient(BaseSession):
                 else:
                     self._status = SessionStatus.AFTER
                     self._handshake_complete.set()
+                    self._last_message_received_at = trio.current_time()
                     await self._events.session_handshake_complete.trigger(self)
                     await self._process_message_buffers()
                     return True
