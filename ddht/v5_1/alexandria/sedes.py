@@ -1,4 +1,4 @@
-from ssz.sedes import Container, List, uint8, uint16, uint32, uint256
+from ssz.sedes import Container, List, uint8, uint16, uint64, uint256
 
 
 class ByteList(List):  # type: ignore
@@ -15,8 +15,8 @@ class ByteList(List):  # type: ignore
 byte_list = ByteList(max_length=2048)
 
 
-PingSedes = Container(field_sedes=(uint32, uint256))
-PongSedes = Container(field_sedes=(uint32, uint256))
+PingSedes = Container(field_sedes=(uint64, uint256))
+PongSedes = Container(field_sedes=(uint64, uint256))
 
 FindNodesSedes = Container(field_sedes=(List(uint16, max_length=256),))
 FoundNodesSedes = Container(field_sedes=(uint8, List(byte_list, max_length=32)))
