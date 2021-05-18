@@ -128,7 +128,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self, node_id: NodeID, *, endpoint: Optional[Endpoint] = None
     ) -> bool:
         self.logger.debug2(
-            "Bonding with %s", node_id.hex(),
+            "Bonding on Portal Network with %s...", node_id.hex(),
         )
 
         try:
@@ -155,7 +155,7 @@ class AlexandriaNetwork(Service, AlexandriaNetworkAPI):
         self.routing_table.update(enr.node_id)
 
         self.logger.debug(
-            "Bonded with %s successfully", node_id.hex(),
+            "Bonded on Portal Network with %s successfully", node_id.hex(),
         )
 
         self._routing_table_ready.set()

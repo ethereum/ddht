@@ -2,7 +2,7 @@ from typing import Tuple
 
 from ddht.constants import DISCOVERY_MAX_PACKET_SIZE
 
-ALEXANDRIA_PROTOCOL_ID = b"alexandria"
+ALEXANDRIA_PROTOCOL_ID = b"portal"
 
 DEFAULT_BOOTNODES: Tuple[str, ...] = ()
 

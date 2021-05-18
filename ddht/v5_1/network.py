@@ -794,6 +794,7 @@ class Network(Service, NetworkAPI):
         async with self.dispatcher.subscribe(TalkRequestMessage) as subscription:
             async for request in subscription:
                 if request.message.protocol not in self._talk_protocols:
+                    self.logger.debug("Unhandled TALKREQ: %s", request)
                     await self.client.send_talk_response(
                         request.sender_node_id,
                         request.sender_endpoint,

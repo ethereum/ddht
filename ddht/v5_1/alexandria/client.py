@@ -494,7 +494,9 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 try:
                     message = decode_message(request.message.payload)
                 except DecodingError:
-                    pass
+                    self.logger.debug(
+                        "TALKREQ failed to parse: %r", request, exc_info=True
+                    )
                 else:
                     if message.type != AlexandriaMessageType.REQUEST:
                         self.logger.debug(
@@ -527,7 +529,9 @@ class AlexandriaClient(Service, AlexandriaClientAPI):
                 try:
                     message = decode_message(response.message.payload)
                 except DecodingError:
-                    pass
+                    self.logger.debug(
+                        "TALKRESP failed to parse: %r", response, exc_info=True
+                    )
                 else:
                     if message.type != AlexandriaMessageType.RESPONSE:
                         self.logger.debug(
